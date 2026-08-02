@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>猜数字</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a1a;touch-action:manipulation;user-select:none;-webkit-user-select:none;font-family:system-ui,-apple-system,sans-serif}
+#ui{position:absolute;top:0;left:0;width:100%;display:flex;justify-content:space-between;align-items:center;padding:10px 16px;color:#fff;font-size:16px;z-index:10;pointer-events:none}
+#ui span{background:rgba(0,0,0,.5);padding:4px 12px;border-radius:8px}
+
+/* 开始/结束遮罩 */
+#overlay{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;color:#fff;z-index:20;background:rgba(10,10,26,.92)}
+#overlay.hidden{display:none}
+#overlay h1{font-size:36px;margin-bottom:8px}
+#overlay .subtitle{font-size:15px;color:#aaa;margin-bottom:20px}
+#rangeSelect{display:flex;gap:10px;margin-bottom:12px;pointer-events:all;flex-wrap:wrap;justify-content:center}
+#rangeSelect button{padding:10px 20px;font-size:16px;border:2px solid transparent;border-radius:10px;background:#1e1b4b;color:#c4b5fd;cursor:pointer;transition:all .15s}
+#rangeSelect button.active{border-color:#8b5cf6;background:#312e81;color:#fff}
+#rangeSelect button:active{transform:scale(.95)}
+#bestLabel{font-size:14px;color:#fbbf24;margin-top:8px;min-height:20px}
+#startBtn{margin-top:16px;padding:14px 52px;font-size:20px;border:none;border-radius:12px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;cursor:pointer;pointer-events:all;letter-spacing:2px}
+#startBtn:active{transform:scale(.96)}
+
+/* 游戏主界面 */
+#game{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:0 20px}
+#game.hidden{display:none}
+
+/* 提示区域 */
+#hint{width:100%;max-width:360px;text-align:center;margin-bottom:24px;min-height:80px;display:flex;flex-direction:column;justify-content:center;align-items:center}
+#rangeHint{font-size:16px;color:#94a3b8;margin-bottom:8px}
+#rangeHint b{color:#fbbf24;font-size:20px}
+#feedback{font-size:28px;font-weight:bold;min-height:40px;transition:all .2s}
+#feedback.high{color:#f87171}
+#feedback.low{color:#60a5fa}
+#feedback.correct{color:#34d399;animation:pulse .4s ease}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.2)}}
+
+/* 输入区域 */
+#inputArea{display:flex;gap:10px;width:100%;max-width:360px;margin-bottom:20px}
+#guessInput{flex:1;padding:14px 18px;font-size:24px;text-align:center;border:2px solid #334155;border-radius:12px;background:#1e293b;color:#fff;outline:none;transition:border-color .2s}
+#guessInput:focus{border-color:#8b5cf6}
+#guessBtn{padding:14px 24px;font-size:18px;border:none;border-radius:12px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;cursor:pointer;white-space:nowrap}
+#guessBtn:active{transform:scale(.96)}
+#guessBtn:disabled{opacity:.5;pointer-events:none}
+
+/* 历史记录 */
+#history{width:100%;max-width:360px;max-height:200px;overflow-y:auto}
+#historyTitle{font-size:13px;color:#64748b;margin-bottom:8px;text-align:center}
+#historyList{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.history-item{padding:6px 14px;border-radius:20px;font-size:15px;font-weight:600;animation:fadeIn .3s ease}
+.history-item.high{background:rgba(248,113,113,.2);color:#fca5a5;border:1px solid rgba(248,113,113,.4)}
+.history-item.low{background:rgba(96,165,250,.2);color:#93c5fd;border:1px solid rgba(96,165,250,.4)}
+@keyframes fadeIn{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
+
+/* 统计信息 */
+#stats{position:absolute;bottom:20px;left:0;width:100%;text-align:center;color:#64748b;font-size:14px}
+#stats span{color:#fbbf24;font-weight:bold}
+</style>
+</head>
+<body>
+<div id="ui">
+  <span id="attemptLabel">次数: 0</span>
+  <span id="rangeTitle">范围: 1 - 100</span>
+</div>
+
+<!-- 开始/结束遮罩 -->
+<div id="overlay">
+  <h1>🎯 猜数字</h1>
+  <p class="subtitle">系统会随机生成一个数字，你来猜！</p>
+  <p class="subtitle" style="margin-top:-16px;margin-bottom:12px">选择范围：</p>
+  <div id="rangeSelect">
+    <button data-max="50">1 - 50</button>
+    <button data-max="100" class="active">1 - 100</button>
+    <button data-max="200">1 - 200</button>
+    <button data-max="500">1 - 500</button>
+  </div>
+  <p id="bestLabel"></p>
+  <button id="startBtn">开始游戏</button>
+</div>
+
+<!-- 游戏主界面 -->
+<div id="game" class="hidden">
+  <div id="hint">
+    <div id="rangeHint">范围: <b>1</b> ~ <b>100</b></div>
+    <div id="feedback">🤔 猜一个数字</div>
+  </div>
+  <div id="inputArea">
+    <input type="number" id="guessInput" inputmode="numeric" placeholder="?" min="1">
+    <button id="guessBtn" onclick="makeGuess()">猜!</button>
+  </div>
+  <div id="history">
+    <div id="historyTitle">猜测记录</div>
+    <div id="historyList"></div>
+  </div>
+</div>
+
+<div id="stats">最佳记录: <span id="bestDisplay">无</span></div>
+
+<script>
+const overlay   = document.getElementById('overlay');
+const game      = document.getElementById('game');
+const startBtn  = document.getElementById('startBtn');
+const guessInput= document.getElementById('guessInput');
+const guessBtn  = document.getElementById('guessBtn');
+const feedback  = document.getElementById('feedback');
+const rangeHint = document.getElementById('rangeHint');
+const attemptLabel = document.getElementById('attemptLabel');
+const rangeTitle  = document.getElementById('rangeTitle');
+const bestLabel   = document.getElementById('bestLabel');
+const bestDisplay = document.getElementById('bestDisplay');
+const historyList = document.getElementById('historyList');
+
+let target, maxNum, attempts, bestScores;
+
+// 从 localStorage 读取最佳记录
+function loadBest() {
+  try { bestScores = JSON.parse(localStorage.getItem('guessNumber_best') || '{}'); }
+  catch { bestScores = {}; }
+}
+function saveBest() {
+  localStorage.setItem('guessNumber_best', JSON.stringify(bestScores));
+}
+
+// 范围选择
+let selectedMax = 100;
+document.querySelectorAll('#rangeSelect button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#rangeSelect button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedMax = parseInt(btn.dataset.max);
+  });
+});
+
+// 更新最佳记录显示
+function updateBestDisplay() {
+  const best = bestScores[maxNum];
+  bestDisplay.textContent = best ? best + ' 次' : '无';
+}
+function updateBestLabel() {
+  const best = bestScores[selectedMax];
+  bestLabel.textContent = best ? `🏆 最佳: ${best} 次猜中` : '';
+}
+
+// 开始游戏
+startBtn.addEventListener('click', () => {
+  maxNum = selectedMax;
+  target = Math.floor(Math.random() * maxNum) + 1;
+  attempts = 0;
+
+  overlay.classList.add('hidden');
+  game.classList.remove('hidden');
+
+  rangeHint.innerHTML = `范围: <b>1</b> ~ <b>${maxNum}</b>`;
+  rangeTitle.textContent = `范围: 1 - ${maxNum}`;
+  attemptLabel.textContent = '次数: 0';
+  feedback.textContent = '🤔 猜一个数字';
+  feedback.className = '';
+  historyList.innerHTML = '';
+  guessInput.value = '';
+  guessInput.max = maxNum;
+  guessInput.focus();
+
+  updateBestDisplay();
+});
+
+// 提交猜测
+function makeGuess() {
+  const val = parseInt(guessInput.value);
+
+  if (isNaN(val) || val < 1 || val > maxNum) {
+    feedback.textContent = `⚠️ 请输入 1~${maxNum} 的数字`;
+    feedback.className = '';
+    guessInput.focus();
+    return;
+  }
+
+  attempts++;
+  attemptLabel.textContent = `次数: ${attempts}`;
+
+  let result;
+  if (val > target) {
+    result = 'high';
+    feedback.textContent = `📉 ${val} 太大了!`;
+    feedback.className = 'high';
+  } else if (val < target) {
+    result = 'low';
+    feedback.textContent = `📈 ${val} 太小了!`;
+    feedback.className = 'low';
+  } else {
+    result = 'correct';
+    feedback.textContent = `🎉 恭喜! 就是 ${val}!`;
+    feedback.className = 'correct';
+    endGame();
+    return;
+  }
+
+  // 添加到历史记录
+  addHistory(val, result);
+  guessInput.value = '';
+  guessInput.focus();
+}
+
+// 添加历史记录
+function addHistory(val, result) {
+  const item = document.createElement('span');
+  item.className = `history-item ${result}`;
+  item.textContent = val;
+  historyList.appendChild(item);
+  historyList.scrollTop = historyList.scrollHeight;
+}
+
+// 游戏结束
+function endGame() {
+  guessBtn.disabled = true;
+
+  // 更新最佳记录
+  if (!bestScores[maxNum] || attempts < bestScores[maxNum]) {
+    bestScores[maxNum] = attempts;
+    saveBest();
+  }
+
+  // 延迟显示结果遮罩
+  setTimeout(() => {
+    let rank = '';
+    const optimal = Math.ceil(Math.log2(maxNum));
+    if (attempts <= optimal) rank = '🏆 完美!';
+    else if (attempts <= optimal + 2) rank = '🌟 优秀!';
+    else if (attempts <= optimal + 5) rank = '👍 不错!';
+    else rank = '💪 继续加油!';
+
+    overlay.innerHTML = `
+      <h1>🎯 猜数字</h1>
+      <p class="subtitle" style="font-size:22px;margin-top:8px">${rank}</p>
+      <p class="subtitle">答案就是 <b style="color:#fbbf24;font-size:28px">${target}</b></p>
+      <p class="subtitle">你用了 <b style="color:#8b5cf6">${attempts}</b> 次猜中</p>
+      <p class="subtitle" style="margin-top:-8px">(范围 1-${maxNum}, 理论最优约 ${Math.ceil(Math.log2(maxNum))} 次)</p>
+      ${bestScores[maxNum] === attempts ? '<p class="subtitle" style="color:#34d399">🎊 新纪录!</p>' : ''}
+      <p id="bestLabel">${bestScores[maxNum] ? `🏆 最佳: ${bestScores[maxNum]} 次` : ''}</p>
+      <button id="startBtn" onclick="location.reload()">再来一局</button>
+    `;
+    overlay.classList.remove('hidden');
+  }, 1200);
+}
+
+// 回车提交
+guessInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') makeGuess();
+});
+
+// 初始化
+loadBest();
+updateBestLabel();
+</script>
+</body>
+</html>
