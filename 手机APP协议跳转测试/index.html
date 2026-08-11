@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>APP 协议跳转</title>
+    <style>
+        :root {
+            --bg: #f5f5f7;
+            --card-bg: #ffffff;
+            --text: #1d1d1f;
+            --text-secondary: #6e6e73;
+            --border: #e0e0e5;
+            --primary: #0071e3;
+            --primary-hover: #0060c0;
+            --primary-light: #e8f0fe;
+            --danger: #e03e2d;
+            --danger-light: #fce8e6;
+            --success: #2ea043;
+            --success-light: #e6f4ea;
+            --warning: #e67e22;
+            --warning-light: #fef3e7;
+            --radius: 14px;
+            --radius-sm: 10px;
+            --shadow-sm: 0 2px 8px rgba(0,0,0,0.04);
+            --transition: 0.2s ease;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px 16px;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-font-smoothing: antialiased;
+            line-height: 1.5;
+            font-size: 16px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 420px;
+            background: var(--card-bg);
+            border-radius: 28px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.06), 0 4px 10px rgba(0,0,0,0.02);
+            padding: 24px 20px 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .title {
+            font-size: 1.15rem;
+            font-weight: 680;
+            color: var(--text);
+            text-align: center;
+            letter-spacing: -0.01em;
+            margin-bottom: 2px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .textarea-wrapper {
+            position: relative;
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            background: #fafbfc;
+            transition: all var(--transition);
+            overflow: hidden;
+        }
+
+        .textarea-wrapper:focus-within {
+            border-color: var(--primary);
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(0,113,227,0.08);
+        }
+
+        .textarea-wrapper.error {
+            border-color: var(--danger);
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(224,62,45,0.06);
+        }
+
+        textarea {
+            display: block;
+            width: 100%;
+            min-height: 130px;
+            padding: 14px 16px;
+            border: none;
+            outline: none;
+            background: transparent;
+            font-size: 1rem;
+            font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', 'PingFang SC', monospace;
+            color: var(--text);
+            resize: vertical;
+            line-height: 1.7;
+            letter-spacing: 0.01em;
+            word-break: break-all;
+            -webkit-appearance: none;
+            border-radius: 0;
+            caret-color: var(--primary);
+        }
+
+        textarea::placeholder {
+            color: #b0b5bd;
+            font-family: inherit;
+            font-size: 0.95rem;
+            letter-spacing: 0.02em;
+        }
+
+        .char-hint {
+            text-align: right;
+            font-size: 0.7rem;
+            color: #a1a7ae;
+            padding-right: 4px;
+            margin-top: 2px;
+        }
+
+        /* 快捷标签行 */
+        .quick-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .quick-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 8px 15px;
+            font-size: 0.8rem;
+            font-weight: 530;
+            border-radius: 20px;
+            border: 1.5px solid #e4e6ec;
+            background: #fafbfc;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all var(--transition);
+            user-select: none;
+            white-space: nowrap;
+            touch-action: manipulation;
+        }
+
+        .quick-tag:active {
+            background: var(--primary-light);
+            border-color: #a8c8fa;
+            color: var(--primary);
+            transform: scale(0.94);
+        }
+
+        .tag-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .dot-blue { background: #0071e3; }
+        .dot-green { background: #2ea043; }
+        .dot-orange { background: #e67e22; }
+        .dot-red { background: #e03e2d; }
+        .dot-purple { background: #7b61ff; }
+        .dot-teal { background: #0b9e9e; }
+
+        /* 历史记录区域 */
+        .history-section {
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .history-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            padding: 0 4px;
+        }
+
+        .history-header span:first-child {
+            font-weight: 600;
+        }
+
+        .clear-history-btn {
+            background: none;
+            border: none;
+            color: var(--danger);
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: background 0.15s;
+        }
+
+        .clear-history-btn:active {
+            background: rgba(0,0,0,0.05);
+        }
+
+        .history-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .history-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 7px 14px;
+            font-size: 0.78rem;
+            font-weight: 500;
+            border-radius: 20px;
+            background: #f3f4f7;
+            color: var(--text);
+            border: 1px solid #e4e6ec;
+            cursor: pointer;
+            transition: all var(--transition);
+            user-select: none;
+            white-space: nowrap;
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            touch-action: manipulation;
+        }
+
+        .history-item:active {
+            background: #e6e9f0;
+            transform: scale(0.94);
+        }
+
+        .history-item .history-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #a0a7b4;
+            flex-shrink: 0;
+        }
+
+        .history-item .history-text {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* 按钮组 */
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            align-items: stretch;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 15px 20px;
+            font-size: 1rem;
+            font-weight: 620;
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all var(--transition);
+            letter-spacing: 0.01em;
+            user-select: none;
+            touch-action: manipulation;
+            white-space: nowrap;
+            -webkit-tap-highlight-color: transparent;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+            transition: transform 0.1s;
+        }
+
+        .btn-primary {
+            flex: 2;
+            background: var(--primary);
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(0,113,227,0.3);
+            font-weight: 650;
+        }
+
+        .btn-primary:active {
+            background: var(--primary-hover);
+            box-shadow: 0 2px 8px rgba(0,113,227,0.35);
+        }
+
+        .btn-primary:disabled {
+            background: #9bb9e0;
+            box-shadow: none;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .btn-secondary {
+            flex: 1;
+            background: #f3f4f7;
+            color: #3d4047;
+            border: 1px solid #e0e2e8;
+        }
+
+        .btn-secondary:active {
+            background: #e6e8ef;
+        }
+
+        .btn-copy {
+            display: none;
+            flex: 1;
+            background: #f3f4f7;
+            color: #3d4047;
+            border: 1px solid #e0e2e8;
+        }
+
+        .message-area {
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .message {
+            display: none;
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+            font-weight: 500;
+            letter-spacing: 0.01em;
+            animation: fadeIn 0.25s ease;
+            text-align: center;
+            word-break: break-word;
+        }
+
+        .message.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .message.info { background: #e8f0fe; color: #1a5fb4; border: 1px solid #c5d9f7; }
+        .message.warning { background: var(--warning-light); color: #b3530c; border: 1px solid #fce0b4; }
+        .message.success { background: var(--success-light); color: #1e7e34; border: 1px solid #b7e1c5; }
+        .message.error { background: var(--danger-light); color: #b91c1c; border: 1px solid #f5c2c0; }
+        .message b { font-weight: 680; }
+        .msg-link { color: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; white-space: nowrap; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .btn-primary.loading .btn-text {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .dots::after {
+            content: '';
+            animation: dotAnim 1.4s infinite;
+            display: inline-block;
+            width: 1em;
+            text-align: left;
+        }
+        @keyframes dotAnim {
+            0% { content: ''; }
+            25% { content: '.'; }
+            50% { content: '..'; }
+            75% { content: '...'; }
+            100% { content: ''; }
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #1c1c1e;
+                --card-bg: #2c2c2e;
+                --text: #e5e5e7;
+                --text-secondary: #aeaeb2;
+                --border: #48484c;
+                --primary: #4d9eff;
+                --primary-hover: #3e8ce0;
+                --primary-light: #1e3a5f;
+                --danger: #f05a4a;
+                --danger-light: #3a1e1c;
+                --success: #3bb357;
+                --success-light: #1e3525;
+                --warning: #f09d3a;
+                --warning-light: #3a301e;
+            }
+            textarea { background: transparent; color: var(--text); }
+            .textarea-wrapper { background: #242426; border-color: var(--border); }
+            .textarea-wrapper:focus-within { background: #242426; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(77,158,255,0.15); }
+            textarea::placeholder { color: #727277; }
+            .quick-tag { background: #2a2a2d; border-color: #48484c; color: #c7c7cc; }
+            .quick-tag:active { background: #1e3a5f; border-color: #4d9eff; color: #4d9eff; }
+            .btn-secondary, .btn-copy { background: #3a3a3c; color: #ddd; border-color: #5c5c60; }
+            .btn-secondary:active { background: #4c4c50; }
+            .history-item { background: #3a3a3c; border-color: #5c5c60; color: #ddd; }
+            .history-item:active { background: #4e4e52; }
+            .history-item .history-dot { background: #808088; }
+            .clear-history-btn { color: #f05a4a; }
+            .message.info { background: #1b2e4a; color: #8db9f7; border-color: #2d4668; }
+            .message.warning { background: #3a2e1a; color: #f5b560; border-color: #5a4828; }
+            .message.success { background: #1a3322; color: #5dbe6a; border-color: #2d4a34; }
+            .message.error { background: #3a1c1c; color: #f59090; border-color: #5a3030; }
+            .btn-primary:disabled { background: #4a5568; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="title">📲 APP 协议跳转</div>
+
+        <div class="input-group">
+            <div class="textarea-wrapper" id="textareaWrapper">
+                <textarea id="urlInput" placeholder="粘贴或输入协议地址，例如：alipay:// 或 weixin://" rows="4" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+            </div>
+            <div class="char-hint" id="charCount">0 字符</div>
+        </div>
+
+        <!-- 快捷协议标签 -->
+        <div class="quick-tags" id="quickTags">
+            <span class="quick-tag" data-scheme="alipay://"><span class="tag-dot dot-blue"></span>支付宝</span>
+            <span class="quick-tag" data-scheme="weixin://"><span class="tag-dot dot-green"></span>微信</span>
+            <span class="quick-tag" data-scheme="taobao://"><span class="tag-dot dot-orange"></span>淘宝</span>
+            <span class="quick-tag" data-scheme="openapp.jdmobile://"><span class="tag-dot dot-red"></span>京东</span>
+            <span class="quick-tag" data-scheme="tbopen://"><span class="tag-dot dot-purple"></span>淘宝备用</span>
+            <span class="quick-tag" data-scheme="mqq://"><span class="tag-dot dot-teal"></span>QQ</span>
+        </div>
+
+        <!-- 历史记录区域 -->
+        <div class="history-section" id="historySection">
+            <div class="history-header">
+                <span>⏱️ 最近使用</span>
+                <button class="clear-history-btn" id="clearHistoryBtn">清空</button>
+            </div>
+            <div class="history-list" id="historyList"></div>
+        </div>
+
+        <!-- 按钮组 -->
+        <div class="btn-row">
+            <button class="btn btn-primary" id="btnJump" type="button">
+                <span class="btn-text">🚀 点击跳转</span>
+            </button>
+            <button class="btn btn-secondary" id="btnClear" type="button">🗑️ 清空</button>
+            <button class="btn btn-copy" id="btnCopy" type="button">📋 复制</button>
+        </div>
+
+        <div class="message-area" id="messageArea">
+            <div class="message" id="messageBox"></div>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            // DOM
+            const urlInput = document.getElementById('urlInput');
+            const btnJump = document.getElementById('btnJump');
+            const btnClear = document.getElementById('btnClear');
+            const btnCopy = document.getElementById('btnCopy');
+            const messageBox = document.getElementById('messageBox');
+            const textareaWrapper = document.getElementById('textareaWrapper');
+            const charCount = document.getElementById('charCount');
+            const quickTags = document.querySelectorAll('.quick-tag');
+            const historySection = document.getElementById('historySection');
+            const historyList = document.getElementById('historyList');
+            const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+
+            // 状态
+            let jumpTimeout = null;
+            let visibilityListener = null;
+            let isJumping = false;
+            const JUMP_TIMEOUT_MS = 2800;
+            const HISTORY_KEY = 'app_protocol_history';
+            const MAX_HISTORY = 8;
+
+            // 工具函数
+            function getCleanUrl() {
+                const raw = urlInput.value || '';
+                const trimmed = raw.trim();
+                const lines = trimmed.split('\n').filter(l => l.trim() !== '');
+                return lines.length > 0 ? lines[0].trim().replace(/[\u200B-\u200D\uFEFF]/g, '') : '';
+            }
+
+            function getRawInput() {
+                return urlInput.value || '';
+            }
+
+            function isValidUrl(url) {
+                return /^[a-zA-Z][a-zA-Z0-9+\-.]*:\/\//.test(url) || /^intent:\/\//i.test(url);
+            }
+
+            function getUrlProtocol(url) {
+                const match = url.match(/^([a-zA-Z][a-zA-Z0-9+\-.]*):\/\//);
+                return match ? match[1].toLowerCase() : null;
+            }
+
+            function updateCharCount() {
+                const len = getRawInput().length;
+                charCount.textContent = len + ' 字符';
+                charCount.style.color = len > 300 ? 'var(--danger)' : '';
+            }
+
+            function showMessage(text, type = 'info', html = false) {
+                hideMessage();
+                messageBox.className = 'message ' + type + ' show';
+                messageBox.innerHTML = html ? text : text;
+            }
+
+            function hideMessage() {
+                messageBox.className = 'message';
+                messageBox.innerHTML = '';
+            }
+
+            function showErrorBorder(show) {
+                textareaWrapper.classList.toggle('error', show);
+            }
+
+            async function copyToClipboard(text) {
+                if (navigator.clipboard && window.isSecureContext) {
+                    try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+                }
+                try {
+                    const tmp = document.createElement('textarea');
+                    tmp.value = text;
+                    tmp.style.position = 'fixed';
+                    tmp.style.left = '-9999px';
+                    document.body.appendChild(tmp);
+                    tmp.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(tmp);
+                    return true;
+                } catch (e) { return false; }
+            }
+
+            function detectBrowser() {
+                const ua = navigator.userAgent.toLowerCase();
+                return {
+                    isWechat: ua.includes('micromessenger'),
+                    isQQ: ua.includes('qq/') && !ua.includes('qqbrowser'),
+                    isQQBrowser: ua.includes('qqbrowser'),
+                    isAlipay: ua.includes('alipayclient'),
+                    isWeibo: ua.includes('weibo'),
+                    isInApp: ua.includes('micromessenger') || ua.includes('qq/') || ua.includes('alipayclient') || ua.includes('weibo'),
+                    isIOS: /iphone|ipad|ipod/.test(ua),
+                    isAndroid: ua.includes('android'),
+                };
+            }
+
+            // 历史记录管理
+            function getHistory() {
+                try {
+                    const data = localStorage.getItem(HISTORY_KEY);
+                    return data ? JSON.parse(data) : [];
+                } catch (e) {
+                    return [];
+                }
+            }
+
+            function saveHistory(history) {
+                try {
+                    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+                } catch (e) {}
+            }
+
+            function addToHistory(url) {
+                if (!url) return;
+                let history = getHistory();
+                history = history.filter(item => item !== url);
+                history.unshift(url);
+                if (history.length > MAX_HISTORY) history = history.slice(0, MAX_HISTORY);
+                saveHistory(history);
+                renderHistory();
+            }
+
+            function clearHistory() {
+                saveHistory([]);
+                renderHistory();
+            }
+
+            function renderHistory() {
+                const history = getHistory();
+                historyList.innerHTML = '';
+                if (history.length === 0) {
+                    historySection.style.display = 'none';
+                    return;
+                }
+                historySection.style.display = 'flex';
+                history.forEach(url => {
+                    const item = document.createElement('span');
+                    item.className = 'history-item';
+                    item.innerHTML = `<span class="history-dot"></span><span class="history-text">${escapeHtml(truncateUrl(url, 25))}</span>`;
+                    item.title = url;
+                    item.addEventListener('click', () => {
+                        if (isJumping) return;
+                        urlInput.value = url;
+                        updateCharCount();
+                        hideMessage();
+                        showErrorBorder(false);
+                        btnCopy.style.display = 'none';
+                        urlInput.focus();
+                    });
+                    historyList.appendChild(item);
+                });
+            }
+
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            function truncateUrl(url, maxLen = 25) {
+                if (url.length <= maxLen) return url;
+                return url.substring(0, maxLen) + '…';
+            }
+
+            // 可见性检测
+            function setupVisibilityDetection() {
+                if (visibilityListener) document.removeEventListener('visibilitychange', visibilityListener);
+                visibilityListener = () => {
+                    if (document.hidden) {
+                        clearTimeout(jumpTimeout);
+                        jumpTimeout = null;
+                    } else {
+                        if (isJumping && !jumpTimeout) {
+                            resetJumpState();
+                            showMessage('✅ 已尝试跳转，如未成功请检查APP是否安装', 'success');
+                        }
+                    }
+                };
+                document.addEventListener('visibilitychange', visibilityListener);
+            }
+
+            function cleanupDetection() {
+                if (visibilityListener) document.removeEventListener('visibilitychange', visibilityListener);
+                visibilityListener = null;
+                if (jumpTimeout) { clearTimeout(jumpTimeout); jumpTimeout = null; }
+            }
+
+            function resetJumpState() {
+                isJumping = false;
+                btnJump.classList.remove('loading');
+                btnJump.disabled = false;
+                btnJump.querySelector('.btn-text').textContent = '🚀 点击跳转';
+                cleanupDetection();
+            }
+
+            function performJump(url) {
+                if (isJumping) return;
+                isJumping = true;
+                btnJump.classList.add('loading');
+                btnJump.disabled = true;
+                btnJump.querySelector('.btn-text').innerHTML = '<span class="dots">跳转中</span>';
+                hideMessage();
+                showErrorBorder(false);
+                setupVisibilityDetection();
+
+                try { window.location.href = url; } catch (e) {}
+                try {
+                    const iframe = document.createElement('iframe');
+                    iframe.style.display = 'none';
+                    iframe.src = url;
+                    document.body.appendChild(iframe);
+                    setTimeout(() => { if (iframe.parentNode) document.body.removeChild(iframe); }, 2000);
+                } catch (e) {}
+                if (detectBrowser().isAndroid) {
+                    try {
+                        const w = window.open(url, '_blank');
+                        if (w) setTimeout(() => { try { w.close(); } catch (e) {} }, 1500);
+                    } catch (e) {}
+                }
+
+                jumpTimeout = setTimeout(() => handleJumpFailure(url), JUMP_TIMEOUT_MS);
+            }
+
+            function handleJumpFailure(url) {
+                jumpTimeout = null;
+                isJumping = false;
+                btnJump.classList.remove('loading');
+                btnJump.disabled = false;
+                btnJump.querySelector('.btn-text').textContent = '🚀 点击跳转';
+                cleanupDetection();
+
+                const browser = detectBrowser();
+                const protocol = getUrlProtocol(url);
+                let msg = '', type = 'warning';
+                if (browser.isWechat) msg = '⚠️ 微信内可能屏蔽协议。请点击右上角 <b>"..."</b> → <b>"在浏览器中打开"</b>';
+                else if (browser.isQQ || browser.isQQBrowser) msg = '⚠️ QQ浏览器可能限制跳转，请在系统浏览器中打开';
+                else if (browser.isAlipay) msg = '⚠️ 支付宝内可能限制外部协议，请复制链接在浏览器打开';
+                else if (protocol && !['http', 'https'].includes(protocol)) msg = '⚠️ 未能唤起APP，可能未安装或协议有误。<br>可<b>复制链接</b>在浏览器地址栏粘贴尝试';
+                else msg = '⚠️ 跳转未成功，请检查链接或尝试复制后在浏览器打开';
+
+                showMessage(msg, type, true);
+                showErrorBorder(true);
+                setTimeout(() => { if (!isJumping) showErrorBorder(false); }, 2200);
+                btnCopy.style.display = 'inline-flex';
+            }
+
+            function handleJump() {
+                if (isJumping) return;
+                const cleanUrl = getCleanUrl();
+                hideMessage();
+                showErrorBorder(false);
+                btnCopy.style.display = 'none';
+
+                if (!cleanUrl) {
+                    showMessage('⚠️ 请先输入协议链接', 'error');
+                    showErrorBorder(true);
+                    setTimeout(() => showErrorBorder(false), 1800);
+                    urlInput.focus();
+                    return;
+                }
+                if (!isValidUrl(cleanUrl)) {
+                    showMessage('⚠️ 链接格式不正确，需包含协议头（如 alipay://）', 'error', true);
+                    showErrorBorder(true);
+                    setTimeout(() => showErrorBorder(false), 2200);
+                    urlInput.focus();
+                    return;
+                }
+
+                if (urlInput.value.trim() !== cleanUrl) {
+                    urlInput.value = cleanUrl;
+                    updateCharCount();
+                }
+                // 保存到历史记录
+                addToHistory(cleanUrl);
+                performJump(cleanUrl);
+            }
+
+            function handleClear() {
+                if (isJumping) return;
+                urlInput.value = '';
+                updateCharCount();
+                hideMessage();
+                showErrorBorder(false);
+                btnCopy.style.display = 'none';
+                urlInput.focus();
+            }
+
+            async function handleCopy() {
+                const url = getCleanUrl() || getRawInput().trim();
+                if (!url) {
+                    showMessage('⚠️ 没有可复制的内容', 'error');
+                    return;
+                }
+                const ok = await copyToClipboard(url);
+                showMessage(ok ? '✅ 已复制，请在浏览器地址栏粘贴打开' : '❌ 复制失败，请手动复制', ok ? 'success' : 'error');
+            }
+
+            // 快捷标签
+            quickTags.forEach(tag => {
+                tag.addEventListener('click', () => {
+                    if (isJumping) return;
+                    const scheme = tag.getAttribute('data-scheme');
+                    if (scheme) {
+                        urlInput.value = scheme;
+                        updateCharCount();
+                        hideMessage();
+                        showErrorBorder(false);
+                        btnCopy.style.display = 'none';
+                        urlInput.focus();
+                    }
+                });
+            });
+
+            // 事件绑定
+            btnJump.addEventListener('click', handleJump);
+            btnClear.addEventListener('click', handleClear);
+            btnCopy.addEventListener('click', handleCopy);
+            clearHistoryBtn.addEventListener('click', clearHistory);
+
+            urlInput.addEventListener('input', () => {
+                updateCharCount();
+                if (textareaWrapper.classList.contains('error')) {
+                    showErrorBorder(false);
+                    hideMessage();
+                    btnCopy.style.display = 'none';
+                }
+            });
+
+            urlInput.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    handleJump();
+                }
+                if (e.key === 'Escape' && !isJumping && getRawInput().trim()) {
+                    e.preventDefault();
+                    handleClear();
+                }
+            });
+
+            urlInput.addEventListener('paste', () => {
+                setTimeout(() => {
+                    const raw = getRawInput();
+                    const cleaned = raw.replace(/[\u200B-\u200D\uFEFF]/g, '');
+                    if (cleaned !== raw) urlInput.value = cleaned;
+                    updateCharCount();
+                    hideMessage();
+                    showErrorBorder(false);
+                    btnCopy.style.display = 'none';
+                }, 30);
+            });
+
+            // 初始化
+            function init() {
+                updateCharCount();
+                renderHistory();
+                btnCopy.style.display = 'none';
+
+                const browser = detectBrowser();
+                if (browser.isInApp) {
+                    let hint = '';
+                    if (browser.isWechat) hint = '💡 微信内浏览，跳转失败时请用浏览器打开';
+                    else if (browser.isQQ || browser.isQQBrowser) hint = '💡 QQ浏览器可能限制跳转，建议系统浏览器打开';
+                    else if (browser.isAlipay) hint = '💡 支付宝内可能限制外部协议';
+                    if (hint) showMessage(hint, 'info');
+                }
+
+                const params = new URLSearchParams(window.location.search);
+                const preset = params.get('url') || params.get('scheme') || params.get('link');
+                if (preset) {
+                    try { urlInput.value = decodeURIComponent(preset); } catch (e) { urlInput.value = preset; }
+                    updateCharCount();
+                    if (params.get('auto') === 'true' || params.get('auto') === '1') {
+                        setTimeout(() => { if (isValidUrl(getCleanUrl())) handleJump(); }, 700);
+                    }
+                }
+
+                if (!getRawInput().trim()) setTimeout(() => urlInput.focus(), 500);
+            }
+
+            window.addEventListener('beforeunload', () => {
+                cleanupDetection();
+                resetJumpState();
+            });
+
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+            else init();
+        })();
+    </script>
+</body>
+</html>
