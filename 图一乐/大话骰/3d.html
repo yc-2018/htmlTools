@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>大话骰(第三版)(3D)</title>
+  <link rel="stylesheet" href="index.css">
+  <script src="./lib/three.min.js"></script>
+  <style>
+    /* 3D 场景容器 */
+    #scene3d {
+      position: relative;
+      width: 100%;
+      height: clamp(320px, 52vh, 480px);
+      margin-bottom: 1.2rem;
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+      background: radial-gradient(circle at 50% 26%, #ffffff 0%, #e7f4ef 55%, #cfe9e0 100%);
+      touch-action: none;
+      cursor: grab;
+    }
+    #scene3d:active { cursor: grabbing; }
+    #scene3d canvas { display: block; width: 100% !important; height: 100% !important; }
+
+    #sceneBadge {
+      position: absolute;
+      left: 12px;
+      top: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #2b6b55;
+      background: rgba(255, 255, 255, 0.75);
+      backdrop-filter: blur(4px);
+      padding: 4px 12px;
+      border-radius: 20px;
+      pointer-events: none;
+      letter-spacing: 1px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    }
+
+    #sceneTip {
+      position: absolute;
+      left: 50%;
+      bottom: 10px;
+      transform: translateX(-50%);
+      font-size: 12px;
+      color: rgba(60, 70, 66, 0.8);
+      background: rgba(255, 255, 255, 0.6);
+      backdrop-filter: blur(4px);
+      padding: 3px 12px;
+      border-radius: 20px;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    #sceneError {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 20px;
+      color: #b21f1f;
+      font-size: 1rem;
+      background: linear-gradient(345deg, #fff, #c8f5eb);
+    }
+
+    /* 开盅时结果面板的留白 */
+    #result { margin-top: 0.4rem; }
+  </style>
+</head>
+<body>
+
+<div id="scene3d">
+  <div id="sceneError"></div>
+  <div id="sceneBadge">🎲 大话骰 · 第三版 (3D)</div>
+  <div id="sceneTip">拖动旋转视角 · 滚轮缩放 · 双击复位</div>
+</div>
+
+<div style="display: grid;grid-template-columns: repeat(2, 1fr); gap: 10px;margin-bottom: 20px;">
+  <button class="btn openCloseBg" id="openCoverB" onclick="handleCover()">关盅</button>
+  <button class="btn" id="shakeDiceB" onclick="shakeDice()">摇骰子🎲</button>
+  <button class="btn" id="resultB" onclick="calculate()">结果(开)</button>
+  <button class="btn prohibitBg" onclick="doNotRollDice(this)">禁止摇骰🚫</button>
+</div>
+
+<div id="result"></div>
+<div id="resultSpecial"></div>
+
+<!-- 一些无足轻重的按钮 -->
+<div style="margin-top: 10px">
+  <div>
+    <label for="openMp3Check">开盅杨戬音效</label>
+    <input type="checkbox" id="openMp3Check" checked/>
+  </div>
+  <div>
+    <label for="semiTransparent">骰盅半透明</label>
+    <input type="checkbox" id="semiTransparent" onclick="handleTransparency(this)"/>
+  </div>
+  <div>
+    <label for="noAutoCover">摇骰子不自动盖盅</label>
+    <input type="checkbox" id="noAutoCover"/>
+  </div>
+  <div>
+    <a href="./dice-rules.html">基本说明</a>
+    <span style="margin-left:12px"><a href="./index.html">第二版(2D)</a></span>
+  </div>
+</div>
+
+<script>
+  // 提前加载音效
+  const openMp3 = new Audio('./open.mp3');
+  const diceMp3 = new Audio('./dice.mp3');
+  let isCoverOpen = true;     // 骰盅开关状态
+  let isNotRollDice = false;  // 是否禁止摇骰子
+  let hasRolled = false;      // 是否摇过骰子
+
+  const sceneBox = document.getElementById('scene3d');
+  const errorBox = document.getElementById('sceneError');
+  const openCoverB = document.getElementById('openCoverB');
+  const shakeDiceB = document.getElementById('shakeDiceB');
+  const resultB = document.getElementById('resultB');
+  const result = document.getElementById('result');
+  const resultSpecial = document.getElementById('resultSpecial');
+  const playOpenMp3 = document.getElementById('openMp3Check');
+  const noAutoCover = document.getElementById('noAutoCover');
+
+  /* ======================== 3D 配置 ======================== */
+  const DICE_COUNT = 5;          // 骰子数量(大话骰固定 5 颗)
+  const DIE_SIZE = 1;            // 骰子边长
+  const DIE_HALF = DIE_SIZE / 2;
+  const DIE_CORNER = 0.09;       // 骰子圆角半径
+  const PAIR_DIST = 0.88;        // 骰子两两最小中心距(略小于边长, 视觉可接受)
+  const CUP_R = 2.3;             // 骰盅内壁半径
+  const CUP_H = 5.2;             // 骰盅高度
+  const CUP_CLOSED_Y = CUP_H / 2;   // 关盅时骰盅中心 Y(底贴桌面)
+  const CUP_OPEN_Y = 9.8;        // 开盅时骰盅中心 Y(高高抬起)
+
+  const GRAVITY = -30;           // 重力加速度
+  const REST = 0.32;             // 弹性系数
+  const FRICTION = 0.82;         // 地面摩擦(切向衰减)
+  const AIR = 0.999;             // 空气阻力
+  const ANG_AIR = 0.992;         // 角速度空气阻力
+
+  // BoxGeometry 六个面的朝向(+X,-X,+Y,-Y,+Z,-Z)与点数; 对面相加=7
+  const FACE_NORMALS = [
+    new THREE.Vector3( 1, 0, 0),
+    new THREE.Vector3(-1, 0, 0),
+    new THREE.Vector3( 0, 1, 0),
+    new THREE.Vector3( 0,-1, 0),
+    new THREE.Vector3( 0, 0, 1),
+    new THREE.Vector3( 0, 0,-1),
+  ];
+  const FACE_VALUES = [1, 6, 2, 5, 3, 4];
+
+  let renderer, scene, camera, cup, cupMat;
+  const dice = [];              // {mesh, vel, angVel, restTimer, atRest}
+  let isShaking = false;
+  let shakeTimer = 0;
+  let restoreOpenAfterShake = false;
+  const clock = new THREE.Clock();
+
+  // 视角(球坐标)与拖动
+  let theta = 0.7, phi = 0.95, dist = 8.0;
+  const target = new THREE.Vector3(0, 0.45, 0);
+  let dragging = false, lastX = 0, lastY = 0;
+
+  // 复用的临时对象(避免每帧 GC)
+  const _v = new THREE.Vector3();
+  const _m = new THREE.Matrix4();
+  const _q = new THREE.Quaternion();
+
+  /* ======================== 圆角骰子几何 ======================== */
+  /**
+   * 把细分后的 BoxGeometry 顶点沿 SDF 梯度投影到圆角立方体表面
+   * 生成带圆角的骰子(仍保留 6 个材质组, 每面独立贴图)
+   */
+  function makeDiceGeometry(cornerR = DIE_CORNER, seg = 6) {
+    const geo = new THREE.BoxGeometry(DIE_SIZE, DIE_SIZE, DIE_SIZE, seg, seg, seg);
+    const pos = geo.attributes.position;
+    const half = DIE_SIZE / 2;
+    const r = cornerR;
+    // 圆角立方体有向距离场: q = |p| - b + r
+    function sdf(px, py, pz) {
+      const qx = Math.abs(px) - half + r;
+      const qy = Math.abs(py) - half + r;
+      const qz = Math.abs(pz) - half + r;
+      const ox = Math.max(qx, 0), oy = Math.max(qy, 0), oz = Math.max(qz, 0);
+      const outside = Math.sqrt(ox * ox + oy * oy + oz * oz);
+      const inside = Math.min(Math.max(qx, Math.max(qy, qz)), 0);
+      return outside + inside - r;
+    }
+    const EPS = 1e-3;
+    for (let i = 0; i < pos.count; i++) {
+      const px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+      const d = sdf(px, py, pz);
+      if (Math.abs(d) < 1e-6) continue;
+      // 梯度(中心差分)
+      const gx = (sdf(px + EPS, py, pz) - sdf(px - EPS, py, pz)) / (2 * EPS);
+      const gy = (sdf(px, py + EPS, pz) - sdf(px, py - EPS, pz)) / (2 * EPS);
+      const gz = (sdf(px, py, pz + EPS) - sdf(px, py, pz - EPS)) / (2 * EPS);
+      const gl = Math.hypot(gx, gy, gz) || 1;
+      pos.setXYZ(i, px - d * gx / gl, py - d * gy / gl, pz - d * gz / gl);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  /* ======================== 骰子面贴图 ======================== */
+  const PIPS = {
+    1: [[128, 128]],
+    2: [[64, 64], [192, 192]],
+    3: [[64, 64], [128, 128], [192, 192]],
+    4: [[64, 64], [64, 192], [192, 64], [192, 192]],
+    5: [[64, 64], [64, 192], [128, 128], [192, 64], [192, 192]],
+    6: [[64, 64], [64, 128], [64, 192], [192, 64], [192, 128], [192, 192]],
+  };
+  function makeFaceTexture(value) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const ctx = c.getContext('2d');
+    // 骰子面: 白色微渐变 + 圆角
+    const g = ctx.createLinearGradient(0, 0, 256, 256);
+    g.addColorStop(0, '#ffffff');
+    g.addColorStop(1, '#e9e9ef');
+    ctx.fillStyle = g;
+    roundRect(ctx, 4, 4, 248, 248, 36);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    // 点数: 1、4 红色(与 SVG 风格一致), 其余蓝色
+    const red = (value === 1 || value === 4);
+    const baseColor = red ? '#cc0000' : '#1f5fa8';
+    const hiColor = red ? '#ff5b5b' : '#3b8fe0';
+    const r = (value === 1) ? 46 : 30;
+    PIPS[value].forEach(([x, y]) => {
+      const dg = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r);
+      dg.addColorStop(0, hiColor);
+      dg.addColorStop(1, baseColor);
+      ctx.fillStyle = dg;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    const tex = new THREE.CanvasTexture(c);
+    tex.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 1;
+    return tex;
+  }
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  /* ======================== 初始化场景 ======================== */
+  function initScene() {
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(sceneBox.clientWidth, sceneBox.clientHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.setClearColor(0x000000, 0);
+    sceneBox.appendChild(renderer.domElement);
+
+    scene = new THREE.Scene();
+
+    // 灯光
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x454a50, 0.95));
+    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+    dir.position.set(4, 10, 6);
+    dir.castShadow = true;
+    dir.shadow.mapSize.set(1024, 1024);
+    dir.shadow.camera.near = 0.5;
+    dir.shadow.camera.far = 30;
+    dir.shadow.camera.left = -7;
+    dir.shadow.camera.right = 7;
+    dir.shadow.camera.top = 7;
+    dir.shadow.camera.bottom = -7;
+    dir.shadow.radius = 4;
+    scene.add(dir);
+
+    // 桌面(圆形台呢)
+    const TABLE_R = CUP_R + 1.1;
+    const tableGeo = new THREE.CircleGeometry(TABLE_R, 64);
+    const tableMat = new THREE.MeshStandardMaterial({ color: 0x145a33, roughness: 0.95, metalness: 0.02 });
+    const table = new THREE.Mesh(tableGeo, tableMat);
+    table.rotation.x = -Math.PI / 2;
+    table.receiveShadow = true;
+    scene.add(table);
+    // 桌沿金属环
+    const ringGeo = new THREE.TorusGeometry(TABLE_R, 0.09, 16, 80);
+    const ringMat = new THREE.MeshStandardMaterial({ color: 0xb8b8c0, roughness: 0.3, metalness: 0.8 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.02;
+    scene.add(ring);
+
+    // 骰盅(圆台, 开口朝下)
+    cup = new THREE.Group();
+    const cupGeo = new THREE.CylinderGeometry(CUP_R + 0.18, CUP_R, CUP_H, 48, 1, true);
+    cupMat = new THREE.MeshStandardMaterial({
+      color: 0x3a3f47, roughness: 0.32, metalness: 0.8,
+      side: THREE.DoubleSide, transparent: true, opacity: 0.98
+    });
+    const cupBody = new THREE.Mesh(cupGeo, cupMat);
+    cupBody.castShadow = true;
+    cup.add(cupBody);
+    // 骰盅顶盖(封顶, 防止从上方看到里面)
+    const lidGeo = new THREE.CircleGeometry(CUP_R + 0.18, 48);
+    const lid = new THREE.Mesh(lidGeo, cupMat);
+    lid.rotation.x = -Math.PI / 2;
+    lid.position.y = CUP_H / 2;
+    cup.add(lid);
+    // 骰盅把手
+    const handleGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.9, 16);
+    const handle = new THREE.Mesh(handleGeo, cupMat);
+    handle.position.y = CUP_H / 2 + 0.45;
+    handle.castShadow = true;
+    cup.add(handle);
+    // 底部金属圈
+    const rimGeo = new THREE.TorusGeometry(CUP_R, 0.06, 12, 48);
+    const rim = new THREE.Mesh(rimGeo, cupMat);
+    rim.rotation.x = -Math.PI / 2;
+    rim.position.y = 0.02;
+    cup.add(rim);
+    cup.position.y = CUP_OPEN_Y;
+    scene.add(cup);
+
+    camera = new THREE.PerspectiveCamera(42, sceneBox.clientWidth / sceneBox.clientHeight, 0.1, 100);
+    updateCamera();
+
+    // 创建骰子(共享几何与面贴图)
+    const diceGeo = makeDiceGeometry();
+    const diceMats = FACE_VALUES.map(v => new THREE.MeshStandardMaterial({
+      map: makeFaceTexture(v), roughness: 0.35, metalness: 0.02
+    }));
+    for (let i = 0; i < DICE_COUNT; i++) {
+      const mesh = new THREE.Mesh(diceGeo, diceMats);
+      mesh.castShadow = true;
+      const ang = Math.random() * Math.PI * 2;
+      const rad = Math.random() * 1.2;
+      mesh.position.set(Math.cos(ang) * rad, DIE_HALF, Math.sin(ang) * rad);
+      mesh.quaternion.setFromEuler(new THREE.Euler(
+        Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2
+      ));
+      scene.add(mesh);
+      dice.push({ mesh, vel: new THREE.Vector3(), angVel: new THREE.Vector3(), restTimer: 0, atRest: false });
+    }
+
+    window.addEventListener('resize', onResize);
+    bindDrag();
+    bindWheel();
+    animate();
+  }
+
+  function updateCamera() {
+    const sinPhi = Math.sin(phi);
+    camera.position.set(
+      target.x + dist * sinPhi * Math.cos(theta),
+      target.y + dist * Math.cos(phi),
+      target.z + dist * sinPhi * Math.sin(theta)
+    );
+    camera.lookAt(target);
+  }
+
+  function onResize() {
+    const w = sceneBox.clientWidth, h = sceneBox.clientHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  }
+
+  function bindDrag() {
+    sceneBox.addEventListener('pointerdown', e => {
+      dragging = true; lastX = e.clientX; lastY = e.clientY;
+      sceneBox.setPointerCapture(e.pointerId);
+    });
+    sceneBox.addEventListener('pointermove', e => {
+      if (!dragging) return;
+      theta -= (e.clientX - lastX) * 0.01;
+      phi = Math.max(0.28, Math.min(1.42, phi - (e.clientY - lastY) * 0.01));
+      lastX = e.clientX; lastY = e.clientY;
+      updateCamera();
+    });
+    const end = () => { dragging = false; };
+    sceneBox.addEventListener('pointerup', end);
+    sceneBox.addEventListener('pointercancel', end);
+  }
+
+  function bindWheel() {
+    sceneBox.addEventListener('wheel', e => {
+      dist = Math.max(4.5, Math.min(14, dist * (1 + e.deltaY * 0.001)));
+      updateCamera();
+    }, { passive: true });
+    sceneBox.addEventListener('dblclick', () => {
+      theta = 0.7; phi = 0.95; dist = 8.0;
+      updateCamera();
+    });
+  }
+
+  /* ======================== 读取骰子顶面点数 ======================== */
+  function getTopValue(d) {
+    let maxY = -2, top = 1;
+    for (let i = 0; i < 6; i++) {
+      const n = FACE_NORMALS[i].clone().applyQuaternion(d.mesh.quaternion);
+      if (n.y > maxY) { maxY = n.y; top = FACE_VALUES[i]; }
+    }
+    return top;
+  }
+
+  /* ======================== 姿态吸附 ======================== */
+  /**
+   * 骰子快静止时, 把姿态吸附到最近的面朝上方向(真实骰子停稳后都是正的)
+   */
+  function snapToFace(d, dt) {
+    const q = d.mesh.quaternion;
+    const dirs = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+    // 1) 找出朝上的局部方向
+    let up = [0, 1, 0], bestUp = -2;
+    for (const dir of dirs) {
+      _v.set(dir[0], dir[1], dir[2]).applyQuaternion(q);
+      if (_v.y > bestUp) { bestUp = _v.y; up = dir; }
+    }
+    // 2) 找出朝前的局部方向(与 up 垂直, 世界 +Z 分量最大)
+    let fwd = [0, 0, 1], bestFwd = -2;
+    for (const dir of dirs) {
+      if (dir[0] * up[0] + dir[1] * up[1] + dir[2] * up[2] !== 0) continue;
+      _v.set(dir[0], dir[1], dir[2]).applyQuaternion(q);
+      if (_v.z > bestFwd) { bestFwd = _v.z; fwd = dir; }
+    }
+    // 3) right = up × fwd(局部右手系)
+    const right = [
+      up[1] * fwd[2] - up[2] * fwd[1],
+      up[2] * fwd[0] - up[0] * fwd[2],
+      up[0] * fwd[1] - up[1] * fwd[0],
+    ];
+    // 4) 目标世界基: up→+Y, fwd→+Z, right→+X
+    const wUp = [0, 1, 0], wFwd = [0, 0, 1], wRight = [1, 0, 0];
+    const eq = (a, b) => Math.abs(a[0] - b[0]) < 0.5 && Math.abs(a[1] - b[1]) < 0.5 && Math.abs(a[2] - b[2]) < 0.5;
+    const neg = (a, b) => eq(a, [-b[0], -b[1], -b[2]]);
+    function img(dir) {
+      let base, sign;
+      if (eq(dir, up) || neg(dir, up)) { base = wUp; sign = eq(dir, up) ? 1 : -1; }
+      else if (eq(dir, fwd) || neg(dir, fwd)) { base = wFwd; sign = eq(dir, fwd) ? 1 : -1; }
+      else { base = wRight; sign = eq(dir, right) ? 1 : -1; }
+      return [base[0] * sign, base[1] * sign, base[2] * sign];
+    }
+    const ix = img([1, 0, 0]), iy = img([0, 1, 0]), iz = img([0, 0, 1]);
+    _m.makeBasis(
+      new THREE.Vector3(ix[0], ix[1], ix[2]),
+      new THREE.Vector3(iy[0], iy[1], iy[2]),
+      new THREE.Vector3(iz[0], iz[1], iz[2])
+    );
+    _q.setFromRotationMatrix(_m);
+    // 已经很接近目标姿态 → 直接吸附到位
+    if (q.angleTo(_q) < 0.015) {
+      q.copy(_q);
+      d.angVel.set(0, 0, 0);
+      d.vel.multiplyScalar(0.5);
+      d.atRest = true;
+      return;
+    }
+    q.slerp(_q, Math.min(1, dt * 14));
+    d.angVel.multiplyScalar(0.6);
+    d.vel.multiplyScalar(0.92);
+  }
+
+  /* ======================== 物理 ======================== */
+  function step(dt) {
+    const ceiling = (!isCoverOpen || isShaking) ? CUP_H - 0.05 : 999; // 关盅/摇动时有顶
+    const dtSafe = Math.min(dt, 0.033);
+
+    for (const d of dice) {
+      // 已静止的骰子不再积分(保持姿态吸附)
+      if (!isShaking && d.atRest) {
+        d.vel.set(0, 0, 0);
+        d.angVel.set(0, 0, 0);
+        if (d.restTimer > 0.12) snapToFace(d, dtSafe);
+        continue;
+      }
+      const p = d.mesh.position, v = d.vel, a = d.angVel;
+
+      // 重力 + 位移
+      v.y += GRAVITY * dtSafe;
+      v.multiplyScalar(AIR);
+      a.multiplyScalar(ANG_AIR);
+      p.addScaledVector(v, dtSafe);
+
+      // 旋转积分(世界空间)
+      const speed = a.length();
+      if (speed > 1e-5) {
+        const axis = a.clone().multiplyScalar(1 / speed);
+        const dq = new THREE.Quaternion().setFromAxisAngle(axis, speed * dtSafe);
+        d.mesh.quaternion.premultiply(dq).normalize();
+      }
+
+      // 地面
+      if (p.y < DIE_HALF) {
+        p.y = DIE_HALF;
+        if (v.y < 0) v.y = -v.y * REST;
+        v.x *= FRICTION; v.z *= FRICTION;
+        a.multiplyScalar(0.85);
+      }
+      // 盅顶
+      if (p.y > ceiling - DIE_HALF) {
+        p.y = ceiling - DIE_HALF;
+        if (v.y > 0) v.y = -v.y * REST;
+      }
+      // 圆形内壁
+      const r = Math.hypot(p.x, p.z);
+      const maxR = CUP_R - DIE_HALF - 0.02;
+      if (r > maxR) {
+        const nx = p.x / r, nz = p.z / r;
+        p.x = nx * maxR; p.z = nz * maxR;
+        const vn = v.x * nx + v.z * nz;
+        if (vn > 0) {
+          v.x -= (1 + REST) * vn * nx;
+          v.z -= (1 + REST) * vn * nz;
+          a.multiplyScalar(0.9);
+        }
+      }
+
+      // 静止判定(速度足够小即开始计时, 停稳后吸附姿态)
+      if (v.lengthSq() < 0.3 && a.lengthSq() < 0.4 && !isShaking) {
+        d.restTimer += dtSafe;
+      } else {
+        d.restTimer = 0;
+      }
+      d.atRest = d.restTimer > 0.35;
+
+      // 吸附到最近的面朝上姿态
+      if (d.restTimer > 0.12) snapToFace(d, dtSafe);
+    }
+
+    // 骰子两两碰撞
+    for (let i = 0; i < dice.length; i++) {
+      for (let j = i + 1; j < dice.length; j++) {
+        const a = dice[i], b = dice[j];
+        const dx = b.mesh.position.x - a.mesh.position.x;
+        const dy = b.mesh.position.y - a.mesh.position.y;
+        const dz = b.mesh.position.z - a.mesh.position.z;
+        const dd = Math.hypot(dx, dy, dz);
+        if (dd > 1e-4 && dd < PAIR_DIST) {
+          const overlap = (PAIR_DIST - dd) / 2;
+          const nx = dx / dd, ny = dy / dd, nz = dz / dd;
+          if (!a.atRest) { a.mesh.position.x -= nx * overlap; a.mesh.position.y -= ny * overlap; a.mesh.position.z -= nz * overlap; }
+          if (!b.atRest) { b.mesh.position.x += nx * overlap; b.mesh.position.y += ny * overlap; b.mesh.position.z += nz * overlap; }
+          const rvx = b.vel.x - a.vel.x, rvy = b.vel.y - a.vel.y, rvz = b.vel.z - a.vel.z;
+          const rel = rvx * nx + rvy * ny + rvz * nz;
+          if (rel < 0) {
+            const imp = rel * (1 + REST) * 0.5;
+            a.vel.x += nx * imp; a.vel.y += ny * imp; a.vel.z += nz * imp;
+            b.vel.x -= nx * imp; b.vel.y -= ny * imp; b.vel.z -= nz * imp;
+            // 碰撞冲量足够大时唤醒静止的骰子
+            if (Math.abs(imp) > 0.25) {
+              a.atRest = false; a.restTimer = 0;
+              b.atRest = false; b.restTimer = 0;
+            }
+          }
+        }
+      }
+    }
+
+    // 摇骰: 持续给骰子随机冲量, 让它们在盅内翻滚
+    if (isShaking) {
+      shakeTimer += dtSafe;
+      for (const d of dice) {
+        d.atRest = false;
+        d.restTimer = 0;
+        d.vel.x += (Math.random() - 0.5) * 26 * dtSafe * 6;
+        d.vel.y += (Math.random() * 18 + 6) * dtSafe * 6;
+        d.vel.z += (Math.random() - 0.5) * 26 * dtSafe * 6;
+        d.angVel.x += (Math.random() - 0.5) * 14 * dtSafe * 60;
+        d.angVel.y += (Math.random() - 0.5) * 14 * dtSafe * 60;
+        d.angVel.z += (Math.random() - 0.5) * 14 * dtSafe * 60;
+      }
+      // 骰盅轻微抖动
+      cup.position.x = (Math.random() - 0.5) * 0.22;
+      cup.position.z = (Math.random() - 0.5) * 0.22;
+      cup.rotation.z = (Math.random() - 0.5) * 0.06;
+      if (shakeTimer > 1.15) {
+        isShaking = false;
+        shakeTimer = 0;
+        cup.position.x = 0; cup.position.z = 0; cup.rotation.z = 0;
+        shakeDiceB.disabled = false;
+        resultB.disabled = false;
+        hasRolled = true;
+        if (restoreOpenAfterShake) { restoreOpenAfterShake = false; setCover(true); }
+        if (navigator.vibrate) navigator.vibrate(40);
+      }
+    }
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);
+    step(dt);
+
+    // 骰盅 Y 平滑过渡
+    const targetY = isCoverOpen ? CUP_OPEN_Y : CUP_CLOSED_Y;
+    cup.position.y += (targetY - cup.position.y) * Math.min(1, dt * 7);
+
+    // 闲置微旋转
+    if (!dragging && !isShaking) { theta += 0.0012; updateCamera(); }
+
+    renderer.render(scene, camera);
+  }
+
+  /* ======================== 交互逻辑(与第二版对齐) ======================== */
+  function setCover(open) {
+    isCoverOpen = open;
+    openCoverB.innerText = open ? '关盅' : '打开盅';
+  }
+
+  function handleCover() {
+    setCover(!isCoverOpen);
+  }
+
+  function shakeDice(isInit = false) {
+    if (isInit) return;
+    if (isNotRollDice || isShaking) return;
+    shakeDiceB.disabled = true;
+    resultB.disabled = true;
+    result.innerHTML = '';
+    resultSpecial.innerHTML = '';
+    diceMp3.play().catch(() => {});
+    if (navigator.vibrate) navigator.vibrate(30);
+
+    // 若勾选"不自动盖盅"且当前盅开着, 先关上摇(物理需要), 摇完再打开
+    restoreOpenAfterShake = noAutoCover.checked && isCoverOpen;
+    if (isCoverOpen) setCover(false);
+
+    // 给骰子一个初始抛起, 进入翻滚
+    for (const d of dice) {
+      d.atRest = false;
+      d.restTimer = 0;
+      d.vel.set((Math.random() - 0.5) * 8, Math.random() * 6 + 5, (Math.random() - 0.5) * 8);
+      d.angVel.set((Math.random() - 0.5) * 16, (Math.random() - 0.5) * 16, (Math.random() - 0.5) * 16);
+    }
+    isShaking = true;
+    shakeTimer = 0;
+  }
+
+  function doNotRollDice(e) {
+    if (isNotRollDice) {
+      isNotRollDice = false;
+      shakeDiceB.classList.remove('prohibit');
+      e.innerText = '禁止摇骰🚫';
+    } else {
+      isNotRollDice = true;
+      shakeDiceB.classList.add('prohibit');
+      e.innerText = '允许摇骰⭕';
+    }
+  }
+
+  function handleTransparency(checkbox) {
+    cupMat.opacity = checkbox.checked ? 0.35 : 0.98;
+  }
+
+  /**
+   * 计算逻辑: 从 3D 骰子顶面读取实际点数, 再走第二版的大话骰判定
+   */
+  function calculate() {
+    if (isShaking) return;
+    if (playOpenMp3.checked) openMp3.play().catch(() => {});
+    setCover(true); // 开盅
+
+    if (!hasRolled) {
+      resultSpecial.innerHTML = '先摇啦~';
+      return;
+    }
+
+    const diceNumbers = dice.map(getTopValue);
+    const resultCountMap = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0};
+    diceNumbers.forEach(n => resultCountMap[n]++);
+    delete resultCountMap[0];
+
+    const entries = Object.entries(resultCountMap);
+    const oneNumber = resultCountMap[1];
+
+    // 纯豹(围骰)
+    const findPureLeopard = entries.find(([_key, value]) => value === 5);
+    if (findPureLeopard) {
+      return resultSpecial.innerHTML = `🐆纯豹<img src="./dice-svg/${findPureLeopard[0]}.svg" alt=""/>5+2个`;
+    }
+    // 豹子(1 当万能点)
+    if (resultCountMap[1] !== 0) {
+      const findLeopard = entries.find(([key, value]) => {
+        if (key === "1") return false;
+        return value + oneNumber === 5;
+      });
+      if (findLeopard) {
+        return resultSpecial.innerHTML = `🐆豹子<img src="./dice-svg/${findLeopard[0]}.svg" alt=""/>(${findLeopard[1]}+${oneNumber})+1个`;
+      }
+    }
+    // 顺子(顺骰)
+    if (entries.every(([_key, value]) => value <= 1)) {
+      return resultSpecial.innerHTML = '顺骰(重摇或归0)';
+    }
+
+    /** 计算 1 作为万能点的特殊显示 */
+    const addOneNumber = (iKey) => {
+      if (oneNumber === 0 || iKey === 1) return resultCountMap[iKey];
+      const keyNun = resultCountMap[iKey] === 0 ? '' : `<b>${resultCountMap[iKey]}</b><span style="color: #4bafab">+</span>`;
+      return `${keyNun}<span style="color: red">${oneNumber}</span>`;
+    };
+
+    let resultText = '';
+    for (let i = 1; i <= 6; i++) {
+      if (resultCountMap[i] > 0 || oneNumber > 0) {
+        resultText += `
+          <div>
+            <img src="./dice-svg/${i}.svg" alt=""/>
+            <div>${addOneNumber(i)}</div>
+          </div>`;
+      }
+    }
+    if (oneNumber > 0) result.style.gridTemplateColumns = 'repeat(6, 1fr)';
+    else result.style.gridTemplateColumns = `repeat(${entries.filter(([_, value]) => value > 0).length}, 1fr)`;
+    result.innerHTML = resultText;
+  }
+
+  /* ======================== 启动 ======================== */
+  try {
+    if (typeof THREE === 'undefined') throw new Error('THREE 未加载, 请检查 lib/three.min.js');
+    initScene();
+    shakeDice(true); // 占位(实际不摇), 保持接口一致
+    // 启动后自动摇一次, 展示物理效果
+    setTimeout(() => { if (!isNotRollDice) shakeDice(false); }, 600);
+  } catch (err) {
+    errorBox.style.display = 'flex';
+    errorBox.textContent = '3D 初始化失败: ' + (err && err.message ? err.message : err);
+    console.error(err);
+  }
+</script>
+</body>
+</html>
