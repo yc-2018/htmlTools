@@ -527,6 +527,98 @@ details.raw > summary {
   background: var(--danger);
 }
 
+/* 图案写入页：编辑器布局 */
+.editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 18px;
+  align-items: start;
+}
+
+.editor-grid .stage {
+  margin-top: 0;
+}
+
+#editCanvas {
+  cursor: move;
+  touch-action: none;
+  /* 编辑视图是给人看构图的，缩小显示时按常规平滑，别用像素化 */
+  image-rendering: auto;
+}
+
+#editCanvas:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.layer-list {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px;
+  background: #fafafa;
+}
+
+.layer-empty {
+  padding: 12px 8px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.layer-row:hover {
+  border-color: #cbd5e1;
+}
+
+.layer-row.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.layer-row .layer-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.layer-row .mini {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  color: var(--muted);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.layer-row .mini:hover {
+  color: var(--accent);
+}
+
+.layer-row .mini.del:hover {
+  color: var(--danger);
+}
+
+@media (max-width: 860px) {
+  .editor-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 860px) {
   .grid-2 {
     grid-template-columns: 1fr;

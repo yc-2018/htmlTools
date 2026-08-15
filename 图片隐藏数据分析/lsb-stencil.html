@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>图案写入位平面 - 把文字/图片画进图片的某一位</title>
+  <meta name="description" content="纯浏览器本地把文字或图片当成图案直接画进指定颜色通道的指定位平面，可拖动、缩放、旋转，导出无损 PNG，用分析页查看该位平面即可肉眼看到图案。">
+  <link rel="icon" href="../favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<header class="top-bar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">◫</span>
+    图案写入位平面
+  </div>
+  <nav class="top-links">
+    <a href="/index.html">首页</a>
+    <a href="./index.html">图片隐藏数据分析</a>
+    <a href="./lsb-write.html">写入 LSB（文本/文件）</a>
+  </nav>
+</header>
+
+<main class="shell">
+  <p class="crumb"><a href="/index.html">首页</a> / <a href="./index.html">图片隐藏数据分析</a> / 图案写入位平面</p>
+
+  <div class="page-head">
+    <h1>图案写入位平面</h1>
+    <p>把文字或图片当成图案直接画进某个通道的某一位 —— 在分析页看那一位，图案就明明白白显示在画面里。</p>
+  </div>
+
+  <section class="panel">
+    <h2>1. 选择载体图片</h2>
+    <p class="sub">载体越大，图案能画得越清楚。输出一律是无损 PNG，转成 JPG 或被平台压缩后图案会消失。</p>
+
+    <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="选择或拖入载体图片">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+        <path d="m21 15-5-5L5 21"></path>
+      </svg>
+      <div><strong>拖放图片到此处，或点击选择文件</strong></div>
+      <div class="hint">图片只在本地处理，不会上传</div>
+    </div>
+    <input id="fileInput" type="file" accept="image/*" hidden>
+    <div class="row" style="margin-top:10px">
+      <span id="carrierInfo" class="badge">未选择载体</span>
+    </div>
+  </section>
+  <section class="panel" style="margin-top:16px">
+    <h2>2. 摆放图案</h2>
+    <p class="sub">在画面上直接拖动移动图案，拖右下角方块缩放，拖上方圆点旋转；滚轮缩放，选中后方向键微调（按住 Shift 走 10 像素）。</p>
+
+    <div class="row" style="margin-bottom:12px">
+      <button id="addTextBtn" class="btn" type="button" disabled>+ 文字图层</button>
+      <button id="addImageBtn" class="btn" type="button" disabled>+ 图片图层</button>
+      <input id="layerImageInput" type="file" accept="image/*" hidden>
+      <span id="editHint" class="badge">先选择载体图片</span>
+    </div>
+
+    <div class="editor-grid">
+      <div>
+        <div class="stage" id="editStage">
+          <canvas id="editCanvas" width="1" height="1" tabindex="0" aria-label="图案编辑画布"></canvas>
+        </div>
+        <p class="stage-tip">这里是「载体 + 图案示意」。真正写进位平面的是二值化之后的图案，效果看右下角的位平面预览。</p>
+      </div>
+
+      <aside>
+        <div class="section-title">图层</div>
+        <div id="layerList" class="layer-list"><div class="layer-empty">还没有图层，先添加文字或图片。</div></div>
+
+        <div id="props" hidden>
+          <div class="section-title">图层属性</div>
+          <div class="field" id="fieldText">
+            <span class="label">文字内容（可多行）</span>
+            <textarea id="pText" style="min-height:64px" placeholder="要写进位平面的文字…"></textarea>
+          </div>
+          <div class="field" id="fieldFont">
+            <span class="label">字体 / 字号 <strong id="pSizeLabel">64</strong> px</span>
+            <select id="pFont">
+              <option value="sans-serif">无衬线（默认）</option>
+              <option value="'Microsoft YaHei', sans-serif">微软雅黑</option>
+              <option value="SimHei, sans-serif">黑体</option>
+              <option value="SimSun, serif">宋体</option>
+              <option value="KaiTi, serif">楷体</option>
+              <option value="Impact, sans-serif">Impact</option>
+              <option value="monospace">等宽</option>
+            </select>
+            <input id="pSize" type="range" min="8" max="600" step="1" value="64">
+            <label class="check"><input id="pBold" type="checkbox" checked> 加粗（笔画粗一点更清楚）</label>
+          </div>
+          <div class="field" id="fieldColor">
+            <span class="label">颜色（仅「RGB 彩色」模式下有效）</span>
+            <input id="pColor" type="color" value="#ffffff">
+          </div>
+          <div class="field" id="fieldScale">
+            <span class="label">缩放 <strong id="pScaleLabel">100%</strong></span>
+            <input id="pScale" type="range" min="2" max="400" step="1" value="100">
+          </div>
+          <div class="field">
+            <span class="label">旋转 <strong id="pRotLabel">0°</strong></span>
+            <input id="pRot" type="range" min="-180" max="180" step="1" value="0">
+          </div>
+          <div class="row">
+            <button id="pCenter" class="btn" type="button">居中</button>
+            <button id="pFit" class="btn" type="button">铺满</button>
+            <button id="pDelete" class="btn danger" type="button">删除图层</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+  <div class="grid-2" style="margin-top:16px">
+    <section class="panel">
+      <h2>3. 写入设置</h2>
+      <p class="sub">默认写在红 R 通道第 0 位 —— 正好是分析页打开时的默认视图。</p>
+
+      <div class="field">
+        <span class="label">写入模式</span>
+        <select id="writeMode">
+          <option value="mono" selected>单通道黑白（图案最干净）</option>
+          <option value="color">RGB 三通道彩色（8 种颜色）</option>
+        </select>
+      </div>
+      <div class="field" id="fieldChannel">
+        <span class="label">目标通道</span>
+        <select id="channel">
+          <option value="r" selected>红 (R)</option>
+          <option value="g">绿 (G)</option>
+          <option value="b">蓝 (B)</option>
+          <option value="a">透明度 (A)</option>
+        </select>
+      </div>
+      <div class="field">
+        <span class="label">位平面：第 <strong id="planeLabel">0</strong> 位</span>
+        <input id="plane" type="range" min="0" max="7" step="1" value="0">
+        <span class="slider-scale"><span>0（肉眼看不出）</span><span>7（直接画在图上）</span></span>
+      </div>
+      <div class="field">
+        <span class="label">背景处理</span>
+        <select id="bgMode">
+          <option value="whole" selected>整幅清零（图案清晰，推荐）</option>
+          <option value="shape">只改图案区域（背景保留原噪点）</option>
+        </select>
+      </div>
+      <div class="field">
+        <span class="label">图案二值化阈值 <strong id="thresholdLabel">128</strong>（照片建议开抖动）</span>
+        <input id="threshold" type="range" min="1" max="254" step="1" value="128">
+        <div class="row">
+          <label class="check"><input id="dither" type="checkbox"> 抖动（把灰阶变成网点，照片更清楚）</label>
+          <label class="check"><input id="maskInvert" type="checkbox"> 反色</label>
+        </div>
+      </div>
+      <label class="check"><input id="flatten" type="checkbox" checked> 写入前把所有像素设为不透明（避免半透明像素破坏低位）</label>
+
+      <div class="row" style="margin-top:16px">
+        <button id="embedBtn" class="btn primary" type="button" disabled>写入并生成 PNG</button>
+        <button id="resetBtn" class="btn" type="button">清空图层与结果</button>
+      </div>
+      <p id="hint" class="note muted">选择载体图片并添加图层后即可写入。</p>
+    </section>
+
+    <section class="panel">
+      <h2>4. 位平面预览与输出</h2>
+      <p class="sub">下面这张就是分析页选中同样的通道 / 位平面时会看到的画面。</p>
+
+      <div class="stage plain" id="planeStage">
+        <canvas id="planeCanvas" width="1" height="1"></canvas>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <span id="planeBadge" class="badge">等待载体与图层</span>
+      </div>
+
+      <div id="resultBox" class="empty">还没有生成结果。</div>
+      <div id="verifyBox"></div>
+      <div class="stage" id="outStage" hidden>
+        <canvas id="outCanvas" width="1" height="1"></canvas>
+      </div>
+      <div class="row" id="outActions" hidden style="margin-top:12px">
+        <a id="downloadLink" class="btn primary" download="stencil.png">下载 PNG</a>
+        <button id="verifyBtn" class="btn" type="button">再次回读自检</button>
+      </div>
+
+      <div class="section-title">怎么把它看出来</div>
+      <ol style="margin:0;padding-left:20px;color:#4b5563;font-size:14px;line-height:1.9">
+        <li>下载 PNG 后打开 <a href="./index.html">图片隐藏数据分析</a>，切到「隐写分析 (LSB)」。</li>
+        <li>颜色通道选写入时用的那个（彩色模式选「RGB 合成」），位平面拖到写入时的那一位。</li>
+        <li>图案会直接显示在画面里。整幅清零模式下背景是纯黑，图案是纯白（或 8 色）。</li>
+        <li>第 0～2 位肉眼几乎看不出原图变化；位数越高，原图上越容易出现色块。</li>
+      </ol>
+    </section>
+  </div>
+</main>
+
+<script src="./lsb.js"></script>
+<script src="./stencil.js"></script>
+</body>
+</html>
