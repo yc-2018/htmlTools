@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>图片隐藏数据分析 - 元数据 / LSB 隐写 / 频谱盲水印</title>
+  <meta name="description" content="纯浏览器本地检测图片中隐藏的 Exif 元数据、版权信息、LSB 隐写内容与频域盲水印。">
+  <link rel="icon" href="../favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<header class="top-bar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">◎</span>
+    图片隐藏数据分析
+  </div>
+  <nav class="top-links">
+    <a href="/index.html">首页</a>
+    <a href="./lsb-write.html">写入 LSB</a>
+  </nav>
+</header>
+
+<main class="shell">
+  <p class="crumb"><a href="/index.html">首页</a> / 图片隐藏数据分析</p>
+
+  <div class="page-head">
+    <h1>图片隐藏数据分析</h1>
+    <p>检测图片中隐藏的元数据、隐写信息和盲水印。</p>
+  </div>
+
+  <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="选择或拖入图片">
+    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M22 12h-6l-2 3h-4l-2-3H2"></path>
+      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>
+    </svg>
+    <div><strong>拖放图片到此处，或点击选择文件</strong></div>
+    <div class="hint">支持 JPG / PNG / WebP / GIF / BMP，图片只在本地浏览器解析，不会上传</div>
+  </div>
+  <input id="fileInput" type="file" accept="image/*" hidden>
+
+  <div class="zone-actions">
+    <span id="fileSummary" class="badge">未选择图片</span>
+    <button id="clearBtn" class="btn danger" type="button" hidden>清除图片</button>
+  </div>
+
+  <section class="card">
+    <div class="tabs" role="tablist" aria-label="分析类型">
+      <button class="tab" id="tabMeta" role="tab" aria-selected="true" aria-controls="panelMeta" type="button">
+        元数据 (Exif/Copyright)
+      </button>
+      <button class="tab" id="tabLsb" role="tab" aria-selected="false" aria-controls="panelLsb" type="button">
+        隐写分析 (LSB)
+      </button>
+      <button class="tab" id="tabFft" role="tab" aria-selected="false" aria-controls="panelFft" type="button">
+        频谱盲水印 (FFT)
+      </button>
+    </div>
+
+    <div id="panelMeta" class="tab-panel" role="tabpanel" aria-labelledby="tabMeta">
+      <div id="metaEmpty" class="empty">请选择一张图片，开始解析元数据。</div>
+      <div id="metaSearchBar" class="control-bar" hidden>
+        <div class="control grow">
+          <input id="metaSearch" type="search" placeholder="搜索标签…" autocomplete="off" spellcheck="false">
+        </div>
+        <span id="metaSearchInfo" class="badge">全部标签</span>
+      </div>
+      <div id="metaResult" hidden></div>
+    </div>
+
+    <div id="panelLsb" class="tab-panel" role="tabpanel" aria-labelledby="tabLsb" hidden>
+      <div class="control-bar">
+        <div class="control">
+          <span class="label">颜色通道</span>
+          <select id="lsbChannel">
+            <option value="r" selected>红 (R)</option>
+            <option value="g">绿 (G)</option>
+            <option value="b">蓝 (B)</option>
+            <option value="a">透明度 (A)</option>
+            <option value="gray">灰度</option>
+            <option value="rgb">RGB 合成</option>
+          </select>
+        </div>
+        <div class="control stack">
+          <span class="label">位平面 (Bit Plane): <strong id="lsbBitLabel">0</strong></span>
+          <input id="lsbBit" type="range" min="0" max="7" step="1" value="0">
+          <span class="slider-scale"><span>0（隐藏）</span><span>7（可见）</span></span>
+        </div>
+        <div class="control">
+          <span class="label">渲染</span>
+          <select id="lsbRender">
+            <option value="bw" selected>黑白位平面</option>
+            <option value="amplify">原色放大</option>
+          </select>
+        </div>
+        <label class="check"><input id="lsbInvert" type="checkbox"> 反色</label>
+      </div>
+
+      <div class="stage plain" id="lsbStage">
+        <canvas id="lsbCanvas" width="1" height="1"></canvas>
+      </div>
+      <p class="stage-tip">低位平面（0～2）本应是接近随机的噪点。若出现文字、二维码、色块或明显轮廓，说明该位平面被写入了数据。</p>
+
+      <div class="section-title">载荷提取</div>
+      <div id="lsbPayload" class="empty">等待图片…</div>
+
+      <div class="section-title">LSB 统计</div>
+      <div id="lsbStats"></div>
+    </div>
+
+    <div id="panelFft" class="tab-panel" role="tabpanel" aria-labelledby="tabFft" hidden>
+      <div class="control-bar">
+        <div class="control">
+          <span class="label">颜色通道</span>
+          <select id="fftChannel">
+            <option value="gray" selected>灰度</option>
+            <option value="r">红 (R)</option>
+            <option value="g">绿 (G)</option>
+            <option value="b">蓝 (B)</option>
+          </select>
+        </div>
+        <div class="control">
+          <span class="label">变换尺寸</span>
+          <select id="fftSize">
+            <option value="256">256 × 256</option>
+            <option value="512" selected>512 × 512</option>
+            <option value="1024">1024 × 1024</option>
+          </select>
+        </div>
+        <div class="control stack">
+          <span class="label">对比度: <strong id="fftGammaLabel">1.0</strong></span>
+          <input id="fftGamma" type="range" min="0.3" max="3" step="0.1" value="1">
+          <span class="slider-scale"><span>压暗</span><span>提亮</span></span>
+        </div>
+        <div class="control">
+          <span class="label">配色</span>
+          <select id="fftPalette">
+            <option value="gray" selected>灰度</option>
+            <option value="heat">热力</option>
+          </select>
+        </div>
+        <button id="fftRun" class="btn" type="button">重新计算</button>
+      </div>
+
+      <div class="stage plain" id="fftStage">
+        <canvas id="fftCanvas" width="1" height="1"></canvas>
+      </div>
+      <p class="stage-tip" id="fftTip">
+        频谱中心是低频，四周是高频。傅里叶盲水印通常表现为中心对称的一对亮斑、亮环，或直接能读出的对称文字。
+      </p>
+      <div id="fftPeaks"></div>
+    </div>
+  </section>
+
+  <p class="note muted">
+    全部解析在本地完成，页面不上传任何文件。需要往图片里写入隐藏文字，请到
+    <a href="./lsb-write.html">写入 LSB</a>。
+  </p>
+</main>
+
+<script src="./metadata.js"></script>
+<script src="./lsb.js"></script>
+<script src="./fft.js"></script>
+<script src="./analyze.js"></script>
+</body>
+</html>
