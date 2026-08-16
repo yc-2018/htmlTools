@@ -1,0 +1,149 @@
+<view class="wm-page">
+  <view class="compat-tip">
+    <view>把水印藏进图片的某一个二进制位里，肉眼看不出来，用「隐藏水印查看」才能读出来。</view>
+    <view style="font-weight: bold">声明: 图片全部在本地处理，不上传任何服务器，页面打开后断网也能用。这只是演示功能，实际的隐写技术可能更复杂和高级。</view>
+  </view>
+
+  <view class="panel">
+    <view class="media-card" bindtap="chooseCarrier">
+      <view class="media-card-head">
+        <view>
+          <view class="media-title">载体图片</view>
+          <view class="media-tip">{{carrierInfo || '建议用 PNG，JPG 会被压缩'}}</view>
+        </view>
+        <view class="media-actions">
+          <button class="small-btn ghost" catchtap="chooseCarrier">{{hasCarrier ? '换一张' : '选择'}}</button>
+        </view>
+      </view>
+      <view class="media-box">
+        <image wx:if="{{carrierPath}}" class="media-image" src="{{carrierPath}}" mode="aspectFit" />
+        <view wx:else class="empty">点这里选一张图片</view>
+      </view>
+    </view>
+    <view wx:if="{{carrierWarn}}" class="mode-tip">{{carrierWarn}}</view>
+  </view>
+
+  <!-- 图案水印 -->
+  <view wx:if="{{mode === 'stencil'}}" class="panel">
+    <view class="field">
+      <view class="field-label">水印文字</view>
+      <textarea class="field-textarea" value="{{patternText}}" data-field="patternText" bindinput="onInputField"
+        placeholder="要藏进去的文字，可以换行" maxlength="200" auto-height></textarea>
+    </view>
+
+    <view class="field">
+      <view class="field-label">字号 <text class="field-value">{{fontSize}} px</text></view>
+      <slider min="16" max="400" step="4" value="{{fontSize}}" data-field="fontSize" bindchanging="onSlider"
+        bindchange="onSlider" activeColor="#0f766e" block-size="20" />
+    </view>
+
+    <view class="field">
+      <view class="field-label">旋转 <text class="field-value">{{rotate}}°</text></view>
+      <slider min="-90" max="90" step="5" value="{{rotate}}" data-field="rotate" bindchanging="onSlider"
+        bindchange="onSlider" activeColor="#0f766e" block-size="20" />
+    </view>
+
+    <view class="switch-row">
+      <view class="switch-cell">
+        <text>加粗</text>
+        <switch checked="{{bold}}" data-field="bold" bindchange="onSwitch" color="#0f766e" />
+      </view>
+      <view class="switch-cell">
+        <text>平铺铺满</text>
+        <switch checked="{{tile}}" data-field="tile" bindchange="onSwitch" color="#0f766e" />
+      </view>
+    </view>
+
+    <view class="switch-row">
+      <view class="switch-cell">
+        <text>彩色（占 RGB 三通道）</text>
+        <switch checked="{{colorMode}}" data-field="colorMode" bindchange="onSwitch" color="#0f766e" />
+      </view>
+    </view>
+
+    <view wx:if="{{colorMode}}" class="field">
+      <view class="field-label">图案颜色</view>
+      <view class="chip-row">
+        <view wx:for="{{colorSwatches}}" wx:key="value" class="chip {{patternColor === item.value ? 'on' : ''}}"
+          data-field="patternColor" data-value="{{item.value}}" bindtap="pickOption">{{item.label}}</view>
+      </view>
+    </view>
+
+    <view wx:else class="field">
+      <view class="field-label">写入通道</view>
+      <view class="chip-row">
+        <view class="chip {{channel === 'r' ? 'on' : ''}}" data-field="channel" data-value="r" bindtap="pickOption">红 R</view>
+        <view class="chip {{channel === 'g' ? 'on' : ''}}" data-field="channel" data-value="g" bindtap="pickOption">绿 G</view>
+        <view class="chip {{channel === 'b' ? 'on' : ''}}" data-field="channel" data-value="b" bindtap="pickOption">蓝 B</view>
+      </view>
+    </view>
+
+    <view class="field">
+      <view class="field-label">写入第几位 <text class="field-value">{{plane === 0 ? '0（最低位，最隐蔽）' : (plane === 7 ? '7（最高位，肉眼可见）' : plane)}}</text></view>
+      <view class="chip-row">
+        <view wx:for="{{[0,1,2,3,4,5,6,7]}}" wx:key="*this" class="chip small {{plane === item ? 'on' : ''}}"
+          data-field="plane" data-value="{{item}}" bindtap="pickOption">{{item}}</view>
+      </view>
+    </view>
+
+    <view class="field">
+      <view class="field-label">二值化阈值 <text class="field-value">{{threshold}}</text></view>
+      <slider min="1" max="254" value="{{threshold}}" data-field="threshold" bindchanging="onSlider"
+        bindchange="onSlider" activeColor="#0f766e" block-size="20" />
+    </view>
+
+    <view class="switch-row">
+      <view class="switch-cell">
+        <text>抖动（灰度更细腻）</text>
+        <switch checked="{{dither}}" data-field="dither" bindchange="onSwitch" color="#0f766e" />
+      </view>
+      <view class="switch-cell">
+        <text>反色</text>
+        <switch checked="{{invert}}" data-field="invert" bindchange="onSwitch" color="#0f766e" />
+      </view>
+    </view>
+
+    <view class="switch-row">
+      <view class="switch-cell">
+        <text>整幅清零（图案更干净）</text>
+        <switch checked="{{wholeClear}}" data-field="wholeClear" bindchange="onSwitch" color="#0f766e" />
+      </view>
+    </view>
+
+    <view class="mode-tip">位数越小越隐蔽，第 0 位基本看不出改动；第 5 位往上原图会开始发花。整幅清零关掉的话，只改图案覆盖到的地方，原图那一位的噪点会留着，看起来会脏一点。</view>
+
+    <view class="actions">
+      <button class="primary-btn" loading="{{isBuilding}}" disabled="{{isBuilding}}" bindtap="doWrite">写入并生成图片</button>
+    </view>
+  </view>
+
+  <!-- 结果（用 hidden 而不是 wx:if，好让预览 canvas 一直挂在页面上） -->
+  <view class="panel" hidden="{{!resultPath}}">
+    <view class="media-title">生成结果</view>
+    <view class="field-tip result-info">{{resultInfo}}</view>
+    <view class="preview-wrap">
+      <canvas id="planeCanvas" type="2d" class="plane-canvas" style="{{previewStyle}}"></canvas>
+      <view class="field-tip">↑ 这是写进去的那一位单独抽出来的样子</view>
+    </view>
+    <view class="actions">
+      <button class="primary-btn ghost" bindtap="previewResult">预览原图</button>
+      <button class="primary-btn" bindtap="saveResult">保存到相册</button>
+    </view>
+  </view>
+
+  <view wx:if="{{statusText}}" class="status {{statusError ? 'error' : ''}}">{{statusText}}</view>
+
+  <view class="tech-note">
+    <view class="tech-title">技术说明</view>
+    <view class="tech-text">本工具使用 LSB（最低有效位）隐写技术，将水印藏在图片像素的最低几位。这是一种<text class="tech-em">脆弱水印</text>，优点是简单、隐蔽、容量大，但抗攻击能力有限：</view>
+    <view class="tech-list">
+      <view class="tech-item">✓ PNG 格式传输（原图/文件）可完整保留</view>
+      <view class="tech-item">✓ 截图保存为 PNG 格式可能保留</view>
+      <view class="tech-item">✗ 转成 JPG 格式会完全丢失（有损压缩破坏低位）</view>
+      <view class="tech-item">✗ 微信普通发送/朋友圈会转 JPG，水印丢失</view>
+    </view>
+    <view class="tech-text">实际应用中存在更高级的水印技术（频域水印、扩频水印、盲水印等），可以抵抗 JPG 压缩、截图、裁剪等攻击，鲁棒性远超本工具。本工具仅用于演示 LSB 隐写原理。</view>
+  </view>
+
+  <canvas id="workCanvas" type="2d" class="work-canvas"></canvas>
+</view>
