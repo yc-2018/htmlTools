@@ -1,0 +1,1808 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>二维码工具 - 在线生成器 &amp; 扫描器</title>
+  <style>
+    :root {
+      --qrt-accent: #2563eb;
+      --qrt-accent-dark: #1d4ed8;
+      --qrt-bg: #f3f5f9;
+      --qrt-card: #ffffff;
+      --qrt-border: #d8dee9;
+      --qrt-text: #1f2937;
+      --qrt-text-2: #6b7280;
+      --qrt-radius: 14px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0 16px 48px;
+      background: var(--qrt-bg);
+      color: var(--qrt-text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .qrt-container {
+      max-width: 1080px;
+      margin: 0 auto;
+    }
+
+    /* ---------- 头部 ---------- */
+    .qrt-header {
+      text-align: center;
+      padding: 28px 0 18px;
+    }
+
+    .qrt-header h1 {
+      margin: 0 0 6px;
+      font-size: 26px;
+    }
+
+    .qrt-header p {
+      margin: 0;
+      color: var(--qrt-text-2);
+      font-size: 14px;
+    }
+
+    /* ---------- 模式切换 ---------- */
+    .qrt-mode-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 4px;
+      margin: 0 auto 22px;
+      padding: 4px;
+      width: fit-content;
+      background: #e6eaf2;
+      border-radius: 999px;
+    }
+
+    .qrt-mode-tabs button {
+      border: 0;
+      background: transparent;
+      padding: 8px 22px;
+      border-radius: 999px;
+      font-size: 14px;
+      cursor: pointer;
+      color: var(--qrt-text-2);
+      transition: all 0.15s;
+    }
+
+    .qrt-mode-tabs button.active {
+      background: var(--qrt-card);
+      color: var(--qrt-accent);
+      font-weight: 600;
+      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
+    }
+
+    .qrt-panel {
+      display: none;
+    }
+
+    .qrt-panel.active {
+      display: block;
+    }
+
+    /* ---------- 卡片 ---------- */
+    .qrt-card {
+      background: var(--qrt-card);
+      border-radius: var(--qrt-radius);
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 14px rgba(15, 23, 42, 0.04);
+      margin-bottom: 16px;
+    }
+
+    .qrt-card h2 {
+      margin: 0 0 14px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--qrt-text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .qrt-card h2::before {
+      content: "";
+      display: inline-block;
+      width: 4px;
+      height: 14px;
+      border-radius: 2px;
+      background: var(--qrt-accent);
+    }
+
+    .qrt-block + .qrt-block {
+      margin-top: 22px;
+      padding-top: 18px;
+      border-top: 1px dashed var(--qrt-border);
+    }
+
+    /* ---------- 生成器布局 ---------- */
+    .qrt-gen-grid {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .qrt-preview-card {
+      position: sticky;
+      top: 16px;
+      text-align: center;
+    }
+
+    /* ---------- 内容类型 ---------- */
+    .qrt-type-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .qrt-type-tabs button {
+      border: 1px solid var(--qrt-border);
+      background: #f8fafc;
+      padding: 7px 16px;
+      border-radius: 999px;
+      font-size: 13px;
+      cursor: pointer;
+      color: var(--qrt-text-2);
+      transition: all 0.15s;
+    }
+
+    .qrt-type-tabs button:hover {
+      border-color: var(--qrt-accent);
+      color: var(--qrt-accent);
+    }
+
+    .qrt-type-tabs button.active {
+      background: var(--qrt-accent);
+      border-color: var(--qrt-accent);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .qrt-fields > div {
+      display: none;
+    }
+
+    .qrt-fields > div.active {
+      display: block;
+    }
+
+    /* ---------- 表单 ---------- */
+    .qrt-field {
+      margin-bottom: 12px;
+    }
+
+    .qrt-field:last-child {
+      margin-bottom: 0;
+    }
+
+    .qrt-field label {
+      display: block;
+      font-size: 13px;
+      color: #4b5563;
+      margin-bottom: 5px;
+    }
+
+    .qrt-field label .qrt-required {
+      color: #dc2626;
+      margin-left: 2px;
+    }
+
+    .qrt-field input[type="text"],
+    .qrt-field input[type="tel"],
+    .qrt-field input[type="email"],
+    .qrt-field input[type="url"],
+    .qrt-field input[type="password"],
+    .qrt-field textarea,
+    .qrt-field select {
+      width: 100%;
+      padding: 9px 11px;
+      border: 1px solid var(--qrt-border);
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--qrt-text);
+      background: #fff;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .qrt-field textarea {
+      resize: vertical;
+      min-height: 88px;
+    }
+
+    .qrt-field input:focus,
+    .qrt-field textarea:focus,
+    .qrt-field select:focus {
+      border-color: var(--qrt-accent);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+
+    .qrt-field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .qrt-count {
+      text-align: right;
+      font-size: 12px;
+      color: var(--qrt-text-2);
+      margin-top: 4px;
+    }
+
+    .qrt-check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #4b5563;
+      cursor: pointer;
+    }
+
+    .qrt-check input {
+      accent-color: var(--qrt-accent);
+      width: 16px;
+      height: 16px;
+    }
+
+    /* ---------- 颜色 ---------- */
+    .qrt-color-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .qrt-color-item label {
+      display: block;
+      font-size: 13px;
+      color: #4b5563;
+      margin-bottom: 5px;
+    }
+
+    .qrt-color-item .qrt-color-line {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .qrt-color-item input[type="color"] {
+      width: 42px;
+      height: 36px;
+      padding: 2px;
+      border: 1px solid var(--qrt-border);
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .qrt-color-item input[type="text"] {
+      flex: 1;
+      min-width: 0;
+      padding: 8px 10px;
+      border: 1px solid var(--qrt-border);
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: Consolas, monospace;
+      text-transform: lowercase;
+      outline: none;
+    }
+
+    .qrt-color-item input[type="text"]:focus {
+      border-color: var(--qrt-accent);
+    }
+
+    /* ---------- 滑块 ---------- */
+    .qrt-slider-line {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .qrt-slider-line input[type="range"] {
+      flex: 1;
+      accent-color: var(--qrt-accent);
+    }
+
+    .qrt-slider-value {
+      min-width: 58px;
+      text-align: center;
+      font-size: 13px;
+      background: #eef2f9;
+      border-radius: 6px;
+      padding: 4px 8px;
+      color: var(--qrt-accent);
+      font-weight: 600;
+    }
+
+    .qrt-field-label {
+      font-size: 13px;
+      color: #4b5563;
+      margin-bottom: 6px;
+      display: block;
+    }
+
+    .qrt-setting-item {
+      margin-bottom: 14px;
+    }
+
+    .qrt-setting-item:last-child {
+      margin-bottom: 0;
+    }
+
+    /* ---------- 分段选择 ---------- */
+    .qrt-seg {
+      display: flex;
+      background: #eef1f6;
+      border-radius: 8px;
+      padding: 3px;
+      gap: 2px;
+    }
+
+    .qrt-seg button {
+      flex: 1;
+      border: 0;
+      background: transparent;
+      padding: 7px 4px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      color: var(--qrt-text-2);
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .qrt-seg button.active {
+      background: #fff;
+      color: var(--qrt-accent);
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+    }
+
+    .qrt-seg button small {
+      display: block;
+      font-size: 11px;
+      font-weight: 400;
+      color: inherit;
+      opacity: 0.75;
+    }
+
+    /* ---------- 上传 ---------- */
+    .qrt-upload-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .qrt-upload-btn {
+      display: inline-block;
+      padding: 8px 14px;
+      border: 1px dashed var(--qrt-accent);
+      border-radius: 8px;
+      color: var(--qrt-accent);
+      font-size: 13px;
+      cursor: pointer;
+      background: #f5f8ff;
+      transition: background 0.15s;
+    }
+
+    .qrt-upload-btn:hover {
+      background: #e8efff;
+    }
+
+    .qrt-upload-info {
+      flex: 1;
+      min-width: 0;
+      font-size: 13px;
+      color: var(--qrt-text-2);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .qrt-upload-thumb {
+      width: 34px;
+      height: 34px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid var(--qrt-border);
+      vertical-align: middle;
+    }
+
+    .qrt-remove-btn {
+      border: 0;
+      background: transparent;
+      color: #dc2626;
+      cursor: pointer;
+      font-size: 13px;
+      padding: 4px 6px;
+    }
+
+    .qrt-remove-btn:hover {
+      text-decoration: underline;
+    }
+
+    /* ---------- 按钮 ---------- */
+    .qrt-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border: 0;
+      background: var(--qrt-accent);
+      color: #fff;
+      padding: 10px 22px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .qrt-btn:hover {
+      background: var(--qrt-accent-dark);
+    }
+
+    .qrt-btn:disabled {
+      background: #9db4e8;
+      cursor: not-allowed;
+    }
+
+    .qrt-btn-ghost {
+      background: #fff;
+      color: var(--qrt-text-2);
+      border: 1px solid var(--qrt-border);
+      font-weight: 500;
+    }
+
+    .qrt-btn-ghost:hover {
+      background: #f8fafc;
+      color: var(--qrt-text);
+    }
+
+    .qrt-btn-danger {
+      background: #dc2626;
+    }
+
+    .qrt-btn-danger:hover {
+      background: #b91c1c;
+    }
+
+    .qrt-export-line {
+      display: flex;
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .qrt-export-line .qrt-seg {
+      flex: 1;
+    }
+
+    .qrt-export-line .qrt-btn {
+      flex-shrink: 0;
+    }
+
+    /* ---------- 预览 ---------- */
+    .qrt-preview-box {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 240px;
+      padding: 14px;
+      background:
+        linear-gradient(45deg, #eef0f4 25%, transparent 25%, transparent 75%, #eef0f4 75%),
+        linear-gradient(45deg, #eef0f4 25%, transparent 25%, transparent 75%, #eef0f4 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 10px 10px;
+      border: 1px solid var(--qrt-border);
+      border-radius: 10px;
+    }
+
+    #qrt-canvas {
+      max-width: 100%;
+      height: auto;
+      border-radius: 4px;
+    }
+
+    .qrt-preview-empty {
+      color: #9ca3af;
+      font-size: 14px;
+      text-align: center;
+      padding: 40px 10px;
+    }
+
+    .qrt-preview-empty .qrt-preview-icon {
+      font-size: 40px;
+      display: block;
+      margin-bottom: 8px;
+      opacity: 0.5;
+    }
+
+    .qrt-error {
+      margin-top: 10px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #b91c1c;
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 13px;
+      text-align: left;
+    }
+
+    .qrt-warn {
+      margin-top: 10px;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      color: #92400e;
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 13px;
+      text-align: left;
+    }
+
+    .qrt-tip {
+      margin: 12px 0 0;
+      font-size: 12px;
+      color: var(--qrt-text-2);
+      text-align: left;
+    }
+
+    /* ---------- 扫描器布局 ---------- */
+    .qrt-scan-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .qrt-scan-grid .qrt-card {
+      margin-bottom: 16px;
+    }
+
+    .qrt-video-box {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background: #0f172a;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .qrt-video-box video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .qrt-video-placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      color: #64748b;
+      font-size: 13px;
+    }
+
+    .qrt-video-placeholder .qrt-preview-icon {
+      font-size: 42px;
+      opacity: 0.6;
+    }
+
+    .qrt-video-status {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 8px 12px;
+      background: rgba(15, 23, 42, 0.65);
+      color: #e2e8f0;
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .qrt-scan-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* ---------- 上传区 ---------- */
+    .qrt-dropzone {
+      border: 2px dashed var(--qrt-border);
+      border-radius: 10px;
+      padding: 34px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.15s;
+      background: #fafbfd;
+    }
+
+    .qrt-dropzone:hover,
+    .qrt-dropzone.qrt-dragover {
+      border-color: var(--qrt-accent);
+      background: #f0f5ff;
+    }
+
+    .qrt-dropzone .qrt-preview-icon {
+      font-size: 38px;
+      display: block;
+      margin-bottom: 8px;
+      opacity: 0.6;
+    }
+
+    .qrt-dropzone strong {
+      color: var(--qrt-accent);
+    }
+
+    .qrt-dropzone p {
+      margin: 6px 0 0;
+      font-size: 12px;
+      color: var(--qrt-text-2);
+    }
+
+    .qrt-image-preview {
+      display: none;
+      margin-top: 12px;
+    }
+
+    .qrt-image-preview.show {
+      display: block;
+    }
+
+    .qrt-image-preview img {
+      max-width: 100%;
+      max-height: 220px;
+      border-radius: 8px;
+      border: 1px solid var(--qrt-border);
+      display: block;
+      margin: 0 auto;
+    }
+
+    /* ---------- 结果 ---------- */
+    .qrt-result-text {
+      background: #f8fafc;
+      border: 1px solid var(--qrt-border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 14px;
+      font-family: Consolas, "Courier New", monospace;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 220px;
+      overflow: auto;
+      margin: 0 0 12px;
+    }
+
+    .qrt-result-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* ---------- 提示条 ---------- */
+    #qrt-toast {
+      position: fixed;
+      left: 50%;
+      bottom: 32px;
+      transform: translateX(-50%) translateY(20px);
+      background: #111827;
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 999px;
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.25s;
+      z-index: 999;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+      max-width: 86vw;
+    }
+
+    #qrt-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .qrt-hidden {
+      display: none !important;
+    }
+
+    /* ---------- 响应式 ---------- */
+    @media (max-width: 900px) {
+      .qrt-gen-grid,
+      .qrt-scan-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .qrt-preview-card {
+        position: static;
+        order: -1;
+      }
+
+      .qrt-field-row,
+      .qrt-color-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="qrt-container">
+    <header class="qrt-header">
+      <h1>二维码工具</h1>
+      <p>在线二维码生成器与扫描器：支持链接、WiFi、名片等内容，可自定义颜色、Logo，导出 PNG / JPEG / SVG / WebP。全部计算在浏览器本地完成，不上传任何数据。</p>
+    </header>
+
+    <nav class="qrt-mode-tabs" id="qrt-mode-tabs">
+      <button type="button" data-mode="generator" class="active">二维码生成器</button>
+      <button type="button" data-mode="scanner">二维码扫描器</button>
+    </nav>
+
+    <!-- ==================== 生成器 ==================== -->
+    <section class="qrt-panel active" id="qrt-panel-generator">
+      <div class="qrt-gen-grid">
+        <div class="qrt-card">
+          <!-- 内容类型 -->
+          <div class="qrt-block">
+            <h2>内容类型</h2>
+            <div class="qrt-type-tabs" id="qrt-type-tabs">
+              <button type="button" data-type="link" class="active">文本/链接</button>
+              <button type="button" data-type="wifi">WiFi</button>
+              <button type="button" data-type="vcard">名片</button>
+              <button type="button" data-type="email">邮件</button>
+              <button type="button" data-type="phone">电话</button>
+              <button type="button" data-type="sms">短信</button>
+            </div>
+
+            <div class="qrt-fields">
+              <div data-type="link" class="active">
+                <div class="qrt-field">
+                  <label for="qrt-link-input">内容<span class="qrt-required">*</span></label>
+                  <textarea id="qrt-link-input" maxlength="1000" placeholder="输入网址、文本或任意内容"></textarea>
+                  <div class="qrt-count"><span id="qrt-link-count">0</span>/1000</div>
+                </div>
+              </div>
+
+              <div data-type="wifi">
+                <div class="qrt-field">
+                  <label for="qrt-wifi-ssid">网络名称 (SSID)<span class="qrt-required">*</span></label>
+                  <input type="text" id="qrt-wifi-ssid" placeholder="例如：HomeWiFi">
+                </div>
+                <div class="qrt-field">
+                  <label for="qrt-wifi-password">密码</label>
+                  <input type="password" id="qrt-wifi-password" placeholder="WiFi 密码" autocomplete="new-password">
+                </div>
+                <div class="qrt-field-row">
+                  <div class="qrt-field">
+                    <label for="qrt-wifi-enc">加密方式</label>
+                    <select id="qrt-wifi-enc">
+                      <option value="WPA">WPA / WPA2 / WPA3</option>
+                      <option value="WEP">WEP</option>
+                      <option value="nopass">无加密</option>
+                    </select>
+                  </div>
+                  <div class="qrt-field">
+                    <label>&nbsp;</label>
+                    <label class="qrt-check"><input type="checkbox" id="qrt-wifi-hidden">隐藏网络</label>
+                  </div>
+                </div>
+              </div>
+
+              <div data-type="vcard">
+                <div class="qrt-field-row">
+                  <div class="qrt-field">
+                    <label for="qrt-vcard-name">姓名<span class="qrt-required">*</span></label>
+                    <input type="text" id="qrt-vcard-name" placeholder="张三">
+                  </div>
+                  <div class="qrt-field">
+                    <label for="qrt-vcard-tel">电话</label>
+                    <input type="tel" id="qrt-vcard-tel" placeholder="13800138000">
+                  </div>
+                </div>
+                <div class="qrt-field-row">
+                  <div class="qrt-field">
+                    <label for="qrt-vcard-email">邮箱</label>
+                    <input type="email" id="qrt-vcard-email" placeholder="name@example.com">
+                  </div>
+                  <div class="qrt-field">
+                    <label for="qrt-vcard-org">公司</label>
+                    <input type="text" id="qrt-vcard-org" placeholder="XX科技有限公司">
+                  </div>
+                </div>
+                <div class="qrt-field-row">
+                  <div class="qrt-field">
+                    <label for="qrt-vcard-title">职位</label>
+                    <input type="text" id="qrt-vcard-title" placeholder="软件工程师">
+                  </div>
+                  <div class="qrt-field">
+                    <label for="qrt-vcard-url">网址</label>
+                    <input type="url" id="qrt-vcard-url" placeholder="https://example.com">
+                  </div>
+                </div>
+                <div class="qrt-field">
+                  <label for="qrt-vcard-addr">地址</label>
+                  <input type="text" id="qrt-vcard-addr" placeholder="广东省深圳市南山区……">
+                </div>
+              </div>
+
+              <div data-type="email">
+                <div class="qrt-field">
+                  <label for="qrt-email-to">收件人<span class="qrt-required">*</span></label>
+                  <input type="email" id="qrt-email-to" placeholder="name@example.com">
+                </div>
+                <div class="qrt-field">
+                  <label for="qrt-email-subject">主题</label>
+                  <input type="text" id="qrt-email-subject" placeholder="邮件主题">
+                </div>
+                <div class="qrt-field">
+                  <label for="qrt-email-body">正文</label>
+                  <textarea id="qrt-email-body" placeholder="邮件内容"></textarea>
+                </div>
+              </div>
+
+              <div data-type="phone">
+                <div class="qrt-field">
+                  <label for="qrt-phone-num">电话号码<span class="qrt-required">*</span></label>
+                  <input type="tel" id="qrt-phone-num" placeholder="13800138000">
+                </div>
+              </div>
+
+              <div data-type="sms">
+                <div class="qrt-field">
+                  <label for="qrt-sms-num">电话号码<span class="qrt-required">*</span></label>
+                  <input type="tel" id="qrt-sms-num" placeholder="13800138000">
+                </div>
+                <div class="qrt-field">
+                  <label for="qrt-sms-body">短信内容</label>
+                  <textarea id="qrt-sms-body" placeholder="短信正文"></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 高级设置 -->
+          <div class="qrt-block">
+            <h2>高级设置</h2>
+            <div class="qrt-setting-item">
+              <span class="qrt-field-label">颜色设置</span>
+              <div class="qrt-color-row">
+                <div class="qrt-color-item">
+                  <label for="qrt-color-fg">前景色</label>
+                  <div class="qrt-color-line">
+                    <input type="color" id="qrt-color-fg" value="#000000">
+                    <input type="text" id="qrt-color-fg-hex" value="#000000" maxlength="7" spellcheck="false">
+                  </div>
+                </div>
+                <div class="qrt-color-item">
+                  <label for="qrt-color-bg">背景色</label>
+                  <div class="qrt-color-line">
+                    <input type="color" id="qrt-color-bg" value="#ffffff">
+                    <input type="text" id="qrt-color-bg-hex" value="#ffffff" maxlength="7" spellcheck="false">
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="qrt-setting-item">
+              <label class="qrt-field-label" for="qrt-size">尺寸</label>
+              <div class="qrt-slider-line">
+                <input type="range" id="qrt-size" min="100" max="500" step="10" value="280">
+                <span class="qrt-slider-value" id="qrt-size-value">280 px</span>
+              </div>
+            </div>
+
+            <div class="qrt-setting-item">
+              <span class="qrt-field-label">纠错等级</span>
+              <div class="qrt-seg" id="qrt-ec-seg">
+                <button type="button" data-ec="L">L<small>低 · 7%</small></button>
+                <button type="button" data-ec="M" class="active">M<small>中 · 15%</small></button>
+                <button type="button" data-ec="Q">Q<small>高 · 25%</small></button>
+                <button type="button" data-ec="H">H<small>最高 · 30%</small></button>
+              </div>
+            </div>
+
+            <div class="qrt-setting-item">
+              <span class="qrt-field-label">模块样式</span>
+              <div class="qrt-seg" id="qrt-style-seg">
+                <button type="button" data-style="square" class="active">方块</button>
+                <button type="button" data-style="rounded">圆角</button>
+                <button type="button" data-style="dot">圆点</button>
+                <button type="button" data-style="diamond">菱形</button>
+              </div>
+            </div>
+
+            <div class="qrt-setting-item">
+              <span class="qrt-field-label">中心 Logo</span>
+              <div class="qrt-upload-line">
+                <label class="qrt-upload-btn" for="qrt-logo-file">上传图片</label>
+                <input type="file" id="qrt-logo-file" accept="image/*" class="qrt-hidden">
+                <span class="qrt-upload-info" id="qrt-logo-info">未设置，建议搭配 H 级纠错</span>
+                <button type="button" class="qrt-remove-btn qrt-hidden" id="qrt-logo-remove">移除</button>
+              </div>
+            </div>
+
+            <div class="qrt-setting-item">
+              <span class="qrt-field-label">背景装饰</span>
+              <div class="qrt-upload-line">
+                <label class="qrt-upload-btn" for="qrt-bg-file">上传图片</label>
+                <input type="file" id="qrt-bg-file" accept="image/*" class="qrt-hidden">
+                <span class="qrt-upload-info" id="qrt-bg-info">未设置，将以半透明方式叠加在背景上</span>
+                <button type="button" class="qrt-remove-btn qrt-hidden" id="qrt-bg-remove">移除</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 导出 -->
+          <div class="qrt-block">
+            <h2>导出</h2>
+            <div class="qrt-export-line">
+              <div class="qrt-seg" id="qrt-format-seg">
+                <button type="button" data-format="png" class="active">PNG</button>
+                <button type="button" data-format="jpeg">JPEG</button>
+                <button type="button" data-format="svg">SVG</button>
+                <button type="button" data-format="webp">WebP</button>
+              </div>
+              <button type="button" class="qrt-btn" id="qrt-export-btn">⬇ 导出二维码</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="qrt-card qrt-preview-card">
+          <h2>实时预览</h2>
+          <div class="qrt-preview-box">
+            <canvas id="qrt-canvas" class="qrt-hidden" width="280" height="280"></canvas>
+            <div class="qrt-preview-empty" id="qrt-preview-empty">
+              <span class="qrt-preview-icon">⬛</span>
+              在左侧输入内容后将自动生成二维码
+            </div>
+          </div>
+          <div class="qrt-error qrt-hidden" id="qrt-gen-error"></div>
+          <div class="qrt-warn qrt-hidden" id="qrt-gen-warn"></div>
+          <p class="qrt-tip">提示：添加中心 Logo 或背景图后，建议使用 H 级纠错并保持前景与背景高对比度，以免影响扫描。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 扫描器 ==================== -->
+    <section class="qrt-panel" id="qrt-panel-scanner">
+      <div class="qrt-scan-grid">
+        <div class="qrt-card">
+          <h2>摄像头扫描</h2>
+          <div class="qrt-video-box">
+            <video id="qrt-video" autoplay playsinline muted></video>
+            <div class="qrt-video-placeholder" id="qrt-video-placeholder">
+              <span class="qrt-preview-icon">📷</span>
+              点击「启动摄像头」开始实时扫描
+            </div>
+            <div class="qrt-video-status qrt-hidden" id="qrt-video-status"></div>
+          </div>
+          <div class="qrt-scan-actions">
+            <button type="button" class="qrt-btn" id="qrt-camera-start">启动摄像头</button>
+            <button type="button" class="qrt-btn qrt-btn-danger qrt-hidden" id="qrt-camera-stop">停止</button>
+            <button type="button" class="qrt-btn qrt-btn-ghost qrt-hidden" id="qrt-camera-switch">切换摄像头</button>
+          </div>
+        </div>
+
+        <div class="qrt-card">
+          <h2>上传图片识别</h2>
+          <div class="qrt-dropzone" id="qrt-dropzone">
+            <span class="qrt-preview-icon">🖼️</span>
+            <div><strong>点击选择</strong> 或拖拽图片到此处</div>
+            <p>支持 JPEG、PNG、GIF、BMP、WebP 等格式，也可以直接 Ctrl + V 粘贴图片</p>
+          </div>
+          <input type="file" id="qrt-file-input" accept="image/*" class="qrt-hidden">
+          <div class="qrt-image-preview" id="qrt-image-preview">
+            <img id="qrt-image-thumb" alt="待识别图片预览">
+          </div>
+        </div>
+      </div>
+
+      <div class="qrt-card qrt-hidden" id="qrt-result-card">
+        <h2>解码结果</h2>
+        <div class="qrt-result-text" id="qrt-result-text"></div>
+        <div class="qrt-result-actions">
+          <button type="button" class="qrt-btn" id="qrt-copy-btn">复制内容</button>
+          <button type="button" class="qrt-btn qrt-btn-ghost" id="qrt-open-btn">打开链接 ↗</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="qrt-toast"></div>
+
+  <script src="./qrcode-generator-1.4.4.js"></script>
+  <script src="./jsqr-1.4.0.js"></script>
+  <script>
+    /* ================================================================
+     * 通用工具
+     * ================================================================ */
+    function $(sel) { return document.querySelector(sel); }
+    function $$(sel) { return document.querySelectorAll(sel); }
+
+    var toastTimer = null;
+    function showToast(msg) {
+      var el = $('#qrt-toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2200);
+    }
+
+    function downloadBlob(blob, filename) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    }
+
+    function luminance(hex) {
+      var m = /^#?([0-9a-f]{6})$/i.exec(hex);
+      if (!m) return null;
+      var v = parseInt(m[1], 16);
+      var r = (v >> 16) & 255, g = (v >> 8) & 255, b = v & 255;
+      return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    }
+
+    function roundRectPath(ctx, x, y, w, h, r) {
+      if (ctx.roundRect) {
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, r);
+        return;
+      }
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    /* ================================================================
+     * 模式切换（生成器 / 扫描器）
+     * ================================================================ */
+    $$('#qrt-mode-tabs button').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        $$('#qrt-mode-tabs button').forEach(function (b) { b.classList.toggle('active', b === btn); });
+        var mode = btn.dataset.mode;
+        $('#qrt-panel-generator').classList.toggle('active', mode === 'generator');
+        $('#qrt-panel-scanner').classList.toggle('active', mode === 'scanner');
+        if (mode !== 'scanner') stopCamera();
+      });
+    });
+
+    /* ================================================================
+     * 生成器
+     * ================================================================ */
+    qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+
+    var gen = {
+      type: 'link',
+      fg: '#000000',
+      bg: '#ffffff',
+      size: 280,
+      ec: 'M',
+      style: 'square',
+      format: 'png',
+      logoImg: null,
+      logoUrl: null,
+      bgImg: null,
+      bgUrl: null,
+      matrix: null  // 当前二维码模块矩阵
+    };
+
+    /* ---------- 各内容类型的编码 ---------- */
+    function escWifi(s) {
+      return String(s).replace(/([\\;,:"'])/g, '\\$1');
+    }
+
+    var contentBuilders = {
+      link: function () {
+        return { text: $('#qrt-link-input').value.trim(), missing: '请输入链接或文本内容' };
+      },
+      wifi: function () {
+        var ssid = $('#qrt-wifi-ssid').value.trim();
+        if (!ssid) return { text: '', missing: '请输入 WiFi 网络名称 (SSID)' };
+        var enc = $('#qrt-wifi-enc').value;
+        var pass = $('#qrt-wifi-password').value;
+        var hidden = $('#qrt-wifi-hidden').checked;
+        var text = 'WIFI:T:' + enc + ';S:' + escWifi(ssid) + ';';
+        if (enc !== 'nopass') text += 'P:' + escWifi(pass) + ';';
+        if (hidden) text += 'H:true;';
+        text += ';';
+        return { text: text };
+      },
+      vcard: function () {
+        var name = $('#qrt-vcard-name').value.trim();
+        if (!name) return { text: '', missing: '请输入姓名' };
+        var lines = ['BEGIN:VCARD', 'VERSION:3.0', 'N:' + name + ';;;', 'FN:' + name];
+        var org = $('#qrt-vcard-org').value.trim();
+        var title = $('#qrt-vcard-title').value.trim();
+        var tel = $('#qrt-vcard-tel').value.trim();
+        var email = $('#qrt-vcard-email').value.trim();
+        var url = $('#qrt-vcard-url').value.trim();
+        var addr = $('#qrt-vcard-addr').value.trim();
+        if (org) lines.push('ORG:' + org);
+        if (title) lines.push('TITLE:' + title);
+        if (tel) lines.push('TEL;TYPE=CELL:' + tel);
+        if (email) lines.push('EMAIL:' + email);
+        if (url) lines.push('URL:' + url);
+        if (addr) lines.push('ADR;TYPE=WORK:;;' + addr + ';;;;');
+        lines.push('END:VCARD');
+        return { text: lines.join('\r\n') };
+      },
+      email: function () {
+        var to = $('#qrt-email-to').value.trim();
+        if (!to) return { text: '', missing: '请输入收件人邮箱' };
+        var subject = $('#qrt-email-subject').value.trim();
+        var body = $('#qrt-email-body').value;
+        var text = 'mailto:' + to;
+        var params = [];
+        if (subject) params.push('subject=' + encodeURIComponent(subject));
+        if (body) params.push('body=' + encodeURIComponent(body));
+        if (params.length) text += '?' + params.join('&');
+        return { text: text };
+      },
+      phone: function () {
+        var num = $('#qrt-phone-num').value.trim();
+        if (!num) return { text: '', missing: '请输入电话号码' };
+        return { text: 'tel:' + num };
+      },
+      sms: function () {
+        var num = $('#qrt-sms-num').value.trim();
+        if (!num) return { text: '', missing: '请输入电话号码' };
+        var body = $('#qrt-sms-body').value.trim();
+        return { text: 'SMSTO:' + num + (body ? ':' + body : '') };
+      }
+    };
+
+    /* ---------- 生成模块矩阵 ---------- */
+    function makeMatrix(text) {
+      var qr = qrcode(0, gen.ec);
+      qr.addData(text, 'Byte');
+      qr.make();
+      var n = qr.getModuleCount();
+      var m = [];
+      for (var r = 0; r < n; r++) {
+        var row = [];
+        for (var c = 0; c < n; c++) row.push(qr.isDark(r, c));
+        m.push(row);
+      }
+      return m;
+    }
+
+    /* ---------- 画布绘制 ---------- */
+    var MARGIN_MODULES = 4;
+
+    function drawCanvas() {
+      var canvas = $('#qrt-canvas');
+      var matrix = gen.matrix;
+      if (!matrix) return;
+      var size = gen.size;
+      var n = matrix.length;
+      var total = n + MARGIN_MODULES * 2;
+      canvas.width = size;
+      canvas.height = size;
+      var ctx = canvas.getContext('2d');
+
+      // 背景
+      ctx.fillStyle = gen.bg;
+      ctx.fillRect(0, 0, size, size);
+      if (gen.bgImg) {
+        ctx.globalAlpha = 0.35;
+        ctx.drawImage(gen.bgImg, 0, 0, size, size);
+        ctx.globalAlpha = 1;
+      }
+
+      // 模块（取整像素避免接缝）
+      ctx.fillStyle = gen.fg;
+      for (var r = 0; r < n; r++) {
+        for (var c = 0; c < n; c++) {
+          if (!matrix[r][c]) continue;
+          var x1 = Math.round((MARGIN_MODULES + c) * size / total);
+          var y1 = Math.round((MARGIN_MODULES + r) * size / total);
+          var x2 = Math.round((MARGIN_MODULES + c + 1) * size / total);
+          var y2 = Math.round((MARGIN_MODULES + r + 1) * size / total);
+          var w = x2 - x1, h = y2 - y1;
+          var cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+          if (gen.style === 'dot') {
+            var radius = Math.max(0.5, Math.min(w, h) * 0.42);
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (gen.style === 'rounded') {
+            var rr = Math.max(0.5, Math.min(w, h) * 0.32);
+            roundRectPath(ctx, x1 + 0.5, y1 + 0.5, w - 1, h - 1, rr);
+            ctx.fill();
+          } else if (gen.style === 'diamond') {
+            ctx.beginPath();
+            ctx.moveTo(cx, y1);
+            ctx.lineTo(x2, cy);
+            ctx.lineTo(cx, y2);
+            ctx.lineTo(x1, cy);
+            ctx.closePath();
+            ctx.fill();
+          } else {
+            ctx.fillRect(x1, y1, w, h);
+          }
+        }
+      }
+
+      // 中心 Logo
+      if (gen.logoImg) {
+        var logoSize = size * 0.22;
+        var pad = size * 0.02;
+        var box = logoSize + pad * 2;
+        var bx = (size - box) / 2;
+        ctx.fillStyle = '#ffffff';
+        roundRectPath(ctx, bx, bx, box, box, size * 0.03);
+        ctx.fill();
+        ctx.drawImage(gen.logoImg, bx + pad, bx + pad, logoSize, logoSize);
+      }
+    }
+
+    /* ---------- SVG 导出 ---------- */
+    function buildSvg() {
+      var matrix = gen.matrix;
+      var n = matrix.length;
+      var cell = 10;
+      var total = (n + MARGIN_MODULES * 2) * cell;
+      var rects = '', circles = '', paths = '';
+      for (var r = 0; r < n; r++) {
+        for (var c = 0; c < n; c++) {
+          if (!matrix[r][c]) continue;
+          var x = (MARGIN_MODULES + c) * cell;
+          var y = (MARGIN_MODULES + r) * cell;
+          var cx = x + cell / 2, cy = y + cell / 2;
+          if (gen.style === 'dot') {
+            circles += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (cell * 0.42) + '"/>';
+          } else if (gen.style === 'rounded') {
+            rects += '<rect x="' + (x + 0.5) + '" y="' + (y + 0.5) + '" width="' + (cell - 1) + '" height="' + (cell - 1) + '" rx="' + (cell * 0.32) + '"/>';
+          } else if (gen.style === 'diamond') {
+            paths += '<path d="M' + cx + ' ' + y + 'L' + (x + cell) + ' ' + cy + 'L' + cx + ' ' + (y + cell) + 'L' + x + ' ' + cy + 'Z"/>';
+          } else {
+            rects += '<rect x="' + x + '" y="' + y + '" width="' + cell + '" height="' + cell + '"/>';
+          }
+        }
+      }
+      var s = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ' +
+        'width="' + gen.size + '" height="' + gen.size + '" viewBox="0 0 ' + total + ' ' + total + '" ' +
+        'shape-rendering="crispEdges">';
+      s += '<rect width="' + total + '" height="' + total + '" fill="' + gen.bg + '"/>';
+      if (gen.bgUrl) {
+        s += '<image href="' + gen.bgUrl + '" xlink:href="' + gen.bgUrl + '" width="' + total + '" height="' + total +
+          '" opacity="0.35" preserveAspectRatio="xMidYMid slice"/>';
+      }
+      if (rects) s += '<g fill="' + gen.fg + '">' + rects + '</g>';
+      if (circles) s += '<g fill="' + gen.fg + '">' + circles + '</g>';
+      if (paths) s += '<g fill="' + gen.fg + '">' + paths + '</g>';
+      if (gen.logoUrl) {
+        var box = total * 0.26;
+        var pad = total * 0.02;
+        var bx = (total - box) / 2;
+        s += '<rect x="' + bx + '" y="' + bx + '" width="' + box + '" height="' + box +
+          '" rx="' + (total * 0.03) + '" fill="#ffffff"/>';
+        s += '<image href="' + gen.logoUrl + '" xlink:href="' + gen.logoUrl + '" x="' + (bx + pad) + '" y="' + (bx + pad) +
+          '" width="' + (box - pad * 2) + '" height="' + (box - pad * 2) + '"/>';
+      }
+      s += '</svg>';
+      return s;
+    }
+
+    /* ---------- 渲染入口（防抖） ---------- */
+    var renderTimer = null;
+    function scheduleRender() {
+      clearTimeout(renderTimer);
+      renderTimer = setTimeout(render, 150);
+    }
+
+    function render() {
+      var errEl = $('#qrt-gen-error');
+      var warnEl = $('#qrt-gen-warn');
+      var emptyEl = $('#qrt-preview-empty');
+      var canvas = $('#qrt-canvas');
+      errEl.classList.add('qrt-hidden');
+      warnEl.classList.add('qrt-hidden');
+      gen.matrix = null;
+
+      var built = contentBuilders[gen.type]();
+      var text = built.text;
+
+      if (!text) {
+        canvas.classList.add('qrt-hidden');
+        emptyEl.classList.remove('qrt-hidden');
+        return;
+      }
+
+      try {
+        gen.matrix = makeMatrix(text);
+      } catch (e) {
+        canvas.classList.add('qrt-hidden');
+        emptyEl.classList.remove('qrt-hidden');
+        errEl.textContent = '内容过长，超出当前纠错等级的容量，请缩短内容或降低纠错等级。';
+        errEl.classList.remove('qrt-hidden');
+        return;
+      }
+
+      // 对比度提醒
+      var warns = [];
+      var lf = luminance(gen.fg), lb = luminance(gen.bg);
+      if (lf !== null && lb !== null && Math.abs(lf - lb) < 0.25) {
+        warns.push('前景色与背景色对比度过低，可能导致无法扫描。');
+      }
+      var modulePx = gen.size / (gen.matrix.length + MARGIN_MODULES * 2);
+      if (modulePx < 3) {
+        warns.push('当前内容生成 ' + gen.matrix.length + '×' + gen.matrix.length +
+          ' 模块，每格仅 ' + modulePx.toFixed(1) + 'px，过于密集，建议增大尺寸或缩短内容。');
+      }
+      if (warns.length) {
+        warnEl.textContent = warns.join(' ');
+        warnEl.classList.remove('qrt-hidden');
+      }
+
+      emptyEl.classList.add('qrt-hidden');
+      canvas.classList.remove('qrt-hidden');
+      drawCanvas();
+    }
+
+    /* ---------- 内容类型切换 ---------- */
+    $$('#qrt-type-tabs button').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        $$('#qrt-type-tabs button').forEach(function (b) { b.classList.toggle('active', b === btn); });
+        gen.type = btn.dataset.type;
+        $$('.qrt-fields > div').forEach(function (d) {
+          d.classList.toggle('active', d.dataset.type === gen.type);
+        });
+        scheduleRender();
+      });
+    });
+
+    /* ---------- 表单输入 ---------- */
+    $('#qrt-link-input').addEventListener('input', function () {
+      $('#qrt-link-count').textContent = this.value.length;
+      scheduleRender();
+    });
+    $$('#qrt-panel-generator input, #qrt-panel-generator select, #qrt-panel-generator textarea')
+      .forEach(function (el) {
+        if (el.id === 'qrt-link-input') return;
+        el.addEventListener('input', scheduleRender);
+        el.addEventListener('change', scheduleRender);
+      });
+
+    /* ---------- 颜色 ---------- */
+    function bindColor(colorId, hexId, key) {
+      var colorEl = $(colorId);
+      var hexEl = $(hexId);
+      colorEl.addEventListener('input', function () {
+        hexEl.value = colorEl.value;
+        gen[key] = colorEl.value;
+        scheduleRender();
+      });
+      hexEl.addEventListener('change', function () {
+        var v = hexEl.value.trim();
+        if (/^#[0-9a-fA-F]{6}$/.test(v) || /^#[0-9a-fA-F]{3}$/.test(v)) {
+          colorEl.value = v.length === 4
+            ? '#' + v[1] + v[1] + v[2] + v[2] + v[3] + v[3]
+            : v;
+          gen[key] = colorEl.value;
+          hexEl.value = gen[key].toLowerCase();
+        } else {
+          hexEl.value = gen[key];
+          showToast('请输入合法的十六进制颜色，例如 #2563eb');
+        }
+        scheduleRender();
+      });
+    }
+    bindColor('#qrt-color-fg', '#qrt-color-fg-hex', 'fg');
+    bindColor('#qrt-color-bg', '#qrt-color-bg-hex', 'bg');
+
+    /* ---------- 尺寸 / 纠错 / 格式 ---------- */
+    $('#qrt-size').addEventListener('input', function () {
+      gen.size = parseInt(this.value, 10);
+      $('#qrt-size-value').textContent = gen.size + ' px';
+      scheduleRender();
+    });
+
+    $$('#qrt-ec-seg button').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        $$('#qrt-ec-seg button').forEach(function (b) { b.classList.toggle('active', b === btn); });
+        gen.ec = btn.dataset.ec;
+        scheduleRender();
+      });
+    });
+
+    $$('#qrt-style-seg button').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        $$('#qrt-style-seg button').forEach(function (b) { b.classList.toggle('active', b === btn); });
+        gen.style = btn.dataset.style;
+        scheduleRender();
+      });
+    });
+
+    $$('#qrt-format-seg button').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        $$('#qrt-format-seg button').forEach(function (b) { b.classList.toggle('active', b === btn); });
+        gen.format = btn.dataset.format;
+      });
+    });
+
+    /* ---------- 图片上传（Logo / 背景） ---------- */
+    function bindUpload(fileId, infoId, removeId, keys, onLoaded) {
+      var fileEl = $(fileId);
+      var infoEl = $(infoId);
+      var removeEl = $(removeId);
+      fileEl.addEventListener('change', function () {
+        var file = fileEl.files && fileEl.files[0];
+        if (!file) return;
+        if (!file.type || file.type.indexOf('image/') !== 0) {
+          showToast('请选择图片文件');
+          fileEl.value = '';
+          return;
+        }
+        var reader = new FileReader();
+        reader.onload = function () {
+          var url = reader.result;
+          var img = new Image();
+          img.onload = function () {
+            gen[keys.img] = img;
+            gen[keys.url] = url;
+            infoEl.innerHTML = '<img class="qrt-upload-thumb" src="' + url + '" alt=""> ' + file.name;
+            removeEl.classList.remove('qrt-hidden');
+            scheduleRender();
+            if (onLoaded) onLoaded();
+          };
+          img.onerror = function () { showToast('图片加载失败，请换一张试试'); };
+          img.src = url;
+        };
+        reader.readAsDataURL(file);
+        fileEl.value = '';
+      });
+      removeEl.addEventListener('click', function () {
+        gen[keys.img] = null;
+        gen[keys.url] = null;
+        infoEl.textContent = keys.placeholder;
+        removeEl.classList.add('qrt-hidden');
+        scheduleRender();
+      });
+    }
+
+    bindUpload('#qrt-logo-file', '#qrt-logo-info', '#qrt-logo-remove',
+      { img: 'logoImg', url: 'logoUrl', placeholder: '未设置，建议搭配 H 级纠错' },
+      function () {
+        if (gen.ec === 'L' || gen.ec === 'M') {
+          $$('#qrt-ec-seg button').forEach(function (b) {
+            b.classList.toggle('active', b.dataset.ec === 'H');
+          });
+          gen.ec = 'H';
+          showToast('已自动切换为 H 级纠错，提高带 Logo 的识别率');
+        }
+      });
+
+    bindUpload('#qrt-bg-file', '#qrt-bg-info', '#qrt-bg-remove',
+      { img: 'bgImg', url: 'bgUrl', placeholder: '未设置，将以半透明方式叠加在背景上' },
+      function () {
+        showToast('背景图会降低对比度，若识别困难请移除');
+      });
+
+    /* ---------- 导出 ---------- */
+    $('#qrt-export-btn').addEventListener('click', function () {
+      if (!gen.matrix) {
+        showToast('请先输入内容生成二维码');
+        return;
+      }
+      var name = 'qrcode-' + Date.now();
+      if (gen.format === 'svg') {
+        var blob = new Blob([buildSvg()], { type: 'image/svg+xml;charset=utf-8' });
+        downloadBlob(blob, name + '.svg');
+        showToast('已导出 SVG');
+        return;
+      }
+      var mimes = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp' };
+      var mime = mimes[gen.format];
+      var canvas = $('#qrt-canvas');
+      canvas.toBlob(function (blob) {
+        if (!blob || (mime !== 'image/png' && blob.type !== mime)) {
+          // 浏览器不支持该格式导出时回退为 PNG
+          canvas.toBlob(function (pngBlob) {
+            downloadBlob(pngBlob, name + '.png');
+          }, 'image/png');
+          showToast('当前浏览器不支持导出该格式，已改为 PNG');
+          return;
+        }
+        downloadBlob(blob, name + '.' + gen.format);
+        showToast('已导出 ' + gen.format.toUpperCase());
+      }, mime, 0.92);
+    });
+
+    /* ================================================================
+     * 扫描器
+     * ================================================================ */
+    var detector = null;
+    if ('BarcodeDetector' in window) {
+      try {
+        detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+      } catch (e) {
+        detector = null;
+      }
+    }
+
+    var scanCanvas = document.createElement('canvas');
+
+    function decodeCanvas(canvas, inversionAttempts) {
+      var w = canvas.width, h = canvas.height;
+      if (!w || !h) return Promise.resolve(null);
+      var tryNative = detector
+        ? detector.detect(canvas).then(function (results) {
+          return (results && results.length && results[0].rawValue) ? results[0].rawValue : null;
+        }).catch(function () { return null; })
+        : Promise.resolve(null);
+      return tryNative.then(function (text) {
+        if (text) return text;
+        var ctx = canvas.getContext('2d', { willReadFrequently: true });
+        var imgData = ctx.getImageData(0, 0, w, h);
+        var code = jsQR(imgData.data, w, h, { inversionAttempts: inversionAttempts || 'attemptBoth' });
+        return (code && code.data) ? code.data : null;
+      });
+    }
+
+    /* ---------- 结果展示 ---------- */
+    var lastResult = '';
+
+    function showResult(text) {
+      lastResult = text;
+      $('#qrt-result-text').textContent = text;
+      $('#qrt-open-btn').classList.toggle('qrt-hidden', !/^https?:\/\//i.test(text.trim()));
+      $('#qrt-result-card').classList.remove('qrt-hidden');
+      $('#qrt-result-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    $('#qrt-copy-btn').addEventListener('click', function () {
+      if (!lastResult) return;
+      var done = function () { showToast('已复制到剪贴板'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lastResult).then(done, function () { fallbackCopy(); });
+      } else {
+        fallbackCopy();
+      }
+      function fallbackCopy() {
+        var ta = document.createElement('textarea');
+        ta.value = lastResult;
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+          document.execCommand('copy');
+          done();
+        } catch (e) {
+          showToast('复制失败，请手动选择复制');
+        }
+        document.body.removeChild(ta);
+      }
+    });
+
+    $('#qrt-open-btn').addEventListener('click', function () {
+      var url = lastResult.trim();
+      if (/^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener');
+    });
+
+    /* ---------- 图片识别 ---------- */
+    function scanImageFile(file) {
+      if (!file) return;
+      if (!file.type || file.type.indexOf('image/') !== 0) {
+        showToast('请选择图片文件');
+        return;
+      }
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        // 超大图先等比缩小，加快解码
+        var maxSide = 2000;
+        var scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        scanCanvas.width = Math.max(1, Math.round(img.width * scale));
+        scanCanvas.height = Math.max(1, Math.round(img.height * scale));
+        var ctx = scanCanvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0, scanCanvas.width, scanCanvas.height);
+        URL.revokeObjectURL(url);
+
+        $('#qrt-image-thumb').src = img.src;
+        $('#qrt-image-preview').classList.add('show');
+
+        decodeCanvas(scanCanvas, 'attemptBoth').then(function (text) {
+          if (text) {
+            showResult(text);
+            showToast('识别成功');
+            try { navigator.vibrate && navigator.vibrate(150); } catch (e) {}
+          } else {
+            showToast('未识别到二维码，请确保图片清晰、完整');
+          }
+        });
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        showToast('图片加载失败，请换一张试试');
+      };
+      img.src = url;
+    }
+
+    $('#qrt-dropzone').addEventListener('click', function () {
+      $('#qrt-file-input').click();
+    });
+    $('#qrt-file-input').addEventListener('change', function () {
+      scanImageFile(this.files && this.files[0]);
+      this.value = '';
+    });
+
+    var dropzone = $('#qrt-dropzone');
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      dropzone.addEventListener(ev, function (e) {
+        e.preventDefault();
+        dropzone.classList.add('qrt-dragover');
+      });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      dropzone.addEventListener(ev, function (e) {
+        e.preventDefault();
+        dropzone.classList.remove('qrt-dragover');
+      });
+    });
+    dropzone.addEventListener('drop', function (e) {
+      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      scanImageFile(file);
+    });
+
+    // Ctrl + V 粘贴图片
+    document.addEventListener('paste', function (e) {
+      if (!$('#qrt-panel-scanner').classList.contains('active')) return;
+      var items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].type && items[i].type.indexOf('image/') === 0) {
+          scanImageFile(items[i].getAsFile());
+          e.preventDefault();
+          return;
+        }
+      }
+    });
+
+    /* ---------- 摄像头扫描 ---------- */
+    var cameraStream = null;
+    var scanTimer = null;
+    var cameraFacing = 'environment';
+
+    function setVideoStatus(msg) {
+      var el = $('#qrt-video-status');
+      if (!msg) {
+        el.classList.add('qrt-hidden');
+        return;
+      }
+      el.textContent = msg;
+      el.classList.remove('qrt-hidden');
+    }
+
+    function stopCamera() {
+      if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(function (t) { t.stop(); });
+        cameraStream = null;
+      }
+      var video = $('#qrt-video');
+      video.srcObject = null;
+      $('#qrt-video-placeholder').classList.remove('qrt-hidden');
+      setVideoStatus('');
+      $('#qrt-camera-start').classList.remove('qrt-hidden');
+      $('#qrt-camera-stop').classList.add('qrt-hidden');
+      $('#qrt-camera-switch').classList.add('qrt-hidden');
+    }
+
+    function startCamera() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showToast('当前环境不支持摄像头（需要 HTTPS 或本地文件直开）');
+        return;
+      }
+      stopCamera();
+      navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: cameraFacing,
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      }).then(function (stream) {
+        cameraStream = stream;
+        var video = $('#qrt-video');
+        video.srcObject = stream;
+        return video.play();
+      }).then(function () {
+        $('#qrt-video-placeholder').classList.add('qrt-hidden');
+        $('#qrt-camera-start').classList.add('qrt-hidden');
+        $('#qrt-camera-stop').classList.remove('qrt-hidden');
+        $('#qrt-camera-switch').classList.remove('qrt-hidden');
+        setVideoStatus('正在扫描，请将二维码对准摄像头…');
+        scanTimer = setInterval(scanVideoFrame, 300);
+      }).catch(function (err) {
+        stopCamera();
+        var msg;
+        switch (err && err.name) {
+          case 'NotAllowedError':
+          case 'PermissionDeniedError':
+            msg = '摄像头权限被拒绝，请在浏览器地址栏允许访问后重试';
+            break;
+          case 'NotFoundError':
+          case 'OverconstrainedError':
+            msg = '未找到可用的摄像头设备';
+            break;
+          case 'NotReadableError':
+            msg = '摄像头被其他程序占用，请关闭后重试';
+            break;
+          default:
+            msg = '无法启动摄像头：' + ((err && err.message) || '未知错误');
+        }
+        setVideoStatus('');
+        showToast(msg);
+      });
+    }
+
+    function scanVideoFrame() {
+      var video = $('#qrt-video');
+      if (!cameraStream || video.readyState < 2) return;
+      var vw = video.videoWidth, vh = video.videoHeight;
+      if (!vw || !vh) return;
+      var scale = Math.min(1, 960 / Math.max(vw, vh));
+      scanCanvas.width = Math.round(vw * scale);
+      scanCanvas.height = Math.round(vh * scale);
+      var ctx = scanCanvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height);
+      decodeCanvas(scanCanvas, 'dontInvert').then(function (text) {
+        if (text && cameraStream) {
+          stopCamera();
+          showResult(text);
+          showToast('识别成功');
+          try { navigator.vibrate && navigator.vibrate(150); } catch (e) {}
+        }
+      });
+    }
+
+    $('#qrt-camera-start').addEventListener('click', startCamera);
+    $('#qrt-camera-stop').addEventListener('click', function () {
+      stopCamera();
+      showToast('已停止摄像头');
+    });
+    $('#qrt-camera-switch').addEventListener('click', function () {
+      cameraFacing = cameraFacing === 'environment' ? 'user' : 'environment';
+      if (cameraStream) startCamera();
+    });
+    window.addEventListener('beforeunload', stopCamera);
+
+    /* ================================================================
+     * 初始化：默认填入示例链接并生成
+     * ================================================================ */
+    (function init() {
+      var linkInput = $('#qrt-link-input');
+      linkInput.value = 'https://basetoolbox.com';
+      $('#qrt-link-count').textContent = linkInput.value.length;
+      render();
+    })();
+  </script>
+</body>
+</html>
