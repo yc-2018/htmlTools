@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>推箱子</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:#151319;color:#fff;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
+button{font:inherit;color:inherit}
+#game{position:fixed;inset:0;width:100%;height:100%;display:block;background:#151319;touch-action:none}
+.hud{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;right:10px;z-index:5;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;pointer-events:none}
+.stats{display:flex;gap:8px;flex-wrap:wrap;max-width:calc(100vw - 64px)}
+.box{min-width:70px;padding:7px 9px;border:1px solid rgba(255,255,255,.16);border-radius:8px;background:rgba(31,27,38,.62);box-shadow:0 12px 28px rgba(0,0,0,.22);backdrop-filter:blur(10px)}
+.box span{display:block;color:#c6c0cc;font-size:11px;line-height:1.1;white-space:nowrap}
+.box strong{display:block;margin-top:2px;font-size:18px;line-height:1;font-weight:900;color:#fff;overflow:hidden;text-overflow:ellipsis}
+#level{color:#a78bfa}
+#steps{color:#7de1d1}
+#steps.low{color:#ff6b8a}
+#score{color:#ffd166}
+#best{color:#b8f36e}
+.icon-btn{pointer-events:auto;width:42px;height:42px;border:1px solid rgba(255,255,255,.16);border-radius:8px;background:rgba(31,27,38,.66);box-shadow:0 12px 28px rgba(0,0,0,.22);font-size:18px;font-weight:900;display:grid;place-items:center;cursor:pointer;backdrop-filter:blur(10px)}
+.icon-btn:active,.primary:active,.ghost:active,.mode-bar button:active{transform:scale(.96)}
+.action-bar{position:fixed;left:0;right:0;bottom:calc(14px + env(safe-area-inset-bottom));z-index:5;display:flex;align-items:center;justify-content:center;gap:10px;pointer-events:none;transition:opacity .18s ease,visibility .18s ease}
+.action-bar.hidden{opacity:0;visibility:hidden}
+.act{pointer-events:auto;min-width:104px;height:46px;padding:0 14px;border:1px solid rgba(255,255,255,.16);border-radius:8px;background:rgba(31,27,38,.66);box-shadow:0 12px 28px rgba(0,0,0,.22);font-size:15px;font-weight:900;cursor:pointer;backdrop-filter:blur(10px);display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.act small{font-size:11px;font-weight:700;color:#c6c0cc}
+.act:disabled{opacity:.4;cursor:default}
+.act:active:not(:disabled){transform:scale(.96)}
+.toast{position:fixed;left:50%;top:calc(78px + env(safe-area-inset-top));z-index:8;padding:12px 20px;border:1px solid rgba(184,243,110,.36);border-radius:8px;background:rgba(31,27,38,.9);box-shadow:0 20px 60px rgba(0,0,0,.42);text-align:center;backdrop-filter:blur(14px);opacity:0;transform:translate(-50%,-10px);transition:opacity .2s ease,transform .2s ease;pointer-events:none}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast strong{display:block;font-size:22px;line-height:1;font-weight:900;color:#b8f36e}
+.toast span{display:block;margin-top:5px;font-size:12px;color:#c6c0cc}
+.screen{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:22px;background:linear-gradient(180deg,rgba(21,19,25,.58),rgba(21,19,25,.92));transition:opacity .18s ease,visibility .18s ease}
+.screen.hidden{opacity:0;visibility:hidden;pointer-events:none}
+.panel{width:min(420px,90vw);padding:24px 20px;border:1px solid rgba(255,255,255,.16);border-radius:8px;background:rgba(31,27,38,.88);box-shadow:0 28px 86px rgba(0,0,0,.44);text-align:center;backdrop-filter:blur(18px)}
+.kicker{font-size:12px;font-weight:900;letter-spacing:3px;text-transform:uppercase;color:#7de1d1}
+h1{margin-top:8px;font-size:42px;line-height:1.04;font-weight:900;letter-spacing:0;color:#fff;text-shadow:0 0 26px rgba(255,209,102,.22)}
+.record{margin:12px 0 18px;color:#c6c0cc;font-size:14px}
+.record strong{color:#ffd166;font-size:20px}
+.mode-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:6px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.06)}
+.mode-bar button{height:42px;border:0;border-radius:6px;background:transparent;color:#cbc6d0;font-size:14px;font-weight:900;cursor:pointer}
+.mode-bar button.active{background:#ffd166;color:#221705;box-shadow:0 10px 22px rgba(255,209,102,.22)}
+.hint{margin-top:14px;color:#8f8a97;font-size:12px;line-height:1.6}
+.primary,.ghost{width:100%;height:48px;margin-top:14px;border-radius:8px;font-size:17px;font-weight:900;cursor:pointer}
+.primary{border:0;background:linear-gradient(135deg,#ffd166,#7de1d1);color:#211705;box-shadow:0 14px 34px rgba(125,225,209,.2)}
+.ghost{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.08);color:#fff}
+.result{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:16px 0 2px}
+.result div{min-width:0;padding:11px 4px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.06)}
+.result span{display:block;color:#c6c0cc;font-size:12px}
+.result strong{display:block;margin-top:4px;font-size:22px;line-height:1;color:#fff;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:420px){
+  .hud{top:calc(8px + env(safe-area-inset-top));left:8px;right:8px}
+  .stats{gap:5px;max-width:calc(100vw - 54px)}
+  .box{min-width:60px;padding:6px 7px}
+  .box strong{font-size:16px}
+  .icon-btn{width:38px;height:38px}
+  .act{min-width:92px;height:44px;font-size:14px}
+  .panel{padding:22px 18px}
+  h1{font-size:36px}
+  .result strong{font-size:19px}
+}
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="推箱子游戏画布"></canvas>
+
+<div class="hud">
+  <div class="stats">
+    <div class="box"><span>关卡</span><strong id="level">1</strong></div>
+    <div class="box"><span>剩余步</span><strong id="steps">0</strong></div>
+    <div class="box"><span>分数</span><strong id="score">0</strong></div>
+    <div class="box"><span>最高</span><strong id="best">0</strong></div>
+  </div>
+  <button class="icon-btn" id="pauseBtn" title="暂停" aria-label="暂停">Ⅱ</button>
+</div>
+
+<div class="action-bar hidden" id="actionBar">
+  <button class="act" id="undoBtn" title="撤销一步">↺ 撤销 <small>返还步数</small></button>
+  <button class="act" id="resetBtn" title="本关复位">⟳ 重来 <small>不返还</small></button>
+</div>
+
+<div class="toast" id="toast"><strong id="toastMain">+0</strong><span id="toastSub"></span></div>
+
+<div class="screen" id="startScreen">
+  <section class="panel">
+    <div class="kicker">Sokoban</div>
+    <h1>推箱子</h1>
+    <div class="record">当前模式最高分 <strong id="menuBest">0</strong></div>
+    <div class="mode-bar" id="modeBar" aria-label="模式">
+      <button data-mode="easy">休闲</button>
+      <button data-mode="normal" class="active">标准</button>
+      <button data-mode="hard">挑战</button>
+    </div>
+    <button class="primary" id="startBtn">开始游戏</button>
+    <div class="hint">拖动或方向键移动 · 点空地自动寻路<br>把所有箱子推上目标点 · 剩余步数用尽即结束</div>
+  </section>
+</div>
+
+<div class="screen hidden" id="pauseScreen">
+  <section class="panel">
+    <div class="kicker">Paused</div>
+    <h1>已暂停</h1>
+    <button class="primary" id="resumeBtn">继续</button>
+    <button class="ghost" id="pauseRestartBtn">重新开始</button>
+    <button class="ghost" id="pauseMenuBtn">返回菜单</button>
+  </section>
+</div>
+
+<div class="screen hidden" id="overScreen">
+  <section class="panel">
+    <div class="kicker">Result</div>
+    <h1 id="overTitle">游戏结束</h1>
+    <div class="result">
+      <div><span>本局</span><strong id="finalScore">0</strong></div>
+      <div><span>模式最高</span><strong id="finalBest">0</strong></div>
+      <div><span>通关数</span><strong id="finalClears">0</strong></div>
+    </div>
+    <button class="primary" id="restartBtn">再来一局</button>
+    <button class="ghost" id="backMenuBtn">返回菜单</button>
+  </section>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const levelEl = document.getElementById('level');
+const stepsEl = document.getElementById('steps');
+const scoreEl = document.getElementById('score');
+const bestEl = document.getElementById('best');
+const pauseBtn = document.getElementById('pauseBtn');
+const actionBar = document.getElementById('actionBar');
+const undoBtn = document.getElementById('undoBtn');
+const resetBtn = document.getElementById('resetBtn');
+const toastEl = document.getElementById('toast');
+const toastMainEl = document.getElementById('toastMain');
+const toastSubEl = document.getElementById('toastSub');
+const startScreen = document.getElementById('startScreen');
+const pauseScreen = document.getElementById('pauseScreen');
+const overScreen = document.getElementById('overScreen');
+const menuBestEl = document.getElementById('menuBest');
+const finalScoreEl = document.getElementById('finalScore');
+const finalBestEl = document.getElementById('finalBest');
+const finalClearsEl = document.getElementById('finalClears');
+const overTitleEl = document.getElementById('overTitle');
+const startBtn = document.getElementById('startBtn');
+const resumeBtn = document.getElementById('resumeBtn');
+const pauseRestartBtn = document.getElementById('pauseRestartBtn');
+const pauseMenuBtn = document.getElementById('pauseMenuBtn');
+const restartBtn = document.getElementById('restartBtn');
+const backMenuBtn = document.getElementById('backMenuBtn');
+const modeBar = document.getElementById('modeBar');
+
+const BEST_KEY = 'sokoban_best_by_mode_v1';
+const STEP_CAP = 480;                       // 剩余步数上限，避免无限累积
+const STEP_TIME = 0.085;                    // 单步动画时长（秒）
+// 方向索引：0 上 1 右 2 下 3 左
+const DIRS = [{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}];
+const modes = {
+  easy:   {label:'休闲', w:[7,9],  h:[7,9],   boxes:2, wallRate:.05, pulls:[14,24], mul:1.0},
+  normal: {label:'标准', w:[8,10], h:[8,11],  boxes:3, wallRate:.10, pulls:[24,42], mul:1.35},
+  hard:   {label:'挑战', w:[9,12], h:[9,13],  boxes:4, wallRate:.14, pulls:[34,58], mul:1.8}
+};
+
+let W = 0, H = 0, dpr = 1;
+let state = 'menu';
+let mode = 'normal';
+let lastTime = 0;
+
+let level = 1, score = 0, clears = 0;
+let stepsLeft = 0, moves = 0;               // moves 为本关累计步数（重来不清零）
+let lv = null;                              // 当前关卡数据（含初始布局）
+let cols = 0, rows = 0, walls = [];
+let goals = new Set(), boxes = new Set();
+let player = {x:0, y:0}, facing = 2;
+let history = [], groupSeq = 0;             // 撤销栈，按 group 成组回退
+let queue = [], anim = null;
+let clearing = 0, flash = 0, shake = 0;
+let cell = 32, ox = 0, oy = 0;
+const particles = [], stars = [];
+let drag = null, toastTimer = null;
+function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
+function rand(min, max){ return min + Math.random() * (max - min); }
+function randInt(min, max){ return min + Math.floor(Math.random() * (max - min + 1)); }
+function shuffle(arr){
+  for(let i = arr.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+function inside(x, y){ return x >= 0 && y >= 0 && x < cols && y < rows; }
+function key(x, y){ return y * cols + x; }
+function kx(k){ return k % cols; }
+function ky(k){ return (k / cols) | 0; }
+function easeOut(t){ return 1 - (1 - t) * (1 - t); }
+
+function readBestScores(){
+  const scores = {easy:0, normal:0, hard:0};
+  try{
+    const saved = JSON.parse(localStorage.getItem(BEST_KEY) || '{}');
+    for(const k of Object.keys(scores)) scores[k] = Number(saved[k] || 0);
+  }catch(e){
+    localStorage.removeItem(BEST_KEY);
+  }
+  return scores;
+}
+
+function getBest(currentMode = mode){ return readBestScores()[currentMode] || 0; }
+
+function saveBest(currentMode, value){
+  const scores = readBestScores();
+  scores[currentMode] = Math.max(scores[currentMode] || 0, value);
+  localStorage.setItem(BEST_KEY, JSON.stringify(scores));
+  return scores[currentMode];
+}
+
+function recordProgressBest(){
+  if(!['playing','paused','over'].includes(state)) return getBest(mode);
+  const modeBest = saveBest(mode, score);
+  updateBestViews(modeBest);
+  return modeBest;
+}
+
+function updateBestViews(value = getBest(mode)){
+  bestEl.textContent = value;
+  menuBestEl.textContent = value;
+}
+
+function updateModeButtons(){
+  modeBar.querySelectorAll('button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+  updateBestViews();
+}
+/* ---------------- 关卡生成 ----------------
+   逆向生成法：先摆出「已完成」局面（箱子全在目标点上），再随机做若干次
+   “拉箱子”操作把箱子拖散。拉的逆过程就是推，因此生成出的关卡必定有解。 */
+
+// 造一间四周是墙的房间，并在内部随机加墙（保证地板始终连通）
+function buildRoom(c, r, wallRate){
+  const w = [];
+  for(let y = 0; y < r; y++){
+    const row = [];
+    for(let x = 0; x < c; x++) row.push(y === 0 || x === 0 || y === r - 1 || x === c - 1);
+    w.push(row);
+  }
+  const inner = [];
+  for(let y = 1; y < r - 1; y++) for(let x = 1; x < c - 1; x++) inner.push([x, y]);
+  shuffle(inner);
+  let quota = Math.round(inner.length * wallRate);
+  for(const [x, y] of inner){
+    if(quota <= 0) break;
+    w[y][x] = true;
+    if(floorConnected(w, c, r)) quota--;
+    else w[y][x] = false;
+  }
+  return w;
+}
+
+// 地板是否只有一个连通块
+function floorConnected(w, c, r){
+  let start = null, total = 0;
+  for(let y = 0; y < r; y++) for(let x = 0; x < c; x++){
+    if(w[y][x]) continue;
+    total++;
+    if(!start) start = [x, y];
+  }
+  if(!start) return false;
+  const seen = new Set([start[1] * c + start[0]]);
+  const stack = [start];
+  let reached = 0;
+  while(stack.length){
+    const [x, y] = stack.pop();
+    reached++;
+    for(const d of DIRS){
+      const nx = x + d.x, ny = y + d.y;
+      if(nx < 0 || ny < 0 || nx >= c || ny >= r || w[ny][nx]) continue;
+      const k = ny * c + nx;
+      if(seen.has(k)) continue;
+      seen.add(k);
+      stack.push([nx, ny]);
+    }
+  }
+  return reached === total;
+}
+// 从玩家位置出发的可达距离表（箱子当成障碍）
+function reachDist(w, c, r, bx, px, py){
+  const dist = new Map([[py * c + px, 0]]);
+  const q = [[px, py]];
+  let i = 0;
+  while(i < q.length){
+    const [x, y] = q[i++];
+    const d = dist.get(y * c + x);
+    for(const dir of DIRS){
+      const nx = x + dir.x, ny = y + dir.y;
+      if(nx < 0 || ny < 0 || nx >= c || ny >= r || w[ny][nx]) continue;
+      const k = ny * c + nx;
+      if(dist.has(k) || bx.has(k)) continue;
+      dist.set(k, d + 1);
+      q.push([nx, ny]);
+    }
+  }
+  return dist;
+}
+
+// 贪心匹配箱子与目标点，得到曼哈顿距离之和（用作难度参考下界）
+function matchCost(boxArr, goalArr, c){
+  const used = new Array(goalArr.length).fill(false);
+  let sum = 0;
+  for(const b of boxArr){
+    const bxx = b % c, byy = (b / c) | 0;
+    let pick = -1, bd = Infinity;
+    for(let i = 0; i < goalArr.length; i++){
+      if(used[i]) continue;
+      const g = goalArr[i];
+      const d = Math.abs(g % c - bxx) + Math.abs(((g / c) | 0) - byy);
+      if(d < bd){ bd = d; pick = i; }
+    }
+    if(pick >= 0){ used[pick] = true; sum += bd; }
+  }
+  return sum;
+}
+
+// 兜底关卡：7×7 空房间，两个箱子，手工验证有解
+function handmade(){
+  const c = 7, r = 7, w = [];
+  for(let y = 0; y < r; y++){
+    const row = [];
+    for(let x = 0; x < c; x++) row.push(y === 0 || x === 0 || y === r - 1 || x === c - 1);
+    w.push(row);
+  }
+  return {c, r, w, goals:[1 * c + 1, 5 * c + 5], boxes:[3 * c + 3, 4 * c + 3],
+          px:2, py:3, solLen:24, par:8, offGoal:2, boxCount:2, quality:0};
+}
+function tryGen(c, r, boxCount, cfg, levelIndex){
+  const w = buildRoom(c, r, cfg.wallRate);
+  const floors = [];
+  for(let y = 1; y < r - 1; y++) for(let x = 1; x < c - 1; x++) if(!w[y][x]) floors.push([x, y]);
+  if(floors.length < boxCount * 4 + 3) return null;
+
+  // 目标点必须至少有一个方向能把箱子拉出来，否则那个箱子等于白送
+  const pullable = floors.filter(([x, y]) => DIRS.some(d => {
+    const ax = x + d.x, ay = y + d.y, bx2 = x + 2 * d.x, by2 = y + 2 * d.y;
+    return !w[ay][ax] && by2 >= 0 && by2 < r && bx2 >= 0 && bx2 < c && !w[by2][bx2];
+  }));
+  if(pullable.length < boxCount) return null;
+  shuffle(pullable);
+  const goalArr = pullable.slice(0, boxCount).map(([x, y]) => y * c + x);
+  const bx = new Set(goalArr);
+
+  const free = floors.filter(([x, y]) => !bx.has(y * c + x));
+  if(!free.length) return null;
+  let [px, py] = free[randInt(0, free.length - 1)];
+
+  let solLen = 0, lastBox = -1;
+  const pulls = randInt(cfg.pulls[0], cfg.pulls[1]) + Math.min(levelIndex * 2, 26);
+  for(let s = 0; s < pulls; s++){
+    const dist = reachDist(w, c, r, bx, px, py);
+    const cands = [];
+    for(const b of bx){
+      const bxx = b % c, byy = (b / c) | 0;
+      for(const d of DIRS){
+        const sx = bxx + d.x, sy = byy + d.y;             // 拉之前玩家站位
+        const tx = bxx + 2 * d.x, ty = byy + 2 * d.y;     // 拉之后玩家落点
+        if(sx < 0 || sy < 0 || sx >= c || sy >= r || w[sy][sx]) continue;
+        if(tx < 0 || ty < 0 || tx >= c || ty >= r || w[ty][tx]) continue;
+        const sk = sy * c + sx, tk = ty * c + tx;
+        if(bx.has(sk) || bx.has(tk)) continue;
+        if(!dist.has(sk)) continue;
+        cands.push({b, sk, tx, ty, cost:dist.get(sk)});
+      }
+    }
+    if(!cands.length) break;
+    // 大概率延续上一个箱子，拉出更连贯的长距离推动
+    let pool = cands;
+    if(lastBox >= 0 && Math.random() < .62){
+      const same = cands.filter(o => o.b === lastBox);
+      if(same.length) pool = same;
+    }
+    pool.sort((a, b2) => a.cost - b2.cost);
+    const pick = pool[Math.floor(Math.random() * Math.min(pool.length, 3))];
+    bx.delete(pick.b);
+    bx.add(pick.sk);
+    px = pick.tx;
+    py = pick.ty;
+    solLen += pick.cost + 1;
+    lastBox = pick.sk;
+  }
+
+  const boxArr = [...bx];
+  const goalSet = new Set(goalArr);
+  const offGoal = boxArr.filter(k => !goalSet.has(k)).length;
+  if(offGoal === 0) return null;
+  const par = matchCost(boxArr, goalArr, c);
+  const quality = offGoal * 140 + par * 8 + Math.min(solLen, 220) * .5;
+  return {c, r, w, goals:goalArr, boxes:boxArr, px, py, solLen, par, offGoal, boxCount, quality};
+}
+function genLevel(currentMode, levelIndex){
+  const cfg = modes[currentMode];
+  const grow = Math.min(Math.floor((levelIndex - 1) / 5), 3);
+  const c = clamp(randInt(cfg.w[0], cfg.w[1]) + grow, 7, 14);
+  const r = clamp(randInt(cfg.h[0], cfg.h[1]) + grow, 7, 14);
+  const boxCount = Math.min(cfg.boxes + Math.floor((levelIndex - 1) / 6), 6);
+  let best = null;
+  for(let attempt = 0; attempt < 24; attempt++){
+    const cand = tryGen(c, r, boxCount, cfg, levelIndex);
+    if(!cand) continue;
+    if(!best || cand.quality > best.quality) best = cand;
+    // 所有箱子都离开了目标点且铺得够开，就不再挑了
+    if(best.offGoal === boxCount && best.par >= boxCount * 3) break;
+  }
+  if(best) return best;
+  // 退化处理：空房间更容易生成成功
+  for(let attempt = 0; attempt < 12; attempt++){
+    const cand = tryGen(8, 8, 2, {...cfg, wallRate:0, pulls:[10,18]}, 0);
+    if(cand) return cand;
+  }
+  return handmade();
+}
+
+/* ---------------- 关卡装载与流程 ---------------- */
+
+function loadLevel(data, keepMoves){
+  lv = data;
+  cols = data.c;
+  rows = data.r;
+  walls = data.w;
+  goals = new Set(data.goals);
+  boxes = new Set(data.boxes);
+  player = {x:data.px, y:data.py};
+  facing = 2;
+  history.length = 0;
+  groupSeq = 0;
+  queue.length = 0;
+  anim = null;
+  clearing = 0;
+  if(!keepMoves) moves = 0;
+  layout();
+  updateHud();
+}
+
+function setScreens(active){
+  startScreen.classList.toggle('hidden', active !== 'menu');
+  pauseScreen.classList.toggle('hidden', active !== 'paused');
+  overScreen.classList.toggle('hidden', active !== 'over');
+  actionBar.classList.toggle('hidden', active !== 'playing');
+}
+// 通关补充的步数：以「箱子到目标点的曼哈顿距离之和」为难度下界，
+// 再用生成时的拉动长度兜底（绕路多的关卡拉动长度也长）
+function stepAward(data){
+  const byPar = data.par * 4.5 + data.boxCount * 8 + 18;
+  return Math.round(clamp(Math.max(byPar, data.solLen * .5), 60, 300));
+}
+
+function startGame(){
+  level = 1;
+  score = 0;
+  clears = 0;
+  particles.length = 0;
+  flash = 0;
+  shake = 0;
+  hideToast();
+  const first = genLevel(mode, 1);
+  stepsLeft = stepAward(first) + 45;           // 开局步数，之后每通一关按关卡规模补充
+  state = 'playing';
+  loadLevel(first);
+  lastTime = performance.now();
+  setScreens('playing');
+  updateHud();
+}
+
+function nextLevel(){
+  level++;
+  loadLevel(genLevel(mode, level));
+}
+
+function showMenu(){
+  recordProgressBest();
+  state = 'menu';
+  hideToast();
+  setScreens('menu');
+  updateModeButtons();
+  updateHud();
+}
+
+function pauseGame(){
+  if(state !== 'playing') return;
+  state = 'paused';
+  queue.length = 0;
+  drag = null;
+  setScreens('paused');
+}
+
+function resumeGame(){
+  if(state !== 'paused') return;
+  state = 'playing';
+  lastTime = performance.now();
+  setScreens('playing');
+}
+
+function endGame(title){
+  state = 'over';
+  queue.length = 0;
+  anim = null;
+  drag = null;
+  hideToast();
+  const modeBest = saveBest(mode, score);
+  finalScoreEl.textContent = score;
+  finalBestEl.textContent = modeBest;
+  finalClearsEl.textContent = clears;
+  overTitleEl.textContent = title || '游戏结束';
+  updateBestViews(modeBest);
+  setScreens('over');
+}
+function updateHud(){
+  levelEl.textContent = level;
+  stepsEl.textContent = Math.max(0, stepsLeft);
+  stepsEl.classList.toggle('low', stepsLeft <= 25);
+  scoreEl.textContent = score;
+  const currentBest = ['playing','paused','over'].includes(state)
+    ? Math.max(getBest(mode), score)
+    : getBest(mode);
+  bestEl.textContent = currentBest;
+  undoBtn.disabled = history.length === 0;
+}
+
+function showToast(main, sub){
+  toastMainEl.textContent = main;
+  toastSubEl.textContent = sub || '';
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1400);
+}
+
+function hideToast(){
+  clearTimeout(toastTimer);
+  toastEl.classList.remove('show');
+}
+
+/* ---------------- 画布尺寸与坐标 ---------------- */
+
+function layout(){
+  if(!cols || !rows) return;
+  const topPad = 96, botPad = 92;
+  const availW = Math.max(60, W - 24);
+  const availH = Math.max(60, H - topPad - botPad);
+  cell = clamp(Math.floor(Math.min(availW / cols, availH / rows)), 14, 62);
+  ox = Math.round((W - cols * cell) / 2);
+  oy = Math.round(topPad + (availH - rows * cell) / 2);
+}
+
+function resize(){
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = Math.floor(W * dpr);
+  canvas.height = Math.floor(H * dpr);
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+  makeStars();
+}
+
+function makeStars(){
+  stars.length = 0;
+  const count = Math.floor(clamp(W * H / 9000, 48, 130));
+  for(let i = 0; i < count; i++){
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      r: rand(.5, 1.8),
+      speed: rand(6, 28),
+      color: Math.random() > .7 ? '#ffd166' : (Math.random() > .5 ? '#7de1d1' : '#ffffff')
+    });
+  }
+}
+/* ---------------- 玩法逻辑 ---------------- */
+
+function addParticles(gx, gy, color, count, force){
+  const cx = ox + gx * cell + cell / 2;
+  const cy = oy + gy * cell + cell / 2;
+  for(let i = 0; i < count; i++){
+    const a = Math.random() * Math.PI * 2;
+    const s = rand(force * .35, force);
+    particles.push({
+      x: cx, y: cy,
+      vx: Math.cos(a) * s,
+      vy: Math.sin(a) * s,
+      r: rand(1.5, 4),
+      life: rand(.3, .66),
+      max: .66,
+      color
+    });
+  }
+}
+
+function allOnGoals(){
+  for(const b of boxes) if(!goals.has(b)) return false;
+  return true;
+}
+
+// 把若干步塞进执行队列，同一批共用一个 group（撤销时整批回退）
+function enqueue(dirs){
+  if(state !== 'playing' || clearing > 0 || !dirs || !dirs.length) return;
+  if(dirs.length === 1 && queue.length >= 4) return;
+  const g = ++groupSeq;
+  for(const d of dirs) queue.push({dir:d, group:g});
+}
+
+function bump(){
+  shake = Math.max(shake, 2.4);
+  queue.length = 0;
+}
+
+function execStep(item){
+  const d = DIRS[item.dir];
+  facing = item.dir;
+  if(stepsLeft <= 0) return;
+  const nx = player.x + d.x, ny = player.y + d.y;
+  if(!inside(nx, ny) || walls[ny][nx]){ bump(); return; }
+  const nk = key(nx, ny);
+  let boxFrom = null, boxTo = null;
+  if(boxes.has(nk)){
+    const bx2 = nx + d.x, by2 = ny + d.y;
+    if(!inside(bx2, by2) || walls[by2][bx2]){ bump(); return; }
+    const bk = key(bx2, by2);
+    if(boxes.has(bk)){ bump(); return; }
+    boxes.delete(nk);
+    boxes.add(bk);
+    boxFrom = nk;
+    boxTo = bk;
+    if(goals.has(bk) && !goals.has(nk)) addParticles(bx2, by2, '#b8f36e', 10, 110);
+  }
+  history.push({px:player.x, py:player.y, boxFrom, boxTo, group:item.group});
+  anim = {
+    fx: player.x, fy: player.y, tx: nx, ty: ny,
+    bFrom: boxFrom, bTo: boxTo, t: 0
+  };
+  player = {x:nx, y:ny};
+  moves++;
+  stepsLeft--;
+  updateHud();
+  if(allOnGoals()) levelClear();
+  else if(stepsLeft <= 0) endGame('步数用尽');
+}
+function levelClear(){
+  clearing = .8;
+  queue.length = 0;
+  const base = Math.round((90 + 45 * lv.boxCount) * modes[mode].mul);
+  const gain = Math.max(30, base - moves * 2);     // 步数越省得分越高
+  const award = stepAward(lv);
+  score += gain;
+  clears++;
+  stepsLeft = Math.min(STEP_CAP, stepsLeft + award);
+  flash = .45;
+  shake = Math.max(shake, 3);
+  for(const g of goals) addParticles(kx(g), ky(g), '#b8f36e', 12, 130);
+  showToast('+' + gain, '第 ' + level + ' 关完成 · 用 ' + moves + ' 步 · 补充 ' + award + ' 步');
+  updateHud();
+}
+
+// 撤销：整批回退并返还步数
+function undo(){
+  if(state !== 'playing' || clearing > 0 || !history.length) return;
+  queue.length = 0;
+  anim = null;
+  const g = history[history.length - 1].group;
+  while(history.length && history[history.length - 1].group === g){
+    const h = history.pop();
+    if(h.boxTo !== null){
+      boxes.delete(h.boxTo);
+      boxes.add(h.boxFrom);
+    }
+    player = {x:h.px, y:h.py};
+    moves--;
+    stepsLeft = Math.min(STEP_CAP, stepsLeft + 1);
+  }
+  updateHud();
+}
+
+// 本关复位：箱子回到初始位置，但已消耗的步数不返还
+function restartLevel(){
+  if(state !== 'playing' || clearing > 0) return;
+  loadLevel(lv, true);
+  showToast('本关复位', '已用 ' + moves + ' 步不返还');
+}
+
+// 只走空地的寻路（箱子视为障碍）
+function pathTo(tx, ty){
+  const startK = key(player.x, player.y), goalK = key(tx, ty);
+  if(startK === goalK) return null;
+  const prev = new Map([[startK, null]]);
+  const q = [[player.x, player.y]];
+  let i = 0, found = false;
+  while(i < q.length && !found){
+    const [x, y] = q[i++];
+    for(let di = 0; di < 4; di++){
+      const d = DIRS[di];
+      const nx = x + d.x, ny = y + d.y;
+      if(!inside(nx, ny) || walls[ny][nx]) continue;
+      const k = key(nx, ny);
+      if(prev.has(k) || boxes.has(k)) continue;
+      prev.set(k, {from:key(x, y), dir:di});
+      if(k === goalK){ found = true; break; }
+      q.push([nx, ny]);
+    }
+  }
+  if(!prev.has(goalK)) return null;
+  const out = [];
+  let cur = goalK;
+  while(cur !== startK){
+    const p = prev.get(cur);
+    out.push(p.dir);
+    cur = p.from;
+  }
+  out.reverse();
+  return out.length > 60 ? null : out;
+}
+function dirIndexOf(dx, dy){
+  if(dy === -1) return 0;
+  if(dx === 1) return 1;
+  if(dy === 1) return 2;
+  return 3;
+}
+
+// 点击：相邻格走一步（含推箱子），远处空地自动寻路
+function tapAt(clientX, clientY){
+  if(state !== 'playing' || clearing > 0 || !cols) return;
+  const gx = Math.floor((clientX - ox) / cell);
+  const gy = Math.floor((clientY - oy) / cell);
+  if(!inside(gx, gy) || walls[gy][gx]) return;
+  const dx = gx - player.x, dy = gy - player.y;
+  if(Math.abs(dx) + Math.abs(dy) === 1){ enqueue([dirIndexOf(dx, dy)]); return; }
+  if(boxes.has(key(gx, gy))) return;
+  const path = pathTo(gx, gy);
+  if(path && path.length) enqueue(path.slice(0, Math.max(0, stepsLeft)));
+}
+
+canvas.addEventListener('pointerdown', e => {
+  if(state !== 'playing') return;
+  drag = {x:e.clientX, y:e.clientY, sx:e.clientX, sy:e.clientY, moved:false};
+  canvas.setPointerCapture(e.pointerId);
+});
+
+canvas.addEventListener('pointermove', e => {
+  if(!drag || state !== 'playing') return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  const th = Math.max(20, cell * .7);
+  if(Math.abs(dx) < th && Math.abs(dy) < th) return;
+  const di = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
+  enqueue([di]);
+  drag.moved = true;
+  drag.x = e.clientX;              // 重置锚点，支持一次拖动连走多格
+  drag.y = e.clientY;
+});
+
+canvas.addEventListener('pointerup', e => {
+  if(canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+  if(drag && !drag.moved) tapAt(e.clientX, e.clientY);
+  drag = null;
+});
+
+canvas.addEventListener('pointercancel', () => { drag = null; });
+document.addEventListener('touchmove', e => e.preventDefault(), {passive:false});
+
+const KEYMAP = {ArrowUp:0, ArrowRight:1, ArrowDown:2, ArrowLeft:3,
+                w:0, d:1, s:2, a:3, W:0, D:1, S:2, A:3};
+
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape'){ state === 'playing' ? pauseGame() : resumeGame(); return; }
+  if(state !== 'playing') return;
+  if(e.key in KEYMAP){ e.preventDefault(); enqueue([KEYMAP[e.key]]); return; }
+  const k = e.key.toLowerCase();
+  if(k === 'z' || k === 'u'){ e.preventDefault(); undo(); }
+  if(k === 'r'){ e.preventDefault(); restartLevel(); }
+});
+/* ---------------- 主循环 ---------------- */
+
+function update(dt){
+  if(anim){
+    anim.t += dt / STEP_TIME;
+    if(anim.t >= 1) anim = null;
+  }
+  if(state === 'playing'){
+    if(clearing > 0){
+      clearing -= dt;
+      if(clearing <= 0){ clearing = 0; nextLevel(); }
+    }else if(!anim && queue.length){
+      execStep(queue.shift());
+    }
+  }
+  for(let i = particles.length - 1; i >= 0; i--){
+    const p = particles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += 240 * dt;
+    p.life -= dt;
+    if(p.life <= 0) particles.splice(i, 1);
+  }
+  shake = Math.max(0, shake - 22 * dt);
+  flash = Math.max(0, flash - dt);
+}
+
+/* ---------------- 绘制 ---------------- */
+
+const PI2 = Math.PI * 2;
+
+function rr(x, y, w, h, r){
+  const rad = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rad, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rad);
+  ctx.arcTo(x + w, y + h, x, y + h, rad);
+  ctx.arcTo(x, y + h, x, y, rad);
+  ctx.arcTo(x, y, x + w, y, rad);
+  ctx.closePath();
+}
+
+function drawBackground(now){
+  const grad = ctx.createLinearGradient(0, 0, W, H);
+  grad.addColorStop(0, '#151319');
+  grad.addColorStop(.52, '#1f1b26');
+  grad.addColorStop(1, '#14231f');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  for(const star of stars){
+    const y = (star.y + now * .001 * star.speed) % H;
+    ctx.globalAlpha = .24 + Math.sin(now * .001 + star.x) * .08;
+    ctx.fillStyle = star.color;
+    ctx.beginPath();
+    ctx.arc(star.x, y, star.r, 0, PI2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+function drawWall(px, py){
+  const pad = Math.max(.5, cell * .03);
+  const g = ctx.createLinearGradient(px, py, px, py + cell);
+  g.addColorStop(0, '#4a4257');
+  g.addColorStop(1, '#2e2939');
+  rr(px + pad, py + pad, cell - pad * 2, cell - pad * 2, Math.max(2, cell * .16));
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.07)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+function drawGoal(x, y){
+  const cx = ox + x * cell + cell / 2;
+  const cy = oy + y * cell + cell / 2;
+  const s = cell * .23;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - s);
+  ctx.lineTo(cx + s, cy);
+  ctx.lineTo(cx, cy + s);
+  ctx.lineTo(cx - s, cy);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(125,225,209,.18)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(125,225,209,.8)';
+  ctx.lineWidth = Math.max(1.2, cell * .055);
+  ctx.stroke();
+}
+
+function drawBox(px, py, onGoal){
+  const pad = Math.max(1.5, cell * .09);
+  const s = cell - pad * 2;
+  const r = Math.max(3, cell * .17);
+  const g = ctx.createLinearGradient(px, py, px + cell, py + cell);
+  if(onGoal){ g.addColorStop(0, '#d6f79a'); g.addColorStop(1, '#8ed24d'); }
+  else{ g.addColorStop(0, '#ffe3a6'); g.addColorStop(1, '#e8a63a'); }
+  rr(px + pad, py + pad, s, s, r);
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.strokeStyle = onGoal ? 'rgba(36,64,18,.5)' : 'rgba(92,56,10,.5)';
+  ctx.lineWidth = Math.max(1, cell * .05);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(px + pad + s * .2, py + pad + s * .2);
+  ctx.lineTo(px + pad + s * .8, py + pad + s * .8);
+  ctx.moveTo(px + pad + s * .8, py + pad + s * .2);
+  ctx.lineTo(px + pad + s * .2, py + pad + s * .8);
+  ctx.strokeStyle = onGoal ? 'rgba(36,64,18,.26)' : 'rgba(92,56,10,.24)';
+  ctx.lineWidth = Math.max(1, cell * .045);
+  ctx.stroke();
+}
+function drawPlayer(fx, fy){
+  const cx = ox + fx * cell + cell / 2;
+  const cy = oy + fy * cell + cell / 2;
+  const r = cell * .32;
+  ctx.fillStyle = 'rgba(0,0,0,.3)';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + r * .9, r * .82, r * .3, 0, 0, PI2);
+  ctx.fill();
+  const g = ctx.createRadialGradient(cx - r * .32, cy - r * .4, 1, cx, cy, r * 1.28);
+  g.addColorStop(0, '#dff2ff');
+  g.addColorStop(.42, '#5ec8ff');
+  g.addColorStop(1, '#2b76ad');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, PI2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.28)';
+  ctx.lineWidth = Math.max(1, cell * .04);
+  ctx.stroke();
+  // 眼睛朝向当前方向
+  const d = DIRS[facing];
+  const ex = cx + d.x * r * .3, ey = cy + d.y * r * .3;
+  const er = Math.max(1.1, r * .15);
+  ctx.fillStyle = '#141119';
+  ctx.beginPath();
+  if(d.y !== 0){
+    ctx.arc(ex - r * .27, ey, er, 0, PI2);
+    ctx.arc(ex + r * .27, ey, er, 0, PI2);
+  }else{
+    ctx.arc(ex, ey - r * .2, er, 0, PI2);
+    ctx.arc(ex, ey + r * .2, er, 0, PI2);
+  }
+  ctx.fill();
+}
+
+function drawBoard(){
+  const pad = Math.max(4, cell * .18);
+  rr(ox - pad, oy - pad, cols * cell + pad * 2, rows * cell + pad * 2, 10);
+  ctx.fillStyle = 'rgba(31,27,38,.72)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.1)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  for(let y = 0; y < rows; y++){
+    for(let x = 0; x < cols; x++){
+      const px = ox + x * cell, py = oy + y * cell;
+      if(walls[y][x]){
+        drawWall(px, py);
+      }else{
+        ctx.fillStyle = (x + y) % 2 ? '#231e2d' : '#1e1a26';
+        ctx.fillRect(px, py, cell, cell);
+      }
+    }
+  }
+  for(const g of goals) drawGoal(kx(g), ky(g));
+
+  const t = anim ? easeOut(Math.min(1, anim.t)) : 1;
+  for(const b of boxes){
+    if(anim && anim.bTo === b) continue;                 // 移动中的箱子单独插值绘制
+    drawBox(ox + kx(b) * cell, oy + ky(b) * cell, goals.has(b));
+  }
+  if(anim && anim.bTo !== null){
+    const fx = kx(anim.bFrom) + (kx(anim.bTo) - kx(anim.bFrom)) * t;
+    const fy = ky(anim.bFrom) + (ky(anim.bTo) - ky(anim.bFrom)) * t;
+    drawBox(ox + fx * cell, oy + fy * cell, goals.has(anim.bTo));
+  }
+  if(anim) drawPlayer(anim.fx + (anim.tx - anim.fx) * t, anim.fy + (anim.ty - anim.fy) * t);
+  else drawPlayer(player.x, player.y);
+}
+function drawParticles(){
+  for(const p of particles){
+    ctx.globalAlpha = Math.max(0, p.life / p.max);
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, PI2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function draw(now){
+  ctx.save();
+  if(shake > 0) ctx.translate(rand(-shake, shake), rand(-shake, shake));
+  drawBackground(now);
+  if(lv && cols) drawBoard();
+  drawParticles();
+  if(flash > 0){
+    ctx.fillStyle = 'rgba(184,243,110,' + Math.min(.16, flash * .35) + ')';
+    ctx.fillRect(0, 0, W, H);
+  }
+  if(state === 'paused'){
+    ctx.fillStyle = 'rgba(21,19,25,.28)';
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.restore();
+}
+
+function loop(now){
+  const dt = Math.min(.033, (now - lastTime) / 1000 || 0);
+  lastTime = now;
+  update(dt);
+  draw(now);
+  requestAnimationFrame(loop);
+}
+
+/* ---------------- 事件绑定与启动 ---------------- */
+
+modeBar.addEventListener('click', e => {
+  const btn = e.target.closest('button[data-mode]');
+  if(!btn) return;
+  mode = btn.dataset.mode;
+  updateModeButtons();
+  updateHud();
+});
+
+startBtn.addEventListener('click', startGame);
+restartBtn.addEventListener('click', startGame);
+pauseRestartBtn.addEventListener('click', () => { recordProgressBest(); startGame(); });
+pauseMenuBtn.addEventListener('click', showMenu);
+resumeBtn.addEventListener('click', resumeGame);
+backMenuBtn.addEventListener('click', showMenu);
+pauseBtn.addEventListener('click', pauseGame);
+undoBtn.addEventListener('click', undo);
+resetBtn.addEventListener('click', restartLevel);
+
+window.addEventListener('resize', resize);
+resize();
+updateModeButtons();
+showMenu();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
