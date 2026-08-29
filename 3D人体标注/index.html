@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>3D人体标注 - 精确描述疼痛与不适位置</title>
+  <meta name="description" content="可调性别、身高、体重与三围的三维人体模型，在体表圈选标记疼痛或异常位置，自动生成中文部位描述与图文报告。">
+  <link rel="icon" href="../favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<header class="top-bar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">◎</span>
+    3D人体标注
+  </div>
+  <nav class="top-links">
+    <a href="/index.html">首页</a>
+  </nav>
+</header>
+
+<main class="shell">
+  <p class="crumb"><a href="/index.html">首页</a> / 3D人体标注</p>
+
+  <div class="page-head">
+    <h1>3D人体标注</h1>
+    <p>调好自己的体型，在三维人体上点一下，就能说清「到底是哪里不舒服」。全部计算都在本地浏览器完成。</p>
+  </div>
+
+  <div class="layout">
+    <div class="col">
+      <section class="panel">
+        <h2>体型参数</h2>
+
+        <div class="field">
+          <div class="field-head"><strong>性别</strong></div>
+          <div class="seg" id="genderSeg">
+            <button type="button" data-v="male" aria-pressed="true">男</button>
+            <button type="button" data-v="female" aria-pressed="false">女</button>
+            <button type="button" data-v="neutral" aria-pressed="false">中性</button>
+          </div>
+        </div>
+        <div class="field">
+          <div class="field-head"><strong>身高</strong><span>cm</span></div>
+          <div class="field-row">
+            <input id="inHeight" type="range" min="120" max="210" step="1" value="172" aria-label="身高">
+            <input id="numHeight" class="num" type="number" min="120" max="210" step="1" value="172">
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-head"><strong>体重</strong><span>kg</span></div>
+          <div class="field-row">
+            <input id="inWeight" type="range" min="30" max="160" step="1" value="62" aria-label="体重">
+            <input id="numWeight" class="num" type="number" min="30" max="160" step="1" value="62">
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-head"><strong>胸围</strong><span>cm</span></div>
+          <div class="field-row">
+            <input id="inBust" type="range" min="60" max="140" step="1" value="88" aria-label="胸围">
+            <input id="numBust" class="num" type="number" min="60" max="140" step="1" value="88">
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-head"><strong>腰围</strong><span>cm</span></div>
+          <div class="field-row">
+            <input id="inWaist" type="range" min="45" max="140" step="1" value="74" aria-label="腰围">
+            <input id="numWaist" class="num" type="number" min="45" max="140" step="1" value="74">
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-head"><strong>臀围</strong><span>cm</span></div>
+          <div class="field-row">
+            <input id="inHip" type="range" min="60" max="150" step="1" value="90" aria-label="臀围">
+            <input id="numHip" class="num" type="number" min="60" max="150" step="1" value="90">
+          </div>
+        </div>
+
+        <label class="check">
+          <input id="autoGirth" type="checkbox" checked>
+          <span>按身高体重自动推算三围（取消勾选后可手动填写自己的实测值）</span>
+        </label>
+
+        <label class="check">
+          <input id="privacy" type="checkbox">
+          <span>显示私密部位（默认关闭：内衣遮挡，描述也只给粗略说法）</span>
+        </label>
+
+        <div class="btn-row" style="margin-top:12px">
+          <button id="resetBody" class="btn" type="button">恢复默认体型</button>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>标注设置</h2>
+
+        <div class="field">
+          <div class="field-head"><strong>鼠标模式</strong></div>
+          <div class="seg" id="modeSeg">
+            <button type="button" data-v="view" aria-pressed="false">查看</button>
+            <button type="button" data-v="mark" aria-pressed="true">标注</button>
+            <button type="button" data-v="erase" aria-pressed="false">删除</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-head"><strong>圈选半径</strong><span id="radiusVal">2.0 cm</span></div>
+          <div class="field-row">
+            <input id="inRadius" type="range" min="0.6" max="9" step="0.2" value="2" aria-label="圈选半径">
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-head"><strong>症状类型</strong></div>
+          <div class="chips" id="typeChips">
+            <button type="button" class="chip" data-v="pain" aria-pressed="true" style="color:#e11d48">
+              <span class="dot" style="background:#e11d48"></span>疼痛</button>
+            <button type="button" class="chip" data-v="ache" aria-pressed="false" style="color:#ea580c">
+              <span class="dot" style="background:#ea580c"></span>酸胀/僵硬</button>
+            <button type="button" class="chip" data-v="numb" aria-pressed="false" style="color:#7c3aed">
+              <span class="dot" style="background:#7c3aed"></span>麻木/刺痛</button>
+            <button type="button" class="chip" data-v="lump" aria-pressed="false" style="color:#2563eb">
+              <span class="dot" style="background:#2563eb"></span>肿块/结节</button>
+            <button type="button" class="chip" data-v="wound" aria-pressed="false" style="color:#0d9488">
+              <span class="dot" style="background:#0d9488"></span>伤口/切口</button>
+            <button type="button" class="chip" data-v="rash" aria-pressed="false" style="color:#db2777">
+              <span class="dot" style="background:#db2777"></span>皮疹/瘙痒</button>
+            <button type="button" class="chip" data-v="bruise" aria-pressed="false" style="color:#4f46e5">
+              <span class="dot" style="background:#4f46e5"></span>瘀青/出血</button>
+            <button type="button" class="chip" data-v="other" aria-pressed="false" style="color:#475569">
+              <span class="dot" style="background:#475569"></span>其他</button>
+          </div>
+        </div>
+
+        <p class="panel-note">标注模式下：左键点击人体打点，左键拖动仍可旋转视角。</p>
+      </section>
+    </div>
+    <div class="col">
+      <div class="viewer" id="viewer" data-mode="mark">
+        <canvas id="scene"></canvas>
+        <div class="viewer-bar" id="viewBar">
+          <button class="btn" type="button" data-view="front">正面</button>
+          <button class="btn" type="button" data-view="back">背面</button>
+          <button class="btn" type="button" data-view="left">左侧</button>
+          <button class="btn" type="button" data-view="right">右侧</button>
+          <button class="btn" type="button" data-view="top">顶部</button>
+          <span class="spacer"></span>
+          <select id="focusSel" aria-label="聚焦部位">
+            <option value="all">聚焦：全身</option>
+            <option value="head">聚焦：头部</option>
+            <option value="torso">聚焦：躯干</option>
+            <option value="handL">聚焦：左手</option>
+            <option value="handR">聚焦：右手</option>
+            <option value="footL">聚焦：左脚</option>
+            <option value="footR">聚焦：右脚</option>
+          </select>
+        </div>
+        <div class="hover-tip" id="hoverTip"></div>
+        <div class="viewer-foot">
+          <span>左键拖动旋转 · 滚轮缩放 · Shift 或中键拖动平移</span>
+          <span>模型左手在画面右侧（正对你时的镜像关系）</span>
+        </div>
+      </div>
+
+      <section class="panel">
+        <h2>怎么用</h2>
+        <ol class="tips">
+          <li>先在左侧把性别、身高、体重（必要时三围）调成自己的，模型会跟着变形。</li>
+          <li>需要看手指、脚趾这类小部位时，用右上角「聚焦」跳过去，再滚轮放大。</li>
+          <li>「标注」模式下点击体表打点；鼠标悬停时上方会先显示该处的中文部位名。</li>
+          <li>点开右侧列表里的某条标注，可以改症状类型、程度、范围、起始时间和补充说明；描述文字也能直接改写。</li>
+          <li>最后用「生成图文报告」导出一张 PNG：含四向全身图、每处标注的特写与清单。</li>
+        </ol>
+      </section>
+    </div>
+    <div class="col col-right">
+      <section class="panel">
+        <h2>标注清单 <span class="badge">共 <span id="annCount">0</span> 处</span></h2>
+        <div class="ann-list" id="annList"></div>
+        <div class="btn-row" style="margin-top:12px">
+          <button id="clearAnn" class="btn danger" type="button">清空全部</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>总结与导出</h2>
+        <div class="btn-row">
+          <button id="btnReport" class="btn primary" type="button">生成图文报告</button>
+          <button id="btnShot" class="btn" type="button">截图当前视角</button>
+          <button id="btnCopy" class="btn" type="button">复制文字摘要</button>
+          <button id="btnExport" class="btn" type="button">导出 JSON</button>
+          <button id="btnImport" class="btn" type="button">导入 JSON</button>
+        </div>
+        <input id="fileImport" type="file" accept="application/json,.json" hidden>
+        <p class="panel-note">体型与标注会自动存在本机浏览器里，下次打开还在。导出的 JSON 可以换设备继续用。</p>
+      </section>
+    </div>
+  </div>
+  <p class="disclaimer">
+    本工具只是帮你把「哪里不舒服」说清楚：人体模型是按参数近似生成的，部位名称为通俗解剖描述，
+    不代表真实解剖精度，也不构成任何医疗诊断或建议。身体不适请及时就医。所有数据只保存在你自己的浏览器中。
+  </p>
+</main>
+
+<div class="modal" id="reportModal" role="dialog" aria-modal="true" aria-label="标注报告" aria-hidden="true">
+  <div class="modal-box">
+    <div class="modal-head">
+      <span>标注报告</span>
+      <button class="btn tiny" id="reportClose" type="button">关闭</button>
+    </div>
+    <div class="modal-body">
+      <img id="reportImg" alt="标注报告预览">
+    </div>
+    <div class="modal-foot">
+      <a class="btn primary" id="reportDownload" download="报告.png">下载 PNG</a>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="./js/vendor/three-r128.min.js"></script>
+<script src="./js/orbit.js"></script>
+<script src="./js/body-model.js"></script>
+<script src="./js/anatomy.js"></script>
+<script src="./js/annotations.js"></script>
+<script src="./js/report.js"></script>
+<script src="./js/main.js"></script>
+</body>
+</html>
