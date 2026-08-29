@@ -41,3 +41,6 @@ screenshot
 .firebase
 /.temp
 /node_modules/
+
+# 3D人体标注：make-body-glb.js 下载的 MakeHuman 素材缓存，产物已提交，缓存不用进库
+3D人体标注/tools/.mh-cache/

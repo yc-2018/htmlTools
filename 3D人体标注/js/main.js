@@ -345,9 +345,9 @@
 
     var rad = document.createElement('input');
     rad.type = 'range';
-    rad.min = '0.6';
+    rad.min = '0.2';                     // 耳垂、指节这类小部位要圈得下
     rad.max = '9';
-    rad.step = '0.2';
+    rad.step = '0.1';
     rad.value = String(it.radius);
     on(rad, 'input', function () {
       it.radius = parseFloat(rad.value);

@@ -123,7 +123,7 @@
       morph: morphIndex(geo, mesh)
     };
     regionsOf(out, spec);
-    out.bands = wearSpans(out);
+    out.bandV = bandVerts(out);
     return out;
   }
 
@@ -461,59 +461,124 @@
   /* ---------------- 内衣带（私密部位遮挡） ---------------- */
 
   var RING_SEG = 40;
-
-  /** 采样一段高度里的横截面半轴；只取躯干那些面的顶点，手臂就撑不宽带子 */
-  function sampleBand(out, f0, f1, steps) {
-    var geo = out.geo, H = out.height;
-    var pos = geo.attributes.position, idx = geo.index;
-    var y0 = f0 * H, y1 = f1 * H, dy = (y1 - y0) / steps;
-    var a = [], bF = [], bB = [], i, k, t, c;
-    for (i = 0; i <= steps; i++) { a.push(0); bF.push(0); bB.push(0); }
-    for (t = 0; t < out.tri; t++) {
-      var r = out.regions[out.faceMap[t]];
-      if (!r || r.kind !== 'torso') continue;
-      for (c = 0; c < 3; c++) {
-        var vi = idx ? idx.getX(t * 3 + c) : t * 3 + c;
-        var y = pos.getY(vi);
-        if (y < y0 || y > y1) continue;
-        var x = pos.getX(vi), z = pos.getZ(vi);
-        k = Math.round((y - y0) / dy);
-        a[k] = Math.max(a[k], Math.abs(x));
-        if (z >= 0) bF[k] = Math.max(bF[k], z); else bB[k] = Math.max(bB[k], -z);
-      }
-    }
-    /* 采样不到的层用邻层补，否则带子上会出现半径为 0 的细腰 */
-    var ok = 0;
-    for (k = 0; k <= steps; k++) if (a[k] > 0) ok++;
-    if (ok < 2) return null;
-    fill(a); fill(bF); fill(bB);
-    return { y0: y0, dy: dy, steps: steps, a: a, bF: bF, bB: bB };
-  }
-
-  function fill(arr) {
-    var i, last = 0;
-    for (i = 0; i < arr.length; i++) { if (arr[i] > 0) last = arr[i]; else arr[i] = last; }
-    for (i = arr.length - 1; i >= 0; i--) { if (arr[i] > 0) last = arr[i]; else arr[i] = last; }
-  }
-
-  function wearSpans(out) {
-    var Lm = L();
-    return {
-      brief: sampleBand(out, Lm.crotch - 0.030, Lm.hip + 0.030, 8),
-      bust: sampleBand(out, Lm.underbust + 0.004, Lm.bust + 0.030, 6)
-    };
-  }
-  /** 一圈超椭圆点，前后深度可以不同 */
-  function ring(y, a, bF, bB, n) {
-    var pts = [], e = 2 / n;
+  var COS = [], SIN = [];
+  (function () {
     for (var i = 0; i < RING_SEG; i++) {
       var t = i / RING_SEG * Math.PI * 2;
-      var c = Math.cos(t), s = Math.sin(t);
-      var d = s >= 0 ? bF : bB;
+      COS.push(Math.cos(t));
+      SIN.push(Math.sin(t));
+    }
+  })();
+
+  /** 内衣带贴着哪些部位量：躯干、胸部，另外内裤要压到大腿根。
+      不带上大腿的话，胯下那几层只剩两腿之间窄窄一条，缝出来是根皱带子 */
+  function inBand(r) {
+    return r.kind === 'torso' || r.kind === 'breast'
+      || (r.kind === 'limb' && r.name && r.name.indexOf('大腿') >= 0);
+  }
+
+  /** 内衣带每次改参数都要重算，面数上万，相关顶点在加载时就挑好存下来 */
+  function bandVerts(out) {
+    var idx = out.geo.index, n = out.geo.attributes.position.count;
+    var seen = new Uint8Array(n), list = [], t, c;
+    for (t = 0; t < out.tri; t++) {
+      var r = out.regions[out.faceMap[t]];
+      if (!r || !inBand(r)) continue;
+      for (c = 0; c < 3; c++) {
+        var vi = idx ? idx.getX(t * 3 + c) : t * 3 + c;
+        if (!seen[vi]) { seen[vi] = 1; list.push(vi); }
+      }
+    }
+    return new Uint32Array(list);
+  }
+
+  /** 按当前 morph 权重算出躯干顶点的实际位置。
+      GLB 的形变目标存的是位移量（morphTargetsRelative），叠加即可；
+      不这么算的话内衣带永远是基础体型那一圈，胖了勒进肉里、瘦了浮在外面 */
+  function deformedBand(out, w) {
+    var pos = out.geo.attributes.position;
+    var mp = out.geo.morphAttributes.position || [];
+    var vs = out.bandV, act = [];
+    Object.keys(w).forEach(function (key) {
+      var j = out.morph.dict[key];
+      if (j != null && mp[j] && w[key] > 1e-3) {
+        act.push({ a: mp[j], w: clamp(w[key], 0, 1) });
+      }
+    });
+    var xyz = new Float32Array(vs.length * 3), i, m;
+    for (i = 0; i < vs.length; i++) {
+      var v = vs[i];
+      var x = pos.getX(v), y = pos.getY(v), z = pos.getZ(v);
+      for (m = 0; m < act.length; m++) {
+        var d = act[m].a, q = act[m].w;
+        x += d.getX(v) * q; y += d.getY(v) * q; z += d.getZ(v) * q;
+      }
+      xyz[i * 3] = x; xyz[i * 3 + 1] = y; xyz[i * 3 + 2] = z;
+    }
+    return xyz;
+  }
+
+  /** 采样一段高度里的横截面：每层记 RING_SEG 个方向上最远的投影距离，
+      也就是把截面套进 40 条切线里。布料是绷着的，不会钻进胯下、乳间那些凹处，
+      取这么个凸壳比顺着表面量更像内衣，也顺带保证了不漏皮肤 */
+  function sampleBand(out, xyz, f0, f1, steps) {
+    var H = out.height;
+    var y0 = f0 * H, y1 = f1 * H, dy = (y1 - y0) / steps;
+    var rows = [], hit = [], i, k, j;
+    for (k = 0; k <= steps; k++) { rows.push(new Float32Array(RING_SEG)); hit.push(0); }
+    for (i = 0; i < xyz.length; i += 3) {
+      var y = xyz[i + 1];
+      if (y < y0 || y > y1) continue;
+      var x = xyz[i], z = xyz[i + 2];
+      var t = (y - y0) / dy;
+      /* 一个点同时算进相邻两层：带子是两圈之间直线过渡的，
+         只记最近那圈的话，体型收得快的地方（胯下、乳下）皮肤会从两圈中间穿出来 */
+      var lo = Math.max(0, Math.floor(t)), hi = Math.min(steps, Math.ceil(t));
+      for (k = lo; k <= hi; k++) {
+        var row = rows[k];
+        hit[k] = 1;
+        for (j = 0; j < RING_SEG; j++) {
+          var h = x * COS[j] + z * SIN[j];
+          if (h > row[j]) row[j] = h;
+        }
+      }
+    }
+    var ok = 0;
+    for (k = 0; k <= steps; k++) if (hit[k]) ok++;
+    if (ok < 2) return null;
+    fillRows(rows, hit);
+    return { y0: y0, dy: dy, steps: steps, h: rows };
+  }
+
+  /** 整层没采到点就拷邻层，免得带子上出现一圈瘪掉的细腰 */
+  function fillRows(rows, hit) {
+    var k, j;
+    for (k = 1; k < rows.length; k++) if (!hit[k] && hit[k - 1]) { rows[k].set(rows[k - 1]); hit[k] = 1; }
+    for (k = rows.length - 2; k >= 0; k--) if (!hit[k] && hit[k + 1]) { rows[k].set(rows[k + 1]); hit[k] = 1; }
+    /* 支撑距离贴到 0 说明中轴跑到截面外头去了，切线求交会翻出去，垫一点 */
+    for (k = 0; k < rows.length; k++) {
+      for (j = 0; j < RING_SEG; j++) if (rows[k][j] < 0.5) rows[k][j] = 0.5;
+    }
+  }
+
+  function wearSpans(out, w) {
+    var Lm = L(), xyz = deformedBand(out, w);
+    return {
+      brief: sampleBand(out, xyz, Lm.crotch - 0.030, Lm.hip + 0.030, 8),
+      bust: sampleBand(out, xyz, Lm.underbust + 0.004, Lm.bust + 0.030, 6)
+    };
+  }
+  /** 相邻两条切线求交，还原成一圈套住截面的凸多边形；k 是往外让出的余量 */
+  function ring(y, h, k) {
+    var pts = [], i;
+    for (i = 0; i < RING_SEG; i++) {
+      var j = (i + 1) % RING_SEG;
+      var h0 = h[i] * k, h1 = h[j] * k;
+      var det = COS[i] * SIN[j] - COS[j] * SIN[i];
       pts.push(new V(
-        a * Math.sign(c) * Math.pow(Math.abs(c), e),
+        (h0 * SIN[j] - h1 * SIN[i]) / det,
         y,
-        d * Math.sign(s) * Math.pow(Math.abs(s), e)
+        (h1 * COS[i] - h0 * COS[j]) / det
       ));
     }
     return pts;
@@ -523,8 +588,7 @@
   function bandMesh(span, mat) {
     var rings = [], i, j;
     for (i = 0; i <= span.steps; i++) {
-      rings.push(ring(span.y0 + span.dy * i,
-        span.a[i] * 1.035, span.bF[i] * 1.035, span.bB[i] * 1.035, 2.3));
+      rings.push(ring(span.y0 + span.dy * i, span.h[i], 1.035));
     }
     var vert = [], idx = [];
     rings.forEach(function (r) {
@@ -570,9 +634,8 @@
     return w;
   }
 
-  function applyMorph(mesh, ref, p) {
+  function applyMorph(mesh, ref, w) {
     if (!ref.morph.count || !mesh.morphTargetInfluences) return;
-    var w = weights(p);
     var inf = mesh.morphTargetInfluences;
     for (var i = 0; i < inf.length; i++) inf[i] = 0;
     Object.keys(w).forEach(function (key) {
@@ -615,17 +678,20 @@
     var group = new THREE.Group();
     group.scale.setScalar(k);
 
+    var w = weights(p);
     var mesh = new THREE.Mesh(ref.geo, MAT.skin);
-    applyMorph(mesh, ref, p);
+    applyMorph(mesh, ref, w);
     var regions = ref.regions.map(function (r) { return scaled(r, k); });
     mesh.userData.regions = regions;
     mesh.userData.faceMap = ref.faceMap;
     mesh.userData.region = regions[0];    // 查不到面时的兜底
     group.add(mesh);
 
+    /* 内衣带按当前权重下的体表现算，胖瘦和三围一改就跟着松紧 */
+    var bands = wearSpans(ref, w);
     var wear = [];
-    if (ref.bands.brief) wear.push(bandMesh(ref.bands.brief, MAT.wear));
-    if (p.gender !== 'male' && ref.bands.bust) wear.push(bandMesh(ref.bands.bust, MAT.wear));
+    if (bands.brief) wear.push(bandMesh(bands.brief, MAT.wear));
+    if (p.gender !== 'male' && bands.bust) wear.push(bandMesh(bands.bust, MAT.wear));
     wear.forEach(function (m) { group.add(m); });
 
     var landmarks = {};
