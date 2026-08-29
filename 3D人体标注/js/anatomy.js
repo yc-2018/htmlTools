@@ -130,15 +130,42 @@
     if (normal.z >= 0) {
       if (f > 0.80) return '前额上部(发际线附近)';
       if (f > 0.64) return mid ? '额头正中' : side + '侧额头';
-      if (f > 0.50) return mid ? '眉心/鼻根' : side + '眼周(眉毛/眼睑)';
-      if (f > 0.34) return mid ? '鼻部' : side + '颧骨/面颊';
-      if (f > 0.18) return mid ? '嘴唇/口周' : side + '嘴角外侧';
+      if (f > 0.50) return mid ? '眉心(鼻根上方)' : side + '眼周(眼睑外围)';
+      if (f > 0.34) return mid ? '鼻梁两侧' : side + '颧骨/面颊';
+      if (f > 0.24) return mid ? '人中(鼻下)' : side + '面颊下部';
+      if (f > 0.14) return mid ? '口周(唇缘皮肤)' : side + '嘴角外侧';
       return '下巴(颏部)';
     }
     if (f > 0.66) return mid ? '后脑(枕部)' : side + '侧后脑';
     if (f > 0.42) return side + '耳后/枕下';
     return '后颈上方(后发际)';
   }
+  /** 五官这类小部件：把命中点换算成按半轴归一化的局部坐标 */
+  function normRadial(r, point) {
+    var v = point.clone().sub(r.center);
+    var e = r.ext;
+    return {
+      l: v.dot(r.lVec) / (e ? e.x : 1),
+      y: v.y / (e ? e.y : 1),
+      a: v.dot(r.aVec) / (e ? e.z : 1)
+    };
+  }
+
+  function eye(r, point) {
+    var n = normRadial(r, point);
+    if (Math.abs(n.y) >= Math.abs(n.l)) return r.side + (n.y >= 0 ? '侧上眼睑' : '侧下眼睑');
+    return r.side + (n.l >= 0 ? '侧外眼角(靠太阳穴)' : '侧内眼角(靠鼻侧)');
+  }
+
+  function ear(r, point) {
+    var n = normRadial(r, point);
+    if (n.y > 0.55) return r.side + '耳上部(耳廓上缘)';
+    if (n.y < -0.52) return r.side + '耳垂';
+    if (n.a < -0.42) return r.side + '耳后(耳廓与头之间)';
+    if (n.l > 0.35) return r.side + '耳廓外侧面';
+    return r.side + '耳中部(耳孔附近)';
+  }
+
   function neck(region, point, normal, ctx) {
     var side = point.x >= 0 ? '左' : '右';
     if (Math.abs(normal.x) > Math.abs(normal.z) * 1.1) return side + '侧颈部';
@@ -168,15 +195,19 @@
   }
 
   function foot(region, point, normal, ctx) {
-    var dz = (point.z - region.center.z) / (ctx.height * 0.072);
+    var span = region.zSpan || ctx.height * 0.046;
+    var dz = (point.z - region.center.z) / span;
     var lat = normal.dot(region.lVec);
+    var fore = region.zone === 'fore';
     if (normal.y < -0.5) {
-      return region.name + '底' + (dz > 0.3 ? '(前脚掌)' : dz < -0.35 ? '(脚跟)' : '(足弓/中部)');
+      return region.name + '底' + (fore
+        ? (dz > 0.4 ? '(脚趾根部下方)' : '(前脚掌)')
+        : (dz < -0.35 ? '(脚跟)' : '(足弓/中部)'));
     }
-    if (normal.y > 0.45) return region.name + '背' + (dz > 0.45 ? '(靠近脚趾)' : '');
-    if (dz < -0.55) return region.name + '后跟';
+    if (normal.y > 0.45) return region.name + '背' + (fore ? '(靠近脚趾)' : '(踝前/中段)');
+    if (!fore && dz < -0.55) return region.name + '后跟';
     if (Math.abs(lat) > Math.abs(normal.z)) return region.name + (lat >= 0 ? '外侧(小脚趾一侧)' : '内侧(足弓一侧)');
-    return region.name + '前缘(脚趾根部)';
+    return region.name + (fore ? '前缘(脚趾根部)' : '中段');
   }
 
   function breast(region, point, ctx) {
@@ -221,11 +252,24 @@
       case 'breast':
         part = breast(r, point, ctx);
         break;
+      case 'eye':
+        part = eye(r, point);
+        break;
+      case 'ear':
+        part = ear(r, point);
+        break;
+      case 'face':
+        /* 鼻尖、鼻翼这类小部件，名字本身已足够精确 */
+        break;
+      case 'sym':
+        part = r.name + (Math.abs(point.x) < ctx.height * 0.007
+          ? '正中' : (point.x >= 0 ? '左半侧' : '右半侧'));
+        break;
       case 'limb':
       case 'finger':
       case 'toe': {
         var a = along(r, point);
-        bits.push(facing(a.radial, r));
+        if (!r.noFacing) bits.push(facing(a.radial, r));
         bits.push(a.label);
         break;
       }

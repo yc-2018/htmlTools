@@ -61,6 +61,47 @@
     bust: 0.715, underbust: 0.668, waist: 0.616, iliac: 0.576,
     hip: 0.520, crotch: 0.482, knee: 0.285, ankle: 0.043
   };
+
+  /* 头部截面表：[从下巴算起的高度比例, 半宽×, 前半深×, 后半深×, 超椭圆指数] */
+  var HEAD = [
+    [0.000, 0.30, 0.42, 0.34, 2.40],
+    [0.075, 0.50, 0.68, 0.56, 2.40],
+    [0.170, 0.70, 0.86, 0.74, 2.35],
+    [0.280, 0.84, 0.96, 0.86, 2.30],
+    [0.400, 0.93, 1.00, 0.93, 2.25],
+    [0.520, 0.99, 0.99, 0.98, 2.20],
+    [0.640, 1.00, 0.95, 1.00, 2.15],
+    [0.760, 0.97, 0.90, 1.00, 2.10],
+    [0.860, 0.88, 0.82, 0.93, 2.10],
+    [0.930, 0.72, 0.66, 0.76, 2.10],
+    [0.975, 0.50, 0.46, 0.54, 2.10],
+    [1.000, 0.22, 0.20, 0.24, 2.10]
+  ];
+
+  function headProf(t) {
+    if (t <= HEAD[0][0]) return HEAD[0];
+    for (var i = 0; i < HEAD.length - 1; i++) {
+      if (t <= HEAD[i + 1][0]) {
+        var k = (t - HEAD[i][0]) / (HEAD[i + 1][0] - HEAD[i][0]);
+        return [t,
+          lerp(HEAD[i][1], HEAD[i + 1][1], k),
+          lerp(HEAD[i][2], HEAD[i + 1][2], k),
+          lerp(HEAD[i][3], HEAD[i + 1][3], k),
+          lerp(HEAD[i][4], HEAD[i + 1][4], k)];
+      }
+    }
+    return HEAD[HEAD.length - 1];
+  }
+
+  /** 面部前表面在（高度比例 t，横向 x）处的 z（相对头部中心） */
+  function faceZ(t, x, HW, HD) {
+    var p = headProf(t);
+    var a = p[1] * HW;
+    var u = Math.min(1, Math.abs(x) / a);
+    return p[2] * HD * Math.pow(Math.max(0, 1 - Math.pow(u, p[4])), 1 / p[4]);
+  }
+
+  function sideX(t, HW) { return headProf(t)[1] * HW; }
   /* ---------------- 几何工具 ---------------- */
 
   /** 以 dir 为局部 +Y 轴，ref 为局部 +Z 参考方向，构造正交基 */
@@ -107,14 +148,14 @@
     } else {
       pts.push(new THREE.Vector2(0.002, len));
     }
-    var mesh = new THREE.Mesh(new THREE.LatheGeometry(pts, opt.seg || 18));
+    var mesh = new THREE.Mesh(new THREE.LatheGeometry(pts, opt.seg || 22));
     mesh.position.copy(from);
     applyFrame(mesh, frame(to.clone().sub(from), opt.ref));
     return mesh;
   }
   /** 球体（可按局部基与三轴缩放做成椭球） */
   function blob(center, r, f, scale) {
-    var mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 14));
+    var mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16));
     mesh.position.copy(center);
     if (f) applyFrame(mesh, f);
     if (scale) mesh.scale.set(scale.x, scale.y, scale.z);
@@ -164,6 +205,81 @@
     geo.computeVertexNormals();
     return geo;
   }
+  /* ---------------- 面部 ---------------- */
+
+  /**
+   * 生成五官：鼻、眼、眉、唇、耳，每一件都是独立可点击的部位
+   * @param {Function} add 加入可拾取部位
+   * @param {Function} deco 加入纯装饰件
+   */
+  function face(add, deco, MAT, H, chinY, hh, HW, HD, headZ) {
+    /** 面部表面点：t 为从下巴起算的高度比例，x 为横向偏移，out 为向前突出量 */
+    function P(t, x, out) {
+      return new V(x, chinY + t * hh, headZ + faceZ(t, x, HW, HD) + (out || 0));
+    }
+    var AX = { aPos: '前面', aNeg: '后面', lPos: '左侧', lNeg: '右侧' };
+    var sides = [1, -1];
+
+    /* 鼻：鼻梁 + 鼻尖 + 两侧鼻翼 */
+    var nRoot = P(0.545, 0, 0.001 * H);
+    var nTip = P(0.345, 0, 0.013 * H);
+    add(tube(nRoot, nTip, 0.0052 * H, 0.0102 * H, { seg: 16, steps: 4, ref: AXIS_Z }), {
+      kind: 'limb', name: '鼻梁(鼻背)', from: nRoot.clone(), to: nTip.clone(), noFacing: true,
+      aVec: AXIS_Z.clone(), lVec: new V(1, 0, 0), axes: AX,
+      t0: '靠鼻根(两眼之间)', t1: '靠鼻尖'
+    });
+    add(blob(nTip, 1, null, { x: 0.0105 * H, y: 0.0095 * H, z: 0.0105 * H }), {
+      kind: 'face', name: '鼻尖'
+    });
+    sides.forEach(function (s) {
+      var c = P(0.312, s * 0.0112 * H, 0.003 * H);
+      add(blob(c, 1, null, { x: 0.0078 * H, y: 0.0068 * H, z: 0.0088 * H }), {
+        kind: 'face', name: (s > 0 ? '左' : '右') + '鼻翼(鼻孔外侧)'
+      });
+    });
+
+    /* 眼：眼白可点击，瞳孔只是装饰 */
+    sides.forEach(function (s) {
+      var ex = s * 0.0212 * H;
+      var ec = P(0.515, ex, -0.0016 * H);
+      var ext = new V(0.0136 * H, 0.0076 * H, 0.0076 * H);
+      add(blob(ec, 1, null, { x: ext.x, y: ext.y, z: ext.z }), {
+        kind: 'eye', name: (s > 0 ? '左' : '右') + '眼', side: s > 0 ? '左' : '右',
+        center: ec.clone(), ext: ext, aVec: AXIS_Z.clone(), lVec: new V(s, 0, 0)
+      }, MAT.eye);
+      deco(blob(P(0.515, ex, 0.0036 * H), 1, null,
+        { x: 0.0050 * H, y: 0.0050 * H, z: 0.0030 * H }), MAT.iris);
+    });
+    /* 眉 */
+    sides.forEach(function (s) {
+      var b0 = P(0.583, s * 0.0075 * H, 0.0008 * H);
+      var b1 = P(0.601, s * 0.0300 * H, 0.0008 * H);
+      add(tube(b0, b1, 0.0054 * H, 0.0030 * H, { seg: 12, steps: 4, round1: true, ref: AXIS_Z }), {
+        kind: 'limb', name: (s > 0 ? '左' : '右') + '眉', noFacing: true,
+        from: b0.clone(), to: b1.clone(),
+        aVec: AXIS_Z.clone(), lVec: new V(s, 0, 0), axes: AX,
+        t0: '眉头(靠鼻侧)', t1: '眉尾(靠外侧)'
+      }, MAT.hair);
+    });
+
+    /* 唇 */
+    add(blob(P(0.206, 0, -0.0022 * H), 1, null,
+      { x: 0.0152 * H, y: 0.0042 * H, z: 0.0068 * H }), { kind: 'sym', name: '上唇' }, MAT.lip);
+    add(blob(P(0.160, 0, -0.0022 * H), 1, null,
+      { x: 0.0136 * H, y: 0.0052 * H, z: 0.0072 * H }), { kind: 'sym', name: '下唇' }, MAT.lip);
+
+    /* 耳 */
+    sides.forEach(function (s) {
+      var t = 0.48;
+      var ext = new V(0.0062 * H, 0.0170 * H, 0.0112 * H);
+      var c = new V(s * (sideX(t, HW) - 0.0012 * H), chinY + t * hh, headZ - 0.006 * H);
+      add(blob(c, 1, null, { x: ext.x, y: ext.y, z: ext.z }), {
+        kind: 'ear', name: (s > 0 ? '左' : '右') + '耳', side: s > 0 ? '左' : '右',
+        center: c.clone(), ext: ext, aVec: AXIS_Z.clone(), lVec: new V(s, 0, 0)
+      });
+    });
+  }
+
   /* ---------------- 人体构建 ---------------- */
 
   function build(p) {
@@ -182,12 +298,28 @@
     var wear = [];
     var matSkin = new THREE.MeshStandardMaterial({ color: 0xdccfc2, roughness: 0.66, metalness: 0.02 });
     var matWear = new THREE.MeshStandardMaterial({ color: 0x59616e, roughness: 0.9, metalness: 0.0 });
+    var MAT = {
+      skin: matSkin,
+      wear: matWear,
+      eye: new THREE.MeshStandardMaterial({ color: 0xf3f0ea, roughness: 0.3, metalness: 0.0 }),
+      iris: new THREE.MeshStandardMaterial({ color: 0x3b2f2a, roughness: 0.35, metalness: 0.0 }),
+      hair: new THREE.MeshStandardMaterial({ color: 0x4a3f3a, roughness: 0.85, metalness: 0.0 }),
+      lip: new THREE.MeshStandardMaterial({ color: 0xc98d86, roughness: 0.55, metalness: 0.0 })
+    };
 
-    function add(mesh, region) {
-      mesh.material = matSkin;
+    function add(mesh, region, mat) {
+      mesh.material = mat || matSkin;
       mesh.userData.region = region;
       group.add(mesh);
       parts.push(mesh);
+      return mesh;
+    }
+
+    /** 纯装饰件（瞳孔一类）：不参与拾取，也不受私密开关影响 */
+    function addDeco(mesh, mat) {
+      mesh.material = mat || matSkin;
+      mesh.raycast = function () {};
+      group.add(mesh);
       return mesh;
     }
 
@@ -265,26 +397,27 @@
       });
     }
     /* ---- 头颈 ---- */
+    var chinY = L.chin * H, topY = L.top * H, hh = topY - chinY;
+    var HW = 0.047 * H, HD = 0.058 * H, headZ = 0.012 * H;
+
+    /* 颈顶抬到下颌内部并限制粗细，保证胖体型也不会从下巴两侧穿出来 */
+    var neckR = Math.min(q.neckR * H * Math.pow(fat, 0.4), 0.037 * H);
     var neck0 = new V(0, L.neck * H - 0.012 * H, 0);
-    var neck1 = new V(0, L.chin * H + 0.004 * H, 0.004 * H);
-    add(tube(neck0, neck1, q.neckR * H * Math.pow(fat, 0.4) * 1.08, q.neckR * H * Math.pow(fat, 0.4)), {
+    var neck1 = new V(0, chinY + 0.040 * H, 0.004 * H);
+    add(tube(neck0, neck1, neckR * 1.08, neckR), {
       kind: 'neck', name: '颈部', from: neck0, to: neck1,
       aVec: AXIS_Z.clone(), lVec: new V(1, 0, 0)
     });
 
-    var headC = new V(0, (L.chin + (L.top - L.chin) * 0.52) * H, 0.006 * H);
-    var headHalf = (L.top - L.chin) * H * 0.53;
-    add(blob(headC, 1, null, { x: 0.047 * H, y: headHalf, z: 0.058 * H }), {
-      kind: 'head', name: '头部', center: headC, half: headHalf, top: L.top * H, chin: L.chin * H
+    var headC = new V(0, chinY + hh * 0.55, headZ);
+    var headMesh = new THREE.Mesh(loft(HEAD.map(function (r) {
+      return { y: chinY + r[0] * hh, a: r[1] * HW, bF: r[2] * HD, bB: r[3] * HD, n: r[4] };
+    }), 40, true, true));
+    headMesh.position.z = headZ;
+    add(headMesh, {
+      kind: 'head', name: '头部', center: headC, half: hh * 0.5, top: topY, chin: chinY
     });
-    [1, -1].forEach(function (side) {
-      var c = new V(side * 0.046 * H, headC.y - 0.004 * H, -0.002 * H);
-      add(blob(c, 0.017 * H, null, { x: 0.36, y: 1, z: 0.62 }), {
-        kind: 'blob', name: (side > 0 ? '左' : '右') + '耳', center: c,
-        aVec: AXIS_Z.clone(), lVec: new V(side, 0, 0),
-        axes: { aPos: '耳前', aNeg: '耳后', lPos: '外侧', lNeg: '贴头一侧' }
-      });
-    });
+    face(add, addDeco, MAT, H, chinY, hh, HW, HD, headZ);
 
     var landmarks = { head: headC.clone(), torso: new V(0, L.waist * H, 0) };
 
@@ -346,12 +479,17 @@
 
       /* 手（含五指与各指关节） */
       landmarks[side > 0 ? 'handL' : 'handR'] = buildHand(side, sn, wrist, dir2, add, H, q, fat);
-      /* 大腿 / 膝 / 小腿 / 踝 / 足 */
-      var hipJ = new V(side * 0.060 * H, L.crotch * H + 0.020 * H, 0);
-      var knee = new V(side * 0.070 * H, L.knee * H, 0.006 * H);
-      var ankle = new V(side * 0.066 * H, L.ankle * H, -0.006 * H);
-      limb('大腿', hipJ, knee, q.thighR * H * fat, q.kneeR * H * fat * 0.94, {
-        profile: function (t) { return 1 + 0.09 * Math.exp(-Math.pow((t - 0.12) / 0.30, 2)); }
+      /* 大腿 / 膝 / 小腿 / 踝 / 足
+         髋部位置与大腿粗细都跟着臀围走，臀腿衔接才不会脱节 */
+      var hipHalf = hip.a * 0.95;
+      var thighTopR = clamp(hipHalf * 0.46 * Math.pow(fat, 0.18), 0.034 * H, 0.075 * H);
+      var hipX = clamp(hipHalf - thighTopR * 0.95, 0.026 * H, 0.080 * H);
+      var hipJ = new V(side * hipX, L.crotch * H + 0.030 * H, 0);
+      var knee = new V(side * Math.max(0.030 * H, hipX * 0.84), L.knee * H, 0.006 * H);
+      var ankle = new V(side * Math.max(0.028 * H, hipX * 0.78), L.ankle * H, -0.006 * H);
+      limb('大腿', hipJ, knee, thighTopR, q.kneeR * H * fat * 0.94, {
+        round0: true,
+        profile: function (t) { return 1 - 0.05 * t + 0.05 * Math.exp(-Math.pow(t / 0.26, 2)); }
       }, '靠近大腿根部', '靠近膝部');
       joint('膝', knee, q.kneeR * H * fat, knee.clone().sub(hipJ), {
         aPos: '膝盖前面(髌骨)', aNeg: '膝后(腘窝)', lPos: '外侧', lNeg: '内侧'
@@ -369,7 +507,7 @@
       group: group,
       parts: parts,
       wear: wear,
-      materials: { skin: matSkin, wear: matWear },
+      materials: MAT,
       height: H,
       landmarks: landmarks,
       L: L
@@ -449,28 +587,44 @@
   /* ---------------- 足：脚掌 + 五趾 ---------------- */
 
   function buildFoot(side, sn, ankle, add, H, q, fat) {
-    var footC = new V(ankle.x, 0.034 * H, 0.026 * H);
     var lat = new V(side, 0, 0);
-    add(blob(footC, 1, null, { x: 0.037 * H, y: 0.034 * H, z: 0.072 * H }), {
-      kind: 'foot', name: sn + '脚', side: sn, center: footC, aVec: AXIS_Y.clone(), lVec: lat.clone()
+    var k = Math.pow(fat, 0.22);
+    var AXES = {
+      aPos: '脚背(上面)', aNeg: '脚底(下面)',
+      lPos: '外侧(小脚趾一侧)', lNeg: '内侧(足弓一侧)'
+    };
+
+    /* 后足（脚跟+足弓）与前足（脚掌垫）分两块，脚才有前薄后厚的变化 */
+    var rearZ = 0.046 * H;
+    var rearC = new V(ankle.x, 0.0215 * H, 0);
+    add(blob(rearC, 1, null, { x: 0.0250 * H * k, y: 0.0215 * H, z: rearZ }), {
+      kind: 'foot', zone: 'rear', zSpan: rearZ, name: sn + '脚', side: sn,
+      center: rearC.clone(), aVec: AXIS_Y.clone(), lVec: lat.clone(), axes: AXES
     });
-    var offs = [-0.021, -0.007, 0.004, 0.014, 0.023];
-    var rs = [0.0092, 0.0070, 0.0066, 0.0060, 0.0052];
-    var lens = [0.030, 0.028, 0.026, 0.023, 0.019];
+
+    var foreZ = 0.036 * H;
+    var foreC = new V(ankle.x + side * 0.002 * H, 0.0165 * H, 0.050 * H);
+    add(blob(foreC, 1, null, { x: 0.0280 * H * k, y: 0.0165 * H, z: foreZ }), {
+      kind: 'foot', zone: 'fore', zSpan: foreZ, name: sn + '脚', side: sn,
+      center: foreC.clone(), aVec: AXIS_Y.clone(), lVec: lat.clone(), axes: AXES
+    });
+
+    var offs = [-0.0190, -0.0065, 0.0035, 0.0125, 0.0210];
+    var rs = [0.0066, 0.0051, 0.0047, 0.0043, 0.0038];
+    var lens = [0.0255, 0.0238, 0.0221, 0.0196, 0.0162];
     var names = ['大脚趾', '第二趾', '第三趾', '第四趾', '小脚趾'];
-    var k = Math.pow(fat, 0.3);
     for (var i = 0; i < 5; i++) {
-      var from = new V(footC.x + side * offs[i] * H, 0.0215 * H, 0.088 * H);
-      var to = new V(from.x, 0.0205 * H, (0.088 + lens[i]) * H);
+      var from = new V(foreC.x + side * offs[i] * H, 0.0135 * H, 0.070 * H);
+      var to = new V(from.x, 0.0125 * H, (0.070 + lens[i]) * H);
       var r = rs[i] * H * k;
-      add(tube(from, to, r, r * 0.88, { round1: true, seg: 14, ref: AXIS_Y }), {
+      add(tube(from, to, r, r * 0.9, { round1: true, seg: 14, ref: AXIS_Y }), {
         kind: 'toe', name: sn + '脚' + names[i], side: sn, from: from, to: to,
         aVec: AXIS_Y.clone(), lVec: lat.clone(), tip: to.clone().add(new V(0, 0, r * 0.8)),
         axes: { aPos: '趾背(上面)', aNeg: '趾腹(下面)', lPos: '靠小脚趾一侧', lNeg: '靠大脚趾一侧' },
         t0: '靠近趾根', t1: '靠近趾尖'
       });
     }
-    return new V(footC.x, 0.030 * H, 0.05 * H);
+    return new V(rearC.x, 0.026 * H, 0.030 * H);
   }
 
   window.BodyModel = { build: build, autoGirth: autoGirth, girth: girth, L: L };

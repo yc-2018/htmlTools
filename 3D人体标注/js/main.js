@@ -56,8 +56,9 @@
     body.group.traverse(function (o) {
       if (o.geometry) o.geometry.dispose();
     });
-    body.materials.skin.dispose();
-    body.materials.wear.dispose();
+    Object.keys(body.materials).forEach(function (k) {
+      if (body.materials[k] && body.materials[k].dispose) body.materials[k].dispose();
+    });
     body = null;
   }
 

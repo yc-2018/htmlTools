@@ -32,6 +32,8 @@
     var dom = this.dom;
 
     dom.addEventListener('pointerdown', function (e) {
+      /* 中键/右键的浏览器默认行为（自动滚动、粘贴）会顶掉平移操作 */
+      if (e.button === 1 || e.button === 2) e.preventDefault();
       dom.setPointerCapture(e.pointerId);
       self._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       self.dragged = false;
@@ -91,6 +93,15 @@
     dom.addEventListener('lostpointercapture', release);
     dom.addEventListener('contextmenu', function (e) {
       e.preventDefault();
+    });
+
+    /* pointerdown 的 preventDefault 不会阻止兼容性鼠标事件，
+       所以中键的自动滚动还得在 mousedown / auxclick 上单独拦一次 */
+    dom.addEventListener('mousedown', function (e) {
+      if (e.button === 1) e.preventDefault();
+    });
+    dom.addEventListener('auxclick', function (e) {
+      if (e.button === 1) e.preventDefault();
     });
 
     dom.addEventListener('wheel', function (e) {
