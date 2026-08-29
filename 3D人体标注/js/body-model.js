@@ -153,9 +153,10 @@
     applyFrame(mesh, frame(to.clone().sub(from), opt.ref));
     return mesh;
   }
-  /** 球体（可按局部基与三轴缩放做成椭球） */
-  function blob(center, r, f, scale) {
-    var mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16));
+  /** 球体（可按局部基与三轴缩放做成椭球）；seg 用于关节这类需要更圆的部件 */
+  function blob(center, r, f, scale, seg) {
+    var w = seg || 24;
+    var mesh = new THREE.Mesh(new THREE.SphereGeometry(r, w, Math.round(w * 0.7)));
     mesh.position.copy(center);
     if (f) applyFrame(mesh, f);
     if (scale) mesh.scale.set(scale.x, scale.y, scale.z);
@@ -428,7 +429,7 @@
 
       /* 肩（三角肌） */
       var shC = new V(side * sw * 0.46, L.shoulder * H - 0.016 * H, 0);
-      add(blob(shC, q.upperArmR * H * fat * 1.45, null, { x: 1, y: 0.9, z: 0.95 }), {
+      add(blob(shC, q.upperArmR * H * fat * 1.45, null, { x: 1, y: 0.9, z: 0.95 }, 32), {
         kind: 'blob', name: sn + '肩', center: shC, aVec: AXIS_Z.clone(), lVec: lat.clone(),
         axes: { aPos: '肩前', aNeg: '肩后', lPos: '肩外侧', lNeg: '靠颈一侧' }
       });
@@ -460,22 +461,31 @@
         });
       }
 
+      /* 关节球要略粗于相邻肢体端面，端面藏进球里，外形才是圆的 */
       function joint(name, center, r, dir, axes) {
-        return add(blob(center, r), {
+        return add(blob(center, r, null, null, 32), {
           kind: 'blob', name: sn + name, side: sn, center: center.clone(),
           aVec: dir ? antOf(dir) : AXIS_Z.clone(), lVec: dir ? latOf(dir) : lat.clone(),
           axes: axes || LIMB_AXES
         });
       }
 
-      limb('上臂', shoulder, elbow, q.upperArmR * H * fat * 1.06, q.elbowR * H * fat, {
+      /* 关节球比相邻端面粗，前臂/小腿的肌腹峰值下移，
+         鼓起的位置由 profile 承担，端面则收进关节球里 */
+      var elbowR = q.elbowR * H * fat * 1.15;
+      var wristR = q.wristR * H * fat * 1.12;
+      var foreBase = elbowR * 0.92;
+      var foreEnd = wristR * 0.90;
+      var foreAmp = clamp(q.foreR * H * fat * 1.16 /
+        (foreBase + (foreEnd - foreBase) * 0.34) - 1, 0, 0.45);
+      limb('上臂', shoulder, elbow, q.upperArmR * H * fat * 1.06, elbowR * 0.90, {
         profile: function (t) { return 1 + 0.10 * Math.exp(-Math.pow((t - 0.30) / 0.30, 2)); }
       }, '靠近肩部', '靠近肘部');
-      joint('肘', elbow, q.elbowR * H * fat * 1.05, dir1, { aPos: '肘窝(前面)', aNeg: '肘尖(后面)', lPos: '外侧', lNeg: '内侧' });
-      limb('前臂', elbow, wrist, q.foreR * H * fat * 1.16, q.wristR * H * fat, {
-        profile: function (t) { return 1 + 0.10 * Math.exp(-Math.pow((t - 0.18) / 0.26, 2)); }
+      joint('肘', elbow, elbowR, dir1, { aPos: '肘窝(前面)', aNeg: '肘尖(后面)', lPos: '外侧', lNeg: '内侧' });
+      limb('前臂', elbow, wrist, foreBase, foreEnd, {
+        profile: function (t) { return 1 + foreAmp * Math.exp(-Math.pow((t - 0.34) / 0.22, 2)); }
       }, '靠近肘部', '靠近腕部');
-      joint('腕', wrist, q.wristR * H * fat * 1.06, dir2, { aPos: '掌侧(手心一侧)', aNeg: '背侧(手背一侧)', lPos: '拇指一侧', lNeg: '小指一侧' });
+      joint('腕', wrist, wristR, dir2, { aPos: '掌侧(手心一侧)', aNeg: '背侧(手背一侧)', lPos: '拇指一侧', lNeg: '小指一侧' });
 
       /* 手（含五指与各指关节） */
       landmarks[side > 0 ? 'handL' : 'handR'] = buildHand(side, sn, wrist, dir2, add, H, q, fat);
@@ -487,15 +497,20 @@
       var hipJ = new V(side * hipX, L.crotch * H + 0.030 * H, 0);
       var knee = new V(side * Math.max(0.030 * H, hipX * 0.84), L.knee * H, 0.006 * H);
       var ankle = new V(side * Math.max(0.028 * H, hipX * 0.78), L.ankle * H, -0.006 * H);
-      limb('大腿', hipJ, knee, thighTopR, q.kneeR * H * fat * 0.94, {
+      var kneeR = q.kneeR * H * fat * 1.06;
+      var calfBase = kneeR * 0.88;
+      var calfEnd = q.ankleR * H * fat;
+      var calfAmp = clamp(q.calfR * H * fat * 1.24 /
+        (calfBase + (calfEnd - calfBase) * 0.34) - 1, 0, 0.5);
+      limb('大腿', hipJ, knee, thighTopR, kneeR * 0.90, {
         round0: true,
         profile: function (t) { return 1 - 0.05 * t + 0.05 * Math.exp(-Math.pow(t / 0.26, 2)); }
       }, '靠近大腿根部', '靠近膝部');
-      joint('膝', knee, q.kneeR * H * fat, knee.clone().sub(hipJ), {
+      joint('膝', knee, kneeR, knee.clone().sub(hipJ), {
         aPos: '膝盖前面(髌骨)', aNeg: '膝后(腘窝)', lPos: '外侧', lNeg: '内侧'
       });
-      limb('小腿', knee, ankle, q.calfR * H * fat * 1.10, q.ankleR * H * fat, {
-        profile: function (t) { return 1 + 0.26 * Math.exp(-Math.pow((t - 0.20) / 0.26, 2)); }
+      limb('小腿', knee, ankle, calfBase, calfEnd, {
+        profile: function (t) { return 1 + calfAmp * Math.exp(-Math.pow((t - 0.34) / 0.22, 2)); }
       }, '靠近膝部', '靠近脚踝');
       joint('脚踝', ankle, q.ankleR * H * fat * 1.10, ankle.clone().sub(knee), {
         aPos: '前面', aNeg: '后面(跟腱)', lPos: '外踝一侧', lNeg: '内踝一侧'
