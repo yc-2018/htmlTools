@@ -193,7 +193,7 @@
         it.normal.copy(worldNormal(hits[0]));
         it.pNorm.copy(it.point).divideScalar(height);
         if (!it.edited && window.Anatomy) {
-          var d = window.Anatomy.describe(hits[0].object, it.point, it.normal, ctx);
+          var d = window.Anatomy.describe(hits[0].object, it.point, it.normal, ctx, hits[0].faceIndex);
           it.part = d.part;
           it.desc = d.text;
         }

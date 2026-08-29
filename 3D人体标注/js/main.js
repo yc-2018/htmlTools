@@ -9,7 +9,7 @@
   function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
   var params = { gender: 'male', height: 172, weight: 62, bust: 88, waist: 74, hip: 90 };
-  var opts = { privacy: false, mode: 'mark', radius: 2.0, typeId: 'pain', autoGirth: true };
+  var opts = { privacy: false, mode: 'mark', radius: 2.0, typeId: 'pain', autoGirth: true, source: 'proc' };
 
   var viewer = $('viewer');
   var canvas = $('scene');
@@ -54,7 +54,8 @@
     if (!body) return;
     scene.remove(body.group);
     body.group.traverse(function (o) {
-      if (o.geometry) o.geometry.dispose();
+      /* 外部模型的几何在多次重建之间复用，释放了就没法再 build */
+      if (o.geometry && !(o.geometry.userData && o.geometry.userData.shared)) o.geometry.dispose();
     });
     Object.keys(body.materials).forEach(function (k) {
       if (body.materials[k] && body.materials[k].dispose) body.materials[k].dispose();
@@ -67,10 +68,16 @@
     body.wear.forEach(function (m) { m.visible = !opts.privacy; });
   }
 
+  /** 当前模型源；外部模型没准备好时自动退回程序化模型 */
+  function modelSource() {
+    if (opts.source === 'mesh' && window.MeshModel && window.MeshModel.ready()) return window.MeshModel;
+    return window.BodyModel;
+  }
+
   /** 重建人体，并把已有标注重新贴回体表 */
   function rebuild() {
     disposeBody();
-    body = window.BodyModel.build(params);
+    body = modelSource().build(params);
     scene.add(body.group);
     applyPrivacy();
     if (store.items.length) store.reproject(body.parts, params.height, ctx());
@@ -166,7 +173,7 @@
     preview.quaternion.setFromUnitVectors(Z, n);
     preview.scale.setScalar(opts.radius);
     preview.visible = opts.mode === 'mark';
-    showTip(window.Anatomy.describe(h.object, h.point, n, ctx()).text, e, rect);
+    showTip(window.Anatomy.describe(h.object, h.point, n, ctx(), h.faceIndex).text, e, rect);
   });
 
   on(canvas, 'pointerleave', function () {
@@ -196,7 +203,7 @@
     var h = hitBody(e);
     if (!h) return;
     var n = window.Annotations.worldNormal(h);
-    var d = window.Anatomy.describe(h.object, h.point, n, ctx());
+    var d = window.Anatomy.describe(h.object, h.point, n, ctx(), h.faceIndex);
     var it = store.add({
       point: h.point, normal: n, radius: opts.radius, typeId: opts.typeId,
       part: d.part, desc: d.text, height: params.height
@@ -421,7 +428,7 @@
           params: params,
           opts: {
             privacy: opts.privacy, radius: opts.radius,
-            typeId: opts.typeId, autoGirth: opts.autoGirth
+            typeId: opts.typeId, autoGirth: opts.autoGirth, source: opts.source
           },
           ann: store.toJSON()
         }));
@@ -507,6 +514,53 @@
     });
     paint();
     return paint;
+  }
+
+  /* ---------------- 模型源切换 ---------------- */
+
+  var SRC_NOTE = '外部模型需要先把 body.glb 放进 assets/，做法见 assets/README.md。';
+
+  function note(text) {
+    var el = $('sourceNote');
+    if (el) el.textContent = text || SRC_NOTE;
+  }
+
+  /** 换源：外部模型要先异步加载，缺资源就留在程序化模型上 */
+  function setSource(v) {
+    if (v === opts.source) return;
+    if (v !== 'mesh') {
+      opts.source = 'proc';
+      note('');
+      rebuild();
+      save();
+      return;
+    }
+    if (!window.MeshModel) {
+      note('缺少 js/mesh-model.js');
+      return;
+    }
+    if (window.MeshModel.ready()) {
+      opts.source = 'mesh';
+      note('已切到外部模型。');
+      rebuild();
+      save();
+      return;
+    }
+    note('正在加载外部模型…');
+    window.MeshModel.load(function (err) {
+      if (err) {
+        note(String(err));
+        toast('外部模型不可用，仍使用程序化模型');
+        if (paintSource) paintSource();
+        return;
+      }
+      opts.source = 'mesh';
+      note('已切到外部模型。');
+      rebuild();
+      save();
+      if (paintSource) paintSource();
+      toast('外部模型已加载');
+    });
   }
   function app() {
     return {
@@ -601,6 +655,8 @@
     rebuild();
     store.fromJSON(data.ann, params.height);
     if (store.items.length) store.reproject(body.parts, params.height, ctx());
+    /* 外部模型要异步加载，放在最后触发，失败也不影响已恢复的标注 */
+    if (data.opts && data.opts.source === 'mesh') setSource('mesh');
   }
 
   function readFile(file) {
@@ -620,12 +676,13 @@
   }
   /* ---------------- 控件装配 ---------------- */
 
-  var paintGender, paintMode, paintType;
+  var paintGender, paintMode, paintType, paintSource;
 
   function syncUI() {
     if (paintGender) paintGender();
     if (paintMode) paintMode();
     if (paintType) paintType();
+    if (paintSource) paintSource();
     $('privacy').checked = opts.privacy;
     $('autoGirth').checked = opts.autoGirth;
     toggleGirthInputs();
@@ -649,6 +706,8 @@
     });
 
     paintMode = segment('modeSeg', function () { return opts.mode; }, function (v) { setMode(v); });
+
+    paintSource = segment('sourceSeg', function () { return opts.source; }, function (v) { setSource(v); });
 
     paintType = segment('typeChips', function () { return opts.typeId; }, function (v) {
       opts.typeId = v;

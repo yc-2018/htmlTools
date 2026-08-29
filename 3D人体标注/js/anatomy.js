@@ -220,15 +220,27 @@
     var dl = radial.dot(region.lVec);
     return region.side + '侧乳房' + (dl >= 0 ? '外侧(靠腋窝)' : '内侧(靠胸骨)');
   }
+  /** 从一次命中里取出部位元数据；整体一张网格的模型按三角面索引查分区表 */
+  function regionOf(mesh, faceIndex) {
+    var ud = mesh && mesh.userData;
+    if (!ud) return null;
+    if (ud.faceMap && ud.regions && faceIndex != null) {
+      var r = ud.regions[ud.faceMap[faceIndex]];
+      if (r) return r;
+    }
+    return ud.region || null;
+  }
+
   /**
    * 解析一次射线命中，返回中文描述
    * @param {THREE.Mesh} mesh 命中的网格
    * @param {THREE.Vector3} point 命中点（世界坐标，单位 cm）
    * @param {THREE.Vector3} normal 命中点法线（世界坐标，已归一化）
    * @param {Object} ctx { height, privacy, gender }
+   * @param {number} [faceIndex] 命中的三角面序号，单网格模型靠它查部位
    */
-  function describe(mesh, point, normal, ctx) {
-    var r = mesh && mesh.userData ? mesh.userData.region : null;
+  function describe(mesh, point, normal, ctx, faceIndex) {
+    var r = regionOf(mesh, faceIndex);
     if (!r) return { part: '人体', text: '人体' };
     var part = r.name || '人体';
     var bits = [];

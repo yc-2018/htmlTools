@@ -94,6 +94,15 @@
         <div class="btn-row" style="margin-top:12px">
           <button id="resetBody" class="btn" type="button">恢复默认体型</button>
         </div>
+
+        <div class="field" style="margin-top:14px">
+          <div class="field-head"><strong>模型来源</strong></div>
+          <div class="seg" id="sourceSeg">
+            <button type="button" data-v="proc" aria-pressed="true">程序化</button>
+            <button type="button" data-v="mesh" aria-pressed="false">外部模型</button>
+          </div>
+        </div>
+        <p class="panel-note" id="sourceNote">外部模型需要先把 body.glb 放进 assets/，做法见 assets/README.md。</p>
       </section>
       <section class="panel">
         <h2>标注设置</h2>
@@ -224,8 +233,10 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="./js/vendor/three-r128.min.js"></script>
+<script src="./js/vendor/GLTFLoader-r128.js"></script>
 <script src="./js/orbit.js"></script>
 <script src="./js/body-model.js"></script>
+<script src="./js/mesh-model.js"></script>
 <script src="./js/anatomy.js"></script>
 <script src="./js/annotations.js"></script>
 <script src="./js/report.js"></script>
