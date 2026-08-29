@@ -63,8 +63,13 @@
           done('解析失败：' + (e && e.message ? e.message : e));
         }
       });
-    }, null, function () {
-      done('读不到 ' + GLB + '，请先按 assets/README.md 放好资源（file:// 下需用本地服务器打开）');
+    }, null, function (e) {
+      /* 有些静态托管（EdgeOne Pages、Netlify 这类）对缺失的文件不返回 404，
+         而是回一张首页 HTML，于是这里拿到的是网页而不是 GLB，报错长得像 JSON 解析失败 */
+      var m = e && e.message ? e.message : '';
+      done(/JSON|magic|Unexpected/i.test(m)
+        ? GLB + ' 返回的不是 GLB（服务器可能用首页顶替了缺失的文件），请确认文件已放进 assets/'
+        : '读不到 ' + GLB + '，请先按 assets/README.md 放好资源（file:// 下需用本地服务器打开）');
     });
   }
   /* ---------------- 预处理：摆正、落地、量身高 ---------------- */
@@ -83,6 +88,12 @@
     return lo > hi ? 0 : (lo + hi) / 2;
   }
 
+  /** 只按顶点本身求包围盒：geo.computeBoundingBox() 会把形变目标的极值也算进去，
+      拿它量身高会把「最胖 + 最高」的那个虚拟外壳当成人，身高和落地都会偏 */
+  function bboxOf(geo) {
+    return new THREE.Box3().setFromBufferAttribute(geo.attributes.position);
+  }
+
   /** 把网格烘成「脚在 y=0、左右前后居中、单位 cm」的静态几何 */
   function prepare(mesh, spec) {
     mesh.updateWorldMatrix(true, false);
@@ -90,19 +101,18 @@
     geo.applyMatrix4(mesh.matrixWorld);
     if (spec.rotateY) geo.rotateY(spec.rotateY * Math.PI / 180);
 
-    geo.computeBoundingBox();
+    var bb = bboxOf(geo);
     /* 单位自动识别：整体高度小于 3 就当成米 */
-    if (geo.boundingBox.max.y - geo.boundingBox.min.y < 3) {
+    if (bb.max.y - bb.min.y < 3) {
       geo.scale(100, 100, 100);
-      geo.computeBoundingBox();
+      bb = bboxOf(geo);
     }
-    var bb = geo.boundingBox;
     geo.translate(-(bb.min.x + bb.max.x) / 2, -bb.min.y, 0);
-    geo.computeBoundingBox();
-    var H = geo.boundingBox.max.y;
+    var H = bboxOf(geo).max.y;
     /* 中轴按腰部估，直接用包围盒中点会被鼻尖和脚跟带偏 */
     geo.translate(0, 0, -axisZ(geo, H));
-    geo.computeBoundingBox();
+    geo.computeBoundingBox();        // 这一份留给 three 做视锥剔除和射线预筛，含形变余量正好
+    geo.computeBoundingSphere();
     if (!geo.attributes.normal) geo.computeVertexNormals();
     geo.userData.shared = true;      // 多次 build 复用，main.js 的 dispose 要跳过
 
