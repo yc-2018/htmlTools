@@ -18,6 +18,17 @@
     return { a: a, b: k * a };
   }
 
+  /* 三围滑块的取值范围，和 index.html 里的 min/max 一致。推算值必须夹在这个范围里：
+     不夹的话，页面把它写进滑块时会被夹一次，而 mesh-model 又拿没夹过的值当基准算差值，
+     于是「滑块 140 − 推算 152」被当成用户想要更瘦，加上 waistDown 之类的形变，
+     体重越大身体反而越小 */
+  var GIRTH_RANGE = { bust: [60, 140], waist: [45, 140], hip: [60, 150] };
+
+  function fitGirth(key, v) {
+    var r = GIRTH_RANGE[key];
+    return clamp(Math.round(v), r[0], r[1]);
+  }
+
   /** 依据性别 / 身高 / 体重推算三围参考值 */
   function autoGirth(gender, height, weight) {
     var bmi = weight / Math.pow(height / 100, 2);
@@ -28,9 +39,9 @@
         ? { b: 2.10 * bmi + 41, w: 2.34 * bmi + 21, h: 2.00 * bmi + 50 }
         : { b: 2.20 * bmi + 40, w: 2.32 * bmi + 25, h: 1.90 * bmi + 51 };
     return {
-      bust: Math.round(t.b * hk),
-      waist: Math.round(t.w * hk),
-      hip: Math.round(t.h * hk)
+      bust: fitGirth('bust', t.b * hk),
+      waist: fitGirth('waist', t.w * hk),
+      hip: fitGirth('hip', t.h * hk)
     };
   }
 
@@ -378,8 +389,10 @@
       return { y: r.f * H, a: r.a, bF: r.bF, bB: r.bB, n: r.n };
     }), 44, true, true)), { kind: 'torso', name: '躯干' });
 
-    /* ---- 内衣（默认遮挡私密部位） ---- */
-    addWear(new THREE.Mesh(loft(band(L.crotch - 0.030, L.hip + 0.030, 0.55, 8), 44, false, false)));
+    /* ---- 内衣（默认遮挡私密部位） ----
+       下缘要落到躯干那个锥形底盖下面去，并且封上底：不封的话从斜下方顺着两腿之间
+       能一直看到胯下。封住的这块大半埋在大腿和裤腿里，露出来的就是内裤的裆布 */
+    addWear(new THREE.Mesh(loft(band(L.crotch - 0.042, L.hip + 0.030, 0.55, 8), 44, true, false)));
     if (isF) {
       addWear(new THREE.Mesh(loft(band(L.underbust + 0.006, L.bust + 0.028, 0.6, 5), 44, false, false)));
     }
@@ -498,14 +511,29 @@
       var knee = new V(side * Math.max(0.030 * H, hipX * 0.84), L.knee * H, 0.006 * H);
       var ankle = new V(side * Math.max(0.028 * H, hipX * 0.78), L.ankle * H, -0.006 * H);
       var kneeR = q.kneeR * H * fat * 1.06;
+      /* 大腿轮廓：根部略鼓一点，往下收；裤腿也照这条曲线做 */
+      var thighProf = function (t) {
+        return 1 - 0.05 * t + 0.05 * Math.exp(-Math.pow(t / 0.26, 2));
+      };
       var calfBase = kneeR * 0.88;
       var calfEnd = q.ankleR * H * fat;
       var calfAmp = clamp(q.calfR * H * fat * 1.24 /
         (calfBase + (calfEnd - calfBase) * 0.34) - 1, 0, 0.5);
       limb('大腿', hipJ, knee, thighTopR, kneeR * 0.90, {
         round0: true,
-        profile: function (t) { return 1 - 0.05 * t + 0.05 * Math.exp(-Math.pow(t / 0.26, 2)); }
+        profile: thighProf
       }, '靠近大腿根部', '靠近膝部');
+      /* 裤腿：顺着大腿套一小段，内裤才像条短裤而不是裙子。
+         半径照着大腿现算再让 0.45cm，所以胖瘦一变它跟着变 */
+      var pantT = 0.42;
+      var pantR = function (t) {
+        return (thighTopR + (kneeR * 0.90 - thighTopR) * t) * thighProf(t) + 0.45;
+      };
+      var pr0 = pantR(0), pr1 = pantR(pantT);
+      addWear(tube(hipJ, hipJ.clone().lerp(knee, pantT), pr0, pr1, {
+        seg: 26, steps: 4,
+        profile: function (s) { return pantR(s * pantT) / (pr0 + (pr1 - pr0) * s); }
+      }));
       joint('膝', knee, kneeR, knee.clone().sub(hipJ), {
         aPos: '膝盖前面(髌骨)', aNeg: '膝后(腘窝)', lPos: '外侧', lNeg: '内侧'
       });
@@ -642,5 +670,7 @@
     return new V(rearC.x, 0.026 * H, 0.030 * H);
   }
 
-  window.BodyModel = { build: build, autoGirth: autoGirth, girth: girth, L: L };
+  window.BodyModel = {
+    build: build, autoGirth: autoGirth, girth: girth, L: L, girthRange: GIRTH_RANGE
+  };
 })();

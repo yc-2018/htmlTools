@@ -124,6 +124,7 @@
     };
     regionsOf(out, spec);
     out.bandV = bandVerts(out);
+    out.girthCal = calibrate(out);
     return out;
   }
 
@@ -502,7 +503,7 @@
     Object.keys(w).forEach(function (key) {
       var j = out.morph.dict[key];
       if (j != null && mp[j] && w[key] > 1e-3) {
-        act.push({ a: mp[j], w: clamp(w[key], 0, 1) });
+        act.push({ a: mp[j], w: clamp(w[key], 0, MAXW) });
       }
     });
     var xyz = new Float32Array(vs.length * 3), i, m;
@@ -520,16 +521,19 @@
 
   /** 采样一段高度里的横截面：每层记 RING_SEG 个方向上最远的投影距离，
       也就是把截面套进 40 条切线里。布料是绷着的，不会钻进胯下、乳间那些凹处，
-      取这么个凸壳比顺着表面量更像内衣，也顺带保证了不漏皮肤 */
-  function sampleBand(out, xyz, f0, f1, steps) {
+      取这么个凸壳比顺着表面量更像内衣，也顺带保证了不漏皮肤。
+      side 给 ±1 时只量那半边的点，用来分出内裤的两条裤腿 */
+  function sampleBand(out, xyz, f0, f1, steps, side) {
     var H = out.height;
     var y0 = f0 * H, y1 = f1 * H, dy = (y1 - y0) / steps;
+    var cx = side ? sideCenter(xyz, y0, y1, side) : 0;
     var rows = [], hit = [], i, k, j;
     for (k = 0; k <= steps; k++) { rows.push(new Float32Array(RING_SEG)); hit.push(0); }
     for (i = 0; i < xyz.length; i += 3) {
       var y = xyz[i + 1];
       if (y < y0 || y > y1) continue;
-      var x = xyz[i], z = xyz[i + 2];
+      if (side && xyz[i] * side < 0) continue;
+      var x = xyz[i] - cx, z = xyz[i + 2];
       var t = (y - y0) / dy;
       /* 一个点同时算进相邻两层：带子是两圈之间直线过渡的，
          只记最近那圈的话，体型收得快的地方（胯下、乳下）皮肤会从两圈中间穿出来 */
@@ -547,7 +551,19 @@
     for (k = 0; k <= steps; k++) if (hit[k]) ok++;
     if (ok < 2) return null;
     fillRows(rows, hit);
-    return { y0: y0, dy: dy, steps: steps, h: rows };
+    return { y0: y0, dy: dy, steps: steps, h: rows, cx: cx };
+  }
+
+  /** 半边的横向中心：切线求交要求中心落在截面里头，取这半边 x 的中点 */
+  function sideCenter(xyz, y0, y1, side) {
+    var lo = 1e9, hi = -1e9, i;
+    for (i = 0; i < xyz.length; i += 3) {
+      var x = xyz[i] * side, y = xyz[i + 1];
+      if (y < y0 || y > y1 || x < 0) continue;
+      if (x < lo) lo = x;
+      if (x > hi) hi = x;
+    }
+    return hi < lo ? 0 : side * (lo + hi) / 2;
   }
 
   /** 整层没采到点就拷邻层，免得带子上出现一圈瘪掉的细腰 */
@@ -561,22 +577,48 @@
     }
   }
 
+  /** 裆部：两条裤腿各自把正中面 x=0 那条边也算进凸壳，缝出来中间就接上了，
+      看着像布顺着大腿内侧接下去，而不是两个孤零零的套筒。往下逐层收窄，
+      到裤脚重新分成两条腿（挡视线靠的是裆布，这里只管好看） */
+  function crotchSeam(span, keep) {
+    var lim = span.steps - keep, k, j;
+    for (k = span.steps; k > lim && k >= 0; k--) {
+      var row = span.h[k], t = (k - lim) / keep;
+      var zf = row[RING_SEG / 4] * t, zb = -row[RING_SEG * 3 / 4] * t, x0 = -span.cx;
+      for (j = 0; j < RING_SEG; j++) {
+        var h = x0 * COS[j] + (SIN[j] > 0 ? zf : zb) * SIN[j];
+        if (h > row[j]) row[j] = h;
+      }
+    }
+  }
+
+  /** 内裤拆成「腰头 + 两条裤腿」：整条都用一圈凸壳的话，下缘会横跨两腿之间，
+      看着是条短裙。裤腿各自贴着大腿量，上口正好接在腰头的裆布那一层，
+      被裆布盖住，所以不会互相穿插；裆部再在正中面缝上 */
   function wearSpans(out, w) {
     var Lm = L(), xyz = deformedBand(out, w);
+    var hem = Lm.crotch - 0.012, legs = [];
+    [1, -1].forEach(function (s) {
+      var span = sampleBand(out, xyz, Lm.crotch - 0.060, hem, 5, s);
+      if (span) { crotchSeam(span, 2); legs.push(span); }
+    });
     return {
-      brief: sampleBand(out, xyz, Lm.crotch - 0.030, Lm.hip + 0.030, 8),
-      bust: sampleBand(out, xyz, Lm.underbust + 0.004, Lm.bust + 0.030, 6)
+      /* 腰头往裤腿里多探 1cm 再落底：这样裆布那一圈和裤腿上口量的是同一段身体，
+         裤腿不会在臀线处顶出腰头，裆布的边也埋在裤腿里 */
+      brief: sampleBand(out, xyz, hem - 0.008, Lm.hip + 0.030, 8, 0),
+      legs: legs,
+      bust: sampleBand(out, xyz, Lm.underbust + 0.004, Lm.bust + 0.030, 6, 0)
     };
   }
-  /** 相邻两条切线求交，还原成一圈套住截面的凸多边形；k 是往外让出的余量 */
-  function ring(y, h, k) {
+  /** 相邻两条切线求交，还原成一圈套住截面的凸多边形；pad 是往外让出的余量(cm) */
+  function ring(y, h, pad, cx) {
     var pts = [], i;
     for (i = 0; i < RING_SEG; i++) {
       var j = (i + 1) % RING_SEG;
-      var h0 = h[i] * k, h1 = h[j] * k;
+      var h0 = h[i] + pad, h1 = h[j] + pad;
       var det = COS[i] * SIN[j] - COS[j] * SIN[i];
       pts.push(new V(
-        (h0 * SIN[j] - h1 * SIN[i]) / det,
+        cx + (h0 * SIN[j] - h1 * SIN[i]) / det,
         y,
         (h1 * COS[i] - h0 * COS[j]) / det
       ));
@@ -584,11 +626,14 @@
     return pts;
   }
 
-  /** 把采样出来的若干圈缝成一根开口筒，稍微放大避免和皮肤穿插 */
-  function bandMesh(span, mat) {
+  /** 把采样出来的若干圈缝成一根筒，往外让一点避免和皮肤穿插。
+      cap 为真时给下缘封一块平底（裆布）：底下这一圈里除了两条腿就是胯下的空腔，
+      不封的话从斜下方能顺着腿缝看进去。封住的部分大都埋在大腿和裤腿里面，
+      露出来的只有两腿之间那一小块，正好就是内裤的裆部 */
+  function bandMesh(span, mat, pad, cap) {
     var rings = [], i, j;
     for (i = 0; i <= span.steps; i++) {
-      rings.push(ring(span.y0 + span.dy * i, span.h[i], 1.035));
+      rings.push(ring(span.y0 + span.dy * i, span.h[i], pad, span.cx));
     }
     var vert = [], idx = [];
     rings.forEach(function (r) {
@@ -601,6 +646,15 @@
         idx.push(a0, a0 + RING_SEG, b0 + RING_SEG, a0, b0 + RING_SEG, b0);
       }
     }
+    if (cap) {
+      /* 底面单独一份顶点，免得平底的法线糊到筒壁上，把下缘照出一圈假高光 */
+      var base = vert.length / 3, mx = 0, mz = 0;
+      rings[0].forEach(function (p) { vert.push(p.x, p.y, p.z); mx += p.x; mz += p.z; });
+      vert.push(mx / RING_SEG, rings[0][0].y, mz / RING_SEG);
+      for (j = 0; j < RING_SEG; j++) {
+        idx.push(base + RING_SEG, base + j, base + (j + 1) % RING_SEG);
+      }
+    }
     var geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(vert, 3));
     geo.setIndex(idx);
@@ -611,26 +665,89 @@
   }
   /* ---------------- 形体参数 → morph 权重 ---------------- */
 
-  /** 一对增减 morph：正差值给 Up，负差值给 Down */
-  function axis(w, key, d, span) {
-    var t = clamp(d / span, -1, 1);
-    w[key + 'Up'] = Math.max(0, t);
-    w[key + 'Down'] = Math.max(0, -t);
+  var GIRTH_KEYS = ['bust', 'waist', 'hip'];
+
+  /* 权重允许超过 1（形变是线性位移，外插等于继续往同方向推）：三围滑块能开到
+     140/140/150，而一个目标做满也就十几厘米，不外插的话胖到一半就顶死了。
+     3 倍已经很夸张，再往上腋下、胯部开始自穿插，就到这 */
+  var MAXW = 3;
+
+  /* fatUp 也外插：它是全身增厚（连四肢一起），比只鼓一圈的 xxxUp 自然，
+     所以先让它按 BMI 顶到 2（BMI 41.5），剩下的差额再交给三围目标 */
+  var MAXFAT = 2;
+
+  /** 一圈切线多边形的周长——凹处不钻进去，和皮尺量法一致 */
+  function ringPerim(h) {
+    var pts = ring(0, h, 0, 0), s = 0, i;
+    for (i = 0; i < pts.length; i++) s += pts[i].distanceTo(pts[(i + 1) % pts.length]);
+    return s;
   }
 
-  /** 以 autoGirth 给出的「同身高体重的常规三围」为中位，三围差值驱动 morph */
-  function weights(p) {
-    var g = window.BodyModel.autoGirth(p.gender, p.height, p.weight);
+  /** 给定权重下模型自己的胸围 / 腰围 / 臀围（参考身高下的厘米数） */
+  function measureGirth(out, w) {
+    var Lm = L(), xyz = deformedBand(out, w), g = {};
+    GIRTH_KEYS.forEach(function (key) {
+      var span = sampleBand(out, xyz, Lm[key] - 0.004, Lm[key] + 0.004, 1, 0);
+      g[key] = span ? ringPerim(span.h[0]) : 0;
+    });
+    return g;
+  }
+
+  /** 加载时量一次：基础体型的三围，以及每个形变目标做满时各加减多少厘米。
+      形变线性叠加，所以这张表就够反解「要这个三围该给多少权重」。
+      不这么反解的话，自动模式下滑块值恒等于基准值，三个三围目标全是 0，
+      体重就只剩 fatUp 一个目标能用——它做满才 +9cm 腰围，且 BMI 31.5 就到顶，
+      于是六十多公斤往上体型基本看不出变化 */
+  function calibrate(out) {
+    var base = measureGirth(out, {}), d = {};
+    MORPHS.forEach(function (key) {
+      if (out.morph.dict[key] == null) return;
+      var w = {};
+      w[key] = 1;
+      var m = measureGirth(out, w);
+      d[key] = { bust: m.bust - base.bust, waist: m.waist - base.waist, hip: m.hip - base.hip };
+    });
+    return { base: base, d: d };
+  }
+
+  /** 按标定表预测某个围度 */
+  function predictGirth(cal, w, key) {
+    var v = cal.base[key];
+    Object.keys(w).forEach(function (m) {
+      if (cal.d[m]) v += cal.d[m][key] * w[m];
+    });
+    return v;
+  }
+
+  /** 三围滑块当绝对值使：量出当前权重下的围度，差多少就往 xxxUp / xxxDown 上加多少。
+      腰围目标顺带把胸围抬 1cm 这种交叉影响，多跑两轮就抹平了。
+      k 是身高缩放系数，滑块上的厘米要先换回参考身高下的尺寸 */
+  function solveGirth(cal, w, target, k) {
+    var pass, i, key, need, up, dn;
+    for (pass = 0; pass < 3; pass++) {
+      for (i = 0; i < GIRTH_KEYS.length; i++) {
+        key = GIRTH_KEYS[i];
+        w[key + 'Up'] = 0;
+        w[key + 'Down'] = 0;
+        need = target[key] / k - predictGirth(cal, w, key);
+        up = cal.d[key + 'Up'];
+        dn = cal.d[key + 'Down'];
+        if (need > 0 && up && up[key] > 0.5) w[key + 'Up'] = Math.min(MAXW, need / up[key]);
+        else if (need < 0 && dn && dn[key] < -0.5) w[key + 'Down'] = Math.min(MAXW, need / dn[key]);
+      }
+    }
+  }
+
+  /** 胖瘦按 BMI 给 fatUp / fatDown，再用三围目标把围度拉到滑块上的数 */
+  function weights(p, ref) {
     var bmi = p.weight / Math.pow(p.height / 100, 2);
-    var f = clamp((bmi - 21.5) / 10, -1, 1);
+    var f = clamp((bmi - 21.5) / 10, -1, MAXFAT);
     var w = {
       female: p.gender === 'female' ? 1 : (p.gender === 'neutral' ? 0.5 : 0),
       fatUp: Math.max(0, f),
       fatDown: Math.max(0, -f)
     };
-    axis(w, 'bust', p.bust - g.bust, 14);
-    axis(w, 'waist', p.waist - g.waist, 16);
-    axis(w, 'hip', p.hip - g.hip, 14);
+    if (ref.girthCal) solveGirth(ref.girthCal, w, p, p.height / ref.height);
     return w;
   }
 
@@ -640,7 +757,7 @@
     for (var i = 0; i < inf.length; i++) inf[i] = 0;
     Object.keys(w).forEach(function (key) {
       var j = ref.morph.dict[key];
-      if (j != null && j < inf.length) inf[j] = clamp(w[key], 0, 1);
+      if (j != null && j < inf.length) inf[j] = clamp(w[key], 0, MAXW);
     });
   }
 
@@ -666,9 +783,13 @@
     /* 身高用整体缩放实现；morph 只管胖瘦与三围 */
     var k = p.height / ref.height;
     var MAT = {
+      /* morphNormals 不能开：three r128 的着色器在 USE_MORPHNORMALS 下只累加
+         morphTarget0~3（见 morphtarget_vertex），而体重压到滑块上限时
+         性别+胖瘦+三围会同时用到 5 个形变目标，第 5 个会被悄悄丢掉，
+         渲染出来的身体就和这里算内衣依据的体型对不上，内衣会嵌进肉里。
+         关掉是 8 个；这个 GLB 也没带形变法线，开着纯亏 */
       skin: new THREE.MeshStandardMaterial({
-        color: 0xdccfc2, roughness: 0.66, metalness: 0.02,
-        morphTargets: true, morphNormals: true
+        color: 0xdccfc2, roughness: 0.66, metalness: 0.02, morphTargets: true
       }),
       wear: new THREE.MeshStandardMaterial({
         color: 0x59616e, roughness: 0.9, metalness: 0.0, side: THREE.DoubleSide
@@ -678,7 +799,7 @@
     var group = new THREE.Group();
     group.scale.setScalar(k);
 
-    var w = weights(p);
+    var w = weights(p, ref);
     var mesh = new THREE.Mesh(ref.geo, MAT.skin);
     applyMorph(mesh, ref, w);
     var regions = ref.regions.map(function (r) { return scaled(r, k); });
@@ -687,11 +808,13 @@
     mesh.userData.region = regions[0];    // 查不到面时的兜底
     group.add(mesh);
 
-    /* 内衣带按当前权重下的体表现算，胖瘦和三围一改就跟着松紧 */
+    /* 内衣按当前权重下的体表现算，胖瘦和三围一改就跟着松紧。
+       裤腿让的余量比腰头多 0.05cm，好让裆布的边缘藏进裤腿里，不会露出一圈薄边 */
     var bands = wearSpans(ref, w);
     var wear = [];
-    if (bands.brief) wear.push(bandMesh(bands.brief, MAT.wear));
-    if (p.gender !== 'male' && bands.bust) wear.push(bandMesh(bands.bust, MAT.wear));
+    if (bands.brief) wear.push(bandMesh(bands.brief, MAT.wear, 0.55, true));
+    bands.legs.forEach(function (s) { wear.push(bandMesh(s, MAT.wear, 0.6)); });
+    if (p.gender !== 'male' && bands.bust) wear.push(bandMesh(bands.bust, MAT.wear, 0.5));
     wear.forEach(function (m) { group.add(m); });
 
     var landmarks = {};
