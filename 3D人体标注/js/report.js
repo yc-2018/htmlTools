@@ -28,6 +28,8 @@
     );
     cam.lookAt(target);
     cam.updateProjectionMatrix();
+    /* 号牌是按相机方向摆的，报告用的是另一套机位，渲染前得重新摆一次 */
+    if (app.store && app.store.faceCamera) app.store.faceCamera(cam);
     r.render(app.scene, cam);
     return r.domElement;
   }

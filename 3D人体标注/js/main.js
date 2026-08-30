@@ -8,8 +8,8 @@
   function on(el, ev, fn) { if (el) el.addEventListener(ev, fn); }
   function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
-  var params = { gender: 'male', height: 172, weight: 62, bust: 88, waist: 74, hip: 90 };
-  var opts = { privacy: false, mode: 'mark', radius: 2.0, typeId: 'pain', autoGirth: true, source: 'proc' };
+  var params = { gender: 'male', height: 170, weight: 60, bust: 88, waist: 74, hip: 90 };
+  var opts = { privacy: false, mode: 'mark', radius: 0.2, typeId: 'pain', autoGirth: true, source: 'proc' };
 
   var viewer = $('viewer');
   var canvas = $('scene');
@@ -236,6 +236,8 @@
       rebuild();
     }
     orbit.tick();
+    /* 号牌位置跟相机方向有关，每帧摆一次 */
+    store.faceCamera(camera);
     renderer.render(scene, camera);
     requestAnimationFrame(loop);
   }
@@ -745,8 +747,8 @@
     on($('resetBody'), 'click', function () {
       params.gender = 'male';
       opts.autoGirth = true;
-      pairs.height.set(172);
-      pairs.weight.set(62);
+      pairs.height.set(170);
+      pairs.weight.set(60);
       syncGirth();
       syncUI();
       rebuild();
