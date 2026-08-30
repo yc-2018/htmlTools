@@ -833,10 +833,17 @@
         matrixWorld 还是单位矩阵时量，量的就是参考身高下的模型坐标 */
     mesh.updateMatrixWorld(true);
     var probe = new THREE.Raycaster();
-    function frontZ(y) {
-      probe.set(new THREE.Vector3(0, y, ref.height), new THREE.Vector3(0, 0, -1));
+    function frontZ(y, x) {
+      probe.set(new THREE.Vector3(x || 0, y, ref.height), new THREE.Vector3(0, 0, -1));
       var h = probe.intersectObject(mesh, false);
       return h.length ? h[0].point.z : null;
+    }
+    /* 任意方向量体表（外阴那几件按实测薄厚放，见 BodyModel.femaleVulva 的 bulge()）。
+       和 frontZ 一样趁形变后的网格还没进 group、matrixWorld 还是单位矩阵时量 */
+    function skinHit(o, d) {
+      probe.set(o, d);
+      var h = probe.intersectObject(mesh, false);
+      return h.length ? h[0].distance : null;
     }
     var regions = ref.regions.map(function (r) { return scaled(r, k); });
     mesh.userData.regions = regions;
@@ -876,7 +883,7 @@
       if (vTop != null) {
         window.BodyModel.femaleVulva(ref.height, {
           y: yc, zTop: vTop,
-          zLow: vLow == null ? vTop - 0.008 * ref.height : vLow
+          zLow: vLow == null ? vTop - 0.008 * ref.height : vLow, hit: skinHit
         }, fat).forEach(addPriv);
       }
     }
