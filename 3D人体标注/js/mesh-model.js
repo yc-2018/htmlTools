@@ -812,6 +812,10 @@
       /* 补上去的私密部位是普通几何，不带形变目标，得用一份没开 morphTargets 的皮肤 */
       privSkin: new THREE.MeshStandardMaterial({
         color: 0xdccfc2, roughness: 0.66, metalness: 0.02
+      }),
+      /* 私密部位里的黏膜面（前庭一类）：比皮肤深一号，靠色差把「口子」显出来 */
+      privDark: new THREE.MeshStandardMaterial({
+        color: 0x9c5d58, roughness: 0.58, metalness: 0.0
       })
     };
 
@@ -821,6 +825,19 @@
     var w = weights(p, ref);
     var mesh = new THREE.Mesh(ref.geo, MAT.skin);
     applyMorph(mesh, ref, w);
+
+    /** 正中面上某个高度的身体前表面 z：往形变后的网格上打一条射线量
+        （r128 的 Mesh.raycast 认形变目标）。胯下这一段顶点稀，
+        按顶点扫窄带常常一个都扫不到，扫到的还可能是会阴或大腿内侧，
+        量出来的斜度会离真实体表差几厘米。趁 mesh 还没进 group、
+        matrixWorld 还是单位矩阵时量，量的就是参考身高下的模型坐标 */
+    mesh.updateMatrixWorld(true);
+    var probe = new THREE.Raycaster();
+    function frontZ(y) {
+      probe.set(new THREE.Vector3(0, y, ref.height), new THREE.Vector3(0, 0, -1));
+      var h = probe.intersectObject(mesh, false);
+      return h.length ? h[0].point.z : null;
+    }
     var regions = ref.regions.map(function (r) { return scaled(r, k); });
     mesh.userData.regions = regions;
     mesh.userData.faceMap = ref.faceMap;
@@ -840,17 +857,28 @@
     /* 外生殖器：这个 GLB 的基础网格没有这部分，用程序化模型那份补上。
        尺寸和锚点都按参考身高算，整体缩放会把它一起带到目标身高 */
     var priv = [];
+    var fat = 1 + 0.16 * clamp(w.fatUp || 0, 0, 1);
+    function addPriv(g) {
+      g.mesh.material = g.shade === 'dark' ? MAT.privDark : MAT.privSkin;
+      g.mesh.userData.region = scaled(g.region, k);
+      g.mesh.visible = false;
+      group.add(g.mesh);
+      parts.push(g.mesh);
+      priv.push(g.mesh);
+    }
     if (p.gender === 'male' && bands.crotchZ != null && window.BodyModel.maleGenitals) {
       var anchor = { y: L().crotch * ref.height, z: bands.crotchZ };
-      var fat = 1 + 0.16 * clamp(w.fatUp || 0, 0, 1);
-      window.BodyModel.maleGenitals(ref.height, anchor, fat).forEach(function (g) {
-        g.mesh.material = MAT.privSkin;
-        g.mesh.userData.region = scaled(g.region, k);
-        g.mesh.visible = false;
-        group.add(g.mesh);
-        parts.push(g.mesh);
-        priv.push(g.mesh);
-      });
+      window.BodyModel.maleGenitals(ref.height, anchor, fat).forEach(addPriv);
+    }
+    if (p.gender === 'female' && window.BodyModel.femaleVulva) {
+      var yc = L().crotch * ref.height, vTop = frontZ(yc + 0.012 * ref.height);
+      var vLow = frontZ(yc - 0.012 * ref.height);
+      if (vTop != null) {
+        window.BodyModel.femaleVulva(ref.height, {
+          y: yc, zTop: vTop,
+          zLow: vLow == null ? vTop - 0.008 * ref.height : vLow
+        }, fat).forEach(addPriv);
+      }
     }
 
     var landmarks = {};

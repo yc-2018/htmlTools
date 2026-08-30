@@ -179,26 +179,28 @@
       H 为身高(cm)，anchor 为模型自身坐标系下的胯部锚点：
       y 是裆部高度，z 是**正中面上**该高度处身体前表面的 z（不是凸壳的支撑距离，
       那个会被大腿前侧带偏三四厘米，整件就飘在身体外面）；fat 让胖体型稍微放大一点。
-      返回 [{ mesh, region }]，由调用方决定怎么加进场景 */
+      返回 [{ mesh, region, shade }]，由调用方决定材质和怎么加进场景 */
   function maleGenitals(H, anchor, fat) {
     var f = clamp(fat || 1, 0.92, 1.16);
     var y0 = anchor.y, zP = anchor.z;
-    /* 阴茎：根部埋进体表里一点，接缝就不会露在外面；往下偏前垂，
-       前倾给得比自然状态多一点，好让它挂在阴囊前面而不是陷进去 */
-    var from = new V(0, y0 + 0.005 * H, zP - 0.004 * H);
-    var dir = new V(0, -1, 0.42).normalize();
+    /* 阴茎：根部埋进体表里一点，接缝就不会露在外面。往前偏下约 39° 出去——
+       垂得太狠就压在阴囊上，两件叠在一起谁也标不准；抬起来之后中间空出两三厘米 */
+    var from = new V(0, y0 + 0.006 * H, zP - 0.004 * H);
+    var dir = new V(0, -0.8, 1).normalize();
     var len = 0.042 * H;
     var r0 = 0.0094 * H * f, r1 = 0.0088 * H * f;
     var to = from.clone().addScaledVector(dir, len);
-    /* 轴向垂直方向里朝前上的那一支就是背侧（自然下垂时背面朝前） */
+    /* 轴向垂直方向里朝上偏前的那一支就是背侧（抬起来之后背面朝上） */
     var aVec = new V(0, dir.z, -dir.y).normalize();
     var lVec = new V(1, 0, 0);
-    var AX = { aPos: '背侧(朝前)', aNeg: '腹侧(朝后)', lPos: '左侧', lNeg: '右侧' };
+    var AX = { aPos: '背侧(上面)', aNeg: '腹侧(下面)', lPos: '左侧', lNeg: '右侧' };
     var glansC = to.clone().addScaledVector(dir, r1 * 0.35);
-    /* 阴囊坐在裆下、两腿之间：再往后就整个埋进身体，再往前就顶穿大腿内侧 */
-    var scrC = new V(0, y0 - 0.026 * H, zP - 0.004 * H);
-    var scrR = 0.0125 * H * f;
-    return [
+    /* 阴囊坐在裆下、两腿之间：再往后就整个埋进身体，再往前就顶穿大腿内侧。
+       分左右两瓣、中间留出阴囊中隔那道沟（两球心距比半径小，交界处自然凹进去
+       约 0.6cm），一整个球看不出是两侧，也没法分开标 */
+    var scrY = y0 - 0.023 * H, scrZ = zP - 0.004 * H;
+    var scrR = 0.0080 * H * f, scrX = 0.0074 * H * f;
+    var out = [
       {
         mesh: tube(from, to, r0, r1, { seg: 20, steps: 4, ref: aVec }),
         region: {
@@ -212,12 +214,69 @@
           kind: 'blob', name: '阴茎头(龟头)', center: glansC.clone(),
           aVec: aVec.clone(), lVec: lVec.clone(), axes: AX
         }
-      },
-      {
-        mesh: blob(scrC, scrR, null, { x: 1.24, y: 1.10, z: 0.98 }, 22),
-        region: { kind: 'sym', name: '阴囊' }
       }
     ];
+    [1, -1].forEach(function (side) {
+      var c = new V(side * scrX, scrY, scrZ);
+      out.push({
+        mesh: blob(c, scrR, null, { x: 1, y: 1.18, z: 1.02 }, 20),
+        region: {
+          kind: 'blob', name: (side > 0 ? '左' : '右') + '侧阴囊',
+          side: side > 0 ? '左' : '右', center: c.clone(),
+          aVec: AXIS_Z.clone(), lVec: new V(side, 0, 0),
+          axes: { aPos: '前面', aNeg: '后面', lPos: '外侧', lNeg: '内侧(中缝)' }
+        }
+      });
+    });
+    return out;
+  }
+
+  /** 女性外阴。两套模型的裆部都是一整片光面，这里补出外阴的形状：左右大阴唇两瓣，
+      中间那道缝里嵌一片深色的前庭（就是「划开的口子」——网格没法真挖洞，靠两侧
+      隆起 + 中间压低一截 + 深一号的颜色做出开口的样子），缝的上端点一个阴蒂。
+      H 为身高(cm)；anchor 为模型自身坐标系下的锚点：y 是裆部高度，
+      zTop / zLow 分别是**正中面上** y±0.012H 两处的身体前表面 z ——
+      两点连成的弦就是外阴所在的那片体表，斜度由模型自己决定（程序化模型胯下几乎
+      朝前，外部模型明显朝下偏后，写死一个斜度必有一边埋进肉里）。
+      返回 [{ mesh, region, shade }]，shade='dark' 的那件要用深色料子 */
+  function femaleVulva(H, anchor, fat) {
+    var f = clamp(fat || 1, 0.94, 1.14);
+    var y0 = anchor.y;
+    var A = new V(0, y0 + 0.012 * H, anchor.zTop);
+    var B = new V(0, y0 - 0.012 * H, anchor.zLow);
+    var axis = B.clone().sub(A).normalize();            /* 顺着会阴往下、往后 */
+    var out = new V(0, axis.z, -axis.y).normalize();    /* 与之垂直、朝体外的那一支 */
+    var fr = frame(axis, out);                          /* y=轴向, z=朝外, x=左右 */
+    /* 整体离体表抬 0.25cm：弦是内接的，贴着放会有一段沉进皮肤里 */
+    var mid = A.clone().add(B).multiplyScalar(0.5).addScaledVector(out, 0.0015 * H);
+    var r = 0.0072 * H * f, lat = 0.0075 * H * f;
+    var AX = { aPos: '前端(靠阴蒂)', aNeg: '后端(靠会阴)', lPos: '外侧', lNeg: '内侧(靠中线)' };
+    var out2 = [];
+    [1, -1].forEach(function (side) {
+      var c = mid.clone().add(new V(side * lat, 0, 0));
+      out2.push({
+        mesh: blob(c, r, fr, { x: 0.78, y: 1.75, z: 0.70 }, 20),
+        region: {
+          kind: 'blob', name: (side > 0 ? '左' : '右') + '侧大阴唇',
+          side: side > 0 ? '左' : '右', center: c.clone(),
+          aVec: axis.clone().negate(), lVec: new V(side, 0, 0), axes: AX
+        }
+      });
+    });
+    /* 前庭（阴道口）：夹在两瓣中间、比唇峰低半厘米，配深色才看得出是个口子。
+       沿轴向做得比两瓣短一点，整条缝就都是深色，不会中间露出一截皮肤色 */
+    var vc = mid.clone().addScaledVector(axis, 0.002 * H).addScaledVector(out, -0.0012 * H);
+    out2.push({
+      mesh: blob(vc, r, fr, { x: 0.56, y: 1.40, z: 0.48 }, 18),
+      region: { kind: 'face', name: '阴道口(外阴前庭)' },
+      shade: 'dark'
+    });
+    var cl = A.clone().addScaledVector(axis, 0.0025 * H).addScaledVector(out, 0.0018 * H);
+    out2.push({
+      mesh: blob(cl, 0.0028 * H * f, fr, { x: 1, y: 0.8, z: 0.9 }, 16),
+      region: { kind: 'face', name: '阴蒂' }
+    });
+    return out2;
   }
 
   /** 由一组截面环放样成躯干；环需按 y 从低到高排列 */
@@ -363,7 +422,9 @@
       eye: new THREE.MeshStandardMaterial({ color: 0xf3f0ea, roughness: 0.3, metalness: 0.0 }),
       iris: new THREE.MeshStandardMaterial({ color: 0x3b2f2a, roughness: 0.35, metalness: 0.0 }),
       hair: new THREE.MeshStandardMaterial({ color: 0x4a3f3a, roughness: 0.85, metalness: 0.0 }),
-      lip: new THREE.MeshStandardMaterial({ color: 0xc98d86, roughness: 0.55, metalness: 0.0 })
+      lip: new THREE.MeshStandardMaterial({ color: 0xc98d86, roughness: 0.55, metalness: 0.0 }),
+      /* 私密部位里的黏膜面（前庭一类）：比皮肤深一号，靠色差把「口子」显出来 */
+      privDark: new THREE.MeshStandardMaterial({ color: 0x9c5d58, roughness: 0.58, metalness: 0.0 })
     };
 
     function add(mesh, region, mat) {
@@ -393,8 +454,8 @@
     /** 私密部位件：和内衣互斥，只有「显示私密部位」打开时才显示。
         进 parts 是为了打开后能点、能贴标注；关掉时靠 visible=false，
         main.js 拾取前会把不可见的件筛掉（r128 的 Raycaster 自己不看 visible） */
-    function addPriv(mesh, region) {
-      mesh.material = matSkin;
+    function addPriv(mesh, region, shade) {
+      mesh.material = shade === 'dark' ? MAT.privDark : matSkin;
       mesh.userData.region = region;
       mesh.visible = false;
       group.add(mesh);
@@ -445,9 +506,18 @@
       return rs;
     }
 
-    add(new THREE.Mesh(loft(rings.map(function (r) {
+    var torso = add(new THREE.Mesh(loft(rings.map(function (r) {
       return { y: r.f * H, a: r.a, bF: r.bF, bB: r.bB, n: r.n };
     }), 44, true, true)), { kind: 'torso', name: '躯干' });
+
+    /** 正中面上某个高度的身体前表面 z：往躯干上打一条射线量。
+        胯下那一段是放样的锥形底盖，profileAt() 只认最低那一环，量不到 */
+    var probe = new THREE.Raycaster();
+    function frontZ(y) {
+      probe.set(new V(0, y, H), new V(0, 0, -1));
+      var h = probe.intersectObject(torso, false);
+      return h.length ? h[0].point.z : null;
+    }
 
     /* ---- 内衣（默认遮挡私密部位） ----
        下缘要落到躯干那个锥形底盖下面去，并且封上底：不封的话从斜下方顺着两腿之间
@@ -457,10 +527,19 @@
       addWear(new THREE.Mesh(loft(band(L.underbust + 0.006, L.bust + 0.028, 0.6, 5), 44, false, false)));
     }
 
-    /* ---- 男性外生殖器（默认藏起来，开「显示私密部位」才出现） ---- */
+    /* ---- 外生殖器（默认藏起来，开「显示私密部位」才出现） ---- */
     if (p.gender === 'male') {
       maleGenitals(H, { y: L.crotch * H, z: profileAt(L.crotch).bF }, fat)
-        .forEach(function (g) { addPriv(g.mesh, g.region); });
+        .forEach(function (g) { addPriv(g.mesh, g.region, g.shade); });
+    }
+    if (isF) {
+      var vTop = frontZ(L.crotch * H + 0.012 * H), vLow = frontZ(L.crotch * H - 0.012 * H);
+      if (vTop != null) {
+        femaleVulva(H, {
+          y: L.crotch * H, zTop: vTop,
+          zLow: vLow == null ? vTop - 0.008 * H : vLow
+        }, fat).forEach(function (g) { addPriv(g.mesh, g.region, g.shade); });
+      }
     }
 
     /* ---- 女性胸部 ---- */
@@ -739,6 +818,6 @@
 
   window.BodyModel = {
     build: build, autoGirth: autoGirth, girth: girth, L: L, girthRange: GIRTH_RANGE,
-    maleGenitals: maleGenitals
+    maleGenitals: maleGenitals, femaleVulva: femaleVulva
   };
 })();
