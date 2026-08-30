@@ -66,6 +66,13 @@
   function applyPrivacy() {
     if (!body) return;
     body.wear.forEach(function (m) { m.visible = !opts.privacy; });
+    /* 私密部位件和内衣正好相反：关着的时候连拾取一起停掉（见 pickParts） */
+    (body.priv || []).forEach(function (m) { m.visible = opts.privacy; });
+  }
+
+  /** 可拾取的体表件：r128 的 Raycaster 不看 visible，藏起来的件得自己筛掉 */
+  function pickParts() {
+    return body ? body.parts.filter(function (m) { return m.visible; }) : [];
   }
 
   /** 当前模型源；外部模型没准备好时自动退回程序化模型 */
@@ -80,7 +87,7 @@
     body = modelSource().build(params);
     scene.add(body.group);
     applyPrivacy();
-    if (store.items.length) store.reproject(body.parts, params.height, ctx());
+    if (store.items.length) store.reproject(pickParts(), params.height, ctx());
   }
 
   /* ---------------- 视角 ---------------- */
@@ -128,7 +135,7 @@
   function hitBody(e) {
     setNdc(e);
     ray.setFromCamera(ndc, camera);
-    var hs = ray.intersectObjects(body.parts, false);
+    var hs = ray.intersectObjects(pickParts(), false);
     return hs.length ? hs[0] : null;
   }
 
@@ -654,7 +661,7 @@
     syncUI();
     rebuild();
     store.fromJSON(data.ann, params.height);
-    if (store.items.length) store.reproject(body.parts, params.height, ctx());
+    if (store.items.length) store.reproject(pickParts(), params.height, ctx());
     /* 外部模型要异步加载，放在最后触发，失败也不影响已恢复的标注 */
     if (data.opts && data.opts.source === 'mesh') setSource('mesh');
   }
@@ -725,7 +732,7 @@
     on($('privacy'), 'change', function () {
       opts.privacy = $('privacy').checked;
       applyPrivacy();
-      if (body && store.items.length) store.reproject(body.parts, params.height, ctx());
+      if (body && store.items.length) store.reproject(pickParts(), params.height, ctx());
       save();
     });
     on($('inRadius'), 'input', function () {

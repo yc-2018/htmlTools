@@ -174,6 +174,52 @@
     return mesh;
   }
 
+  /** 男性外生殖器。程序化模型和外部模型共用一份：MakeHuman 的基础网格
+      同样没有这部分，两边都得现搭。只在「显示私密部位」打开时可见、可点。
+      H 为身高(cm)，anchor 为模型自身坐标系下的胯部锚点：
+      y 是裆部高度，z 是**正中面上**该高度处身体前表面的 z（不是凸壳的支撑距离，
+      那个会被大腿前侧带偏三四厘米，整件就飘在身体外面）；fat 让胖体型稍微放大一点。
+      返回 [{ mesh, region }]，由调用方决定怎么加进场景 */
+  function maleGenitals(H, anchor, fat) {
+    var f = clamp(fat || 1, 0.92, 1.16);
+    var y0 = anchor.y, zP = anchor.z;
+    /* 阴茎：根部埋进体表里一点，接缝就不会露在外面；往下偏前垂，
+       前倾给得比自然状态多一点，好让它挂在阴囊前面而不是陷进去 */
+    var from = new V(0, y0 + 0.005 * H, zP - 0.004 * H);
+    var dir = new V(0, -1, 0.42).normalize();
+    var len = 0.042 * H;
+    var r0 = 0.0094 * H * f, r1 = 0.0088 * H * f;
+    var to = from.clone().addScaledVector(dir, len);
+    /* 轴向垂直方向里朝前上的那一支就是背侧（自然下垂时背面朝前） */
+    var aVec = new V(0, dir.z, -dir.y).normalize();
+    var lVec = new V(1, 0, 0);
+    var AX = { aPos: '背侧(朝前)', aNeg: '腹侧(朝后)', lPos: '左侧', lNeg: '右侧' };
+    var glansC = to.clone().addScaledVector(dir, r1 * 0.35);
+    /* 阴囊坐在裆下、两腿之间：再往后就整个埋进身体，再往前就顶穿大腿内侧 */
+    var scrC = new V(0, y0 - 0.026 * H, zP - 0.004 * H);
+    var scrR = 0.0125 * H * f;
+    return [
+      {
+        mesh: tube(from, to, r0, r1, { seg: 20, steps: 4, ref: aVec }),
+        region: {
+          kind: 'limb', name: '阴茎', from: from.clone(), to: to.clone(),
+          t0: '靠近根部', t1: '靠近前端', aVec: aVec.clone(), lVec: lVec.clone(), axes: AX
+        }
+      },
+      {
+        mesh: blob(glansC, r1 * 1.10, frame(dir, aVec), { x: 1, y: 1.22, z: 1 }, 20),
+        region: {
+          kind: 'blob', name: '阴茎头(龟头)', center: glansC.clone(),
+          aVec: aVec.clone(), lVec: lVec.clone(), axes: AX
+        }
+      },
+      {
+        mesh: blob(scrC, scrR, null, { x: 1.24, y: 1.10, z: 0.98 }, 22),
+        region: { kind: 'sym', name: '阴囊' }
+      }
+    ];
+  }
+
   /** 由一组截面环放样成躯干；环需按 y 从低到高排列 */
   function loft(rings, seg, capBottom, capTop) {
     var pos = [], idx = [];
@@ -308,6 +354,7 @@
     var group = new THREE.Group();
     var parts = [];
     var wear = [];
+    var priv = [];
     var matSkin = new THREE.MeshStandardMaterial({ color: 0xdccfc2, roughness: 0.66, metalness: 0.02 });
     var matWear = new THREE.MeshStandardMaterial({ color: 0x59616e, roughness: 0.9, metalness: 0.0 });
     var MAT = {
@@ -340,6 +387,19 @@
       mesh.raycast = function () {};
       group.add(mesh);
       wear.push(mesh);
+      return mesh;
+    }
+
+    /** 私密部位件：和内衣互斥，只有「显示私密部位」打开时才显示。
+        进 parts 是为了打开后能点、能贴标注；关掉时靠 visible=false，
+        main.js 拾取前会把不可见的件筛掉（r128 的 Raycaster 自己不看 visible） */
+    function addPriv(mesh, region) {
+      mesh.material = matSkin;
+      mesh.userData.region = region;
+      mesh.visible = false;
+      group.add(mesh);
+      parts.push(mesh);
+      priv.push(mesh);
       return mesh;
     }
 
@@ -395,6 +455,12 @@
     addWear(new THREE.Mesh(loft(band(L.crotch - 0.042, L.hip + 0.030, 0.55, 8), 44, true, false)));
     if (isF) {
       addWear(new THREE.Mesh(loft(band(L.underbust + 0.006, L.bust + 0.028, 0.6, 5), 44, false, false)));
+    }
+
+    /* ---- 男性外生殖器（默认藏起来，开「显示私密部位」才出现） ---- */
+    if (p.gender === 'male') {
+      maleGenitals(H, { y: L.crotch * H, z: profileAt(L.crotch).bF }, fat)
+        .forEach(function (g) { addPriv(g.mesh, g.region); });
     }
 
     /* ---- 女性胸部 ---- */
@@ -550,6 +616,7 @@
       group: group,
       parts: parts,
       wear: wear,
+      priv: priv,
       materials: MAT,
       height: H,
       landmarks: landmarks,
@@ -671,6 +738,7 @@
   }
 
   window.BodyModel = {
-    build: build, autoGirth: autoGirth, girth: girth, L: L, girthRange: GIRTH_RANGE
+    build: build, autoGirth: autoGirth, girth: girth, L: L, girthRange: GIRTH_RANGE,
+    maleGenitals: maleGenitals
   };
 })();

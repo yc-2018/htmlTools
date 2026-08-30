@@ -592,6 +592,19 @@
     }
   }
 
+  /** 正中面上某一层的身体前表面 z：只取 |x| 很小的点。
+      内衣用的凸壳支撑距离在这儿不能用——裆部那一层的正前支撑量到的是大腿前侧，
+      比真正的正中面前表面远三四厘米，拿它当锚点私密件就飘在体外了 */
+  function midFront(out, xyz, f, halfX) {
+    var H = out.height, y = f * H, dy = 0.006 * H, hx = halfX * H;
+    var best = -1e9, i;
+    for (i = 0; i < xyz.length; i += 3) {
+      if (Math.abs(xyz[i]) > hx || Math.abs(xyz[i + 1] - y) > dy) continue;
+      if (xyz[i + 2] > best) best = xyz[i + 2];
+    }
+    return best > -1e9 ? best : null;
+  }
+
   /** 内裤拆成「腰头 + 两条裤腿」：整条都用一圈凸壳的话，下缘会横跨两腿之间，
       看着是条短裙。裤腿各自贴着大腿量，上口正好接在腰头的裆布那一层，
       被裆布盖住，所以不会互相穿插；裆部再在正中面缝上 */
@@ -607,7 +620,9 @@
          裤腿不会在臀线处顶出腰头，裆布的边也埋在裤腿里 */
       brief: sampleBand(out, xyz, hem - 0.008, Lm.hip + 0.030, 8, 0),
       legs: legs,
-      bust: sampleBand(out, xyz, Lm.underbust + 0.004, Lm.bust + 0.030, 6, 0)
+      bust: sampleBand(out, xyz, Lm.underbust + 0.004, Lm.bust + 0.030, 6, 0),
+      /* 外生殖器的锚点：裆部那一层正中面上的身体前表面 z */
+      crotchZ: midFront(out, xyz, Lm.crotch, 0.010)
     };
   }
   /** 相邻两条切线求交，还原成一圈套住截面的凸多边形；pad 是往外让出的余量(cm) */
@@ -793,6 +808,10 @@
       }),
       wear: new THREE.MeshStandardMaterial({
         color: 0x59616e, roughness: 0.9, metalness: 0.0, side: THREE.DoubleSide
+      }),
+      /* 补上去的私密部位是普通几何，不带形变目标，得用一份没开 morphTargets 的皮肤 */
+      privSkin: new THREE.MeshStandardMaterial({
+        color: 0xdccfc2, roughness: 0.66, metalness: 0.02
       })
     };
 
@@ -807,6 +826,7 @@
     mesh.userData.faceMap = ref.faceMap;
     mesh.userData.region = regions[0];    // 查不到面时的兜底
     group.add(mesh);
+    var parts = [mesh];
 
     /* 内衣按当前权重下的体表现算，胖瘦和三围一改就跟着松紧。
        裤腿让的余量比腰头多 0.05cm，好让裆布的边缘藏进裤腿里，不会露出一圈薄边 */
@@ -817,6 +837,22 @@
     if (p.gender !== 'male' && bands.bust) wear.push(bandMesh(bands.bust, MAT.wear, 0.5));
     wear.forEach(function (m) { group.add(m); });
 
+    /* 外生殖器：这个 GLB 的基础网格没有这部分，用程序化模型那份补上。
+       尺寸和锚点都按参考身高算，整体缩放会把它一起带到目标身高 */
+    var priv = [];
+    if (p.gender === 'male' && bands.crotchZ != null && window.BodyModel.maleGenitals) {
+      var anchor = { y: L().crotch * ref.height, z: bands.crotchZ };
+      var fat = 1 + 0.16 * clamp(w.fatUp || 0, 0, 1);
+      window.BodyModel.maleGenitals(ref.height, anchor, fat).forEach(function (g) {
+        g.mesh.material = MAT.privSkin;
+        g.mesh.userData.region = scaled(g.region, k);
+        g.mesh.visible = false;
+        group.add(g.mesh);
+        parts.push(g.mesh);
+        priv.push(g.mesh);
+      });
+    }
+
     var landmarks = {};
     Object.keys(ref.landmarks).forEach(function (key) {
       landmarks[key] = ref.landmarks[key].clone().multiplyScalar(k);
@@ -824,7 +860,7 @@
     group.updateMatrixWorld(true);
 
     return {
-      group: group, parts: [mesh], wear: wear, materials: MAT,
+      group: group, parts: parts, wear: wear, priv: priv, materials: MAT,
       height: p.height, landmarks: landmarks, L: L()
     };
   }
