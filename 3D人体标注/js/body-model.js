@@ -130,6 +130,21 @@
     obj.quaternion.setFromRotationMatrix(m);
   }
 
+  /** 焊接旋转体的接缝。LatheGeometry / SphereGeometry 收尾那一圈是拿 phi=2π 算的，
+      和 phi=0 那圈差着 1e-16，于是接缝上留了一道无限薄的裂口。正好躺在这个平面里的
+      射线会从裂口穿过去，一次都不命中——lathe 的接缝就在局部 +z，也就是 ref 方向，
+      而量薄厚、贴件位置打的射线偏偏最爱走这个方向（件薄的时候看起来就像整件埋进了
+      肉里）。把最后一圈的坐标抄成第一圈的，裂口就没了；法线本来就一样，观感不变。
+      球体两极的扇心是同一类针孔（所有三角共用一个顶点，严格沿极轴打的射线会漏），
+      那个焊不掉，也没人沿件的极轴量东西，就这么放着 */
+  function weldSeam(geo, first, last, n, step) {
+    var pos = geo.attributes.position, i, a, b;
+    for (i = 0; i < n; i++) {
+      a = first + i * step; b = last + i * step;
+      pos.setXYZ(b, pos.getX(a), pos.getY(a), pos.getZ(a));
+    }
+  }
+
   /** 圆锥台状肢体，沿 from→to 生成，可选圆头与轮廓函数 */
   function tube(from, to, r0, r1, opt) {
     opt = opt || {};
@@ -159,15 +174,20 @@
     } else {
       pts.push(new THREE.Vector2(0.002, len));
     }
-    var mesh = new THREE.Mesh(new THREE.LatheGeometry(pts, opt.seg || 22));
+    var seg = opt.seg || 22;
+    var geo = new THREE.LatheGeometry(pts, seg);
+    weldSeam(geo, 0, seg * pts.length, pts.length, 1);   /* 一列 pts.length 个点，焊最后一列 */
+    var mesh = new THREE.Mesh(geo);
     mesh.position.copy(from);
     applyFrame(mesh, frame(to.clone().sub(from), opt.ref));
     return mesh;
   }
   /** 球体（可按局部基与三轴缩放做成椭球）；seg 用于关节这类需要更圆的部件 */
   function blob(center, r, f, scale, seg) {
-    var w = seg || 24;
-    var mesh = new THREE.Mesh(new THREE.SphereGeometry(r, w, Math.round(w * 0.7)));
+    var w = seg || 24, h = Math.round(w * 0.7);
+    var geo = new THREE.SphereGeometry(r, w, h);
+    weldSeam(geo, 0, w, h + 1, w + 1);                   /* 一行 w+1 个点，焊每行最后一个 */
+    var mesh = new THREE.Mesh(geo);
     mesh.position.copy(center);
     if (f) applyFrame(mesh, f);
     if (scale) mesh.scale.set(scale.x, scale.y, scale.z);
