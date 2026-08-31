@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>人体内部结构 - 3D人体标注</title>
+  <meta name="description" content="按系统分层的三维人体内部结构：骨骼、肌肉、心脏、呼吸、消化、泌尿、生殖、内分泌、脑与脊髓、淋巴，可以一层层剥开并点选查看每一件结构。真实解剖数据来自 BodyParts3D（CC BY 4.0）。">
+  <link rel="icon" href="../favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="./styles.css">
+  <style>
+    /* 只有这一页用得到的两块：解剖层（开关 + 涂层深度）、结构清单 */
+    .lay-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 5px 0; }
+    .lay-row .sw { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; border: 1px solid rgba(15, 23, 42, .18); }
+    .lay-row .nm { flex: 1 1 auto; font-size: 13px; color: #0f172a; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lay-row .eye { flex: 0 0 auto; width: 22px; height: 22px; padding: 0; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #0f172a; font: inherit; font-size: 11px; line-height: 1; cursor: pointer; }
+    .lay-row .eye[aria-pressed="false"] { color: #cbd5e1; }
+    .lay-row .lay-deep { flex: 0 0 100%; display: flex; align-items: center; gap: 8px; padding-left: 20px; box-sizing: border-box; }
+    .lay-row .lay-deep input[type="range"] { flex: 1 1 auto; min-width: 0; }
+    .lay-row .vl { flex: 0 0 108px; text-align: right; font-size: 11px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lay-row.is-off .nm, .lay-row.is-off .vl { color: #94a3b8; }
+    .pick-list { max-height: 320px; overflow: auto; margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+    .pick-item { display: flex; gap: 8px; align-items: baseline; text-align: left; width: 100%; padding: 6px 8px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; cursor: pointer; font: inherit; }
+    .pick-item:hover { border-color: #94a3b8; background: #f8fafc; }
+    .pick-item.is-active { border-color: #0f172a; background: #f1f5f9; }
+    .pick-item .p-n { font-size: 13px; color: #0f172a; }
+    .pick-item .p-s { font-size: 11px; color: #64748b; margin-left: auto; flex: 0 0 auto; }
+    .info-name { font-size: 16px; font-weight: 600; color: #0f172a; }
+    .info-sys { font-size: 12px; color: #64748b; margin: 2px 0 8px; }
+    .info-note { font-size: 13px; line-height: 1.7; color: #334155; }
+    .info-empty { font-size: 13px; color: #94a3b8; line-height: 1.7; }
+    .search { width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font: inherit; box-sizing: border-box; }
+    .search:focus { outline: none; border-color: #0f172a; }
+  </style>
+</head>
+<body>
+<header class="top-bar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">◎</span>
+    3D人体标注
+  </div>
+  <nav class="top-links">
+    <a href="/index.html">首页</a>
+    <a href="./index.html">体表标注</a>
+  </nav>
+</header>
+
+<main class="shell">
+  <p class="crumb"><a href="/index.html">首页</a> / <a href="./index.html">3D人体标注</a> / 内部结构</p>
+
+  <div class="page-head">
+    <h1>人体内部结构</h1>
+    <p>按系统分层看身体里面：每一层的滑块是「涂层」，往右拉一格就剥掉最外面那一层，点一下想问的那件结构，
+      就会告诉你它是什么、在哪、和什么症状有关。真实解剖数据来自 BodyParts3D，全部计算都在本地浏览器完成。</p>
+  </div>
+
+  <div class="layout">
+    <div class="col">
+      <section class="panel">
+        <h2>解剖层</h2>
+        <div id="layerList"></div>
+        <div class="btn-row" style="margin-top:10px">
+          <button id="layHideAll" class="btn" type="button">全部隐藏</button>
+          <button id="layReset" class="btn" type="button">恢复默认</button>
+        </div>
+        <p class="panel-note">从外到内排列。左边的圆点是这一层的开关；滑块是<strong>涂层深度</strong>，
+          最左边是这一层完完整整摆着，往右拉一格就剥掉最外的一层，里面的留着
+          （呼吸：肺与气道 → 肺段与支气管 → 支气管树）。
+          每一层能剥几级各不相同，滑块右边写着当前是哪一级；没显示出来的层和级都不参与点选。</p>
+      </section>
+
+      <section class="panel">
+        <h2>体型参数</h2>
+        <div class="field">
+          <div class="field-head"><strong>模型来源</strong></div>
+          <div class="seg" id="srcSeg">
+            <button type="button" data-v="real" aria-pressed="true">真实解剖</button>
+            <button type="button" data-v="proc" aria-pressed="false">程序化</button>
+          </div>
+          <p class="panel-note" id="srcNote">真实解剖用的是 BodyParts3D 的实测数据（成年男性一具），按图层用到才下载；
+            程序化是这一页现算的示意结构，男女都有、也跟着三围变。</p>
+        </div>
+        <div class="field">
+          <div class="field-head"><strong>性别</strong></div>
+          <div class="seg" id="genderSeg">
+            <button type="button" data-v="male" aria-pressed="true">男</button>
+            <button type="button" data-v="female" aria-pressed="false">女</button>
+            <button type="button" data-v="neutral" aria-pressed="false">中性</button>
+          </div>
+        </div>
+        <div class="field">
+          <div class="field-head"><strong>身高</strong><span>cm</span></div>
+          <div class="field-row">
+            <input id="inHeight" type="range" min="120" max="210" step="1" value="170" aria-label="身高">
+            <input id="numHeight" class="num" type="number" min="120" max="210" step="1" value="170">
+          </div>
+        </div>
+        <div class="field">
+          <div class="field-head"><strong>体重</strong><span>kg</span></div>
+          <div class="field-row">
+            <input id="inWeight" type="range" min="30" max="160" step="1" value="60" aria-label="体重">
+            <input id="numWeight" class="num" type="number" min="30" max="160" step="1" value="60">
+          </div>
+        </div>
+        <label class="check">
+          <input id="privacy" type="checkbox">
+          <span>显示生殖系统（默认关闭）</span>
+        </label>
+        <p class="panel-note" id="syncNote">三围沿用体表标注页里填的值。</p>
+      </section>
+    </div>
+
+    <div class="col">
+      <div class="viewer" id="viewer">
+        <canvas id="scene"></canvas>
+        <div class="viewer-bar" id="viewBar">
+          <button class="btn" type="button" data-view="front">正面</button>
+          <button class="btn" type="button" data-view="back">背面</button>
+          <button class="btn" type="button" data-view="left">左侧</button>
+          <button class="btn" type="button" data-view="right">右侧</button>
+          <span class="spacer"></span>
+          <select id="focusSel" aria-label="聚焦区域">
+            <option value="all">聚焦：全身</option>
+            <option value="head">聚焦：头颈</option>
+            <option value="chest">聚焦：胸腔</option>
+            <option value="belly">聚焦：腹部</option>
+            <option value="pelvis">聚焦：盆腔</option>
+            <option value="spine">聚焦：脊柱</option>
+          </select>
+        </div>
+        <div class="hover-tip" id="hoverTip"></div>
+        <div class="viewer-foot">
+          <span>左键拖动旋转 · 滚轮缩放 · Shift 或中键拖动平移 · 点击选中结构</span>
+          <span>模型左手在画面右侧（正对你时的镜像关系）</span>
+        </div>
+      </div>
+
+      <section class="panel">
+        <h2>怎么用</h2>
+        <ol class="tips">
+          <li>「解剖层」左边的圆点管开关：默认体表、骨骼和内脏开着，肌肉和淋巴关着，点一下就切换。
+            真实解剖模式下每一层是用到才下载，第一次打开会顿一下。</li>
+          <li>每层的滑块是<strong>涂层</strong>不是透明度：最左边看这一层完整的样子，往右拉一格就剥掉最外的一层。
+            比如呼吸拉到最左是肺和气道，剥一层肺就没了、只剩肺段和支气管，再剥一层连咽喉也去掉、只留支气管树；
+            层数各系统不一样（呼吸和心脏 3 级，骨骼、肌肉、消化 2 级，泌尿、内分泌、淋巴只有 1 级），滑块右边会写当前是第几级。</li>
+          <li>鼠标悬停会先显示名字，点一下才选中；选中的件会亮起来，右侧给出说明。</li>
+          <li>不确定名字时用右侧搜索框，输「肋」「腰椎」「阑尾」「肺段」「二尖瓣」都能找到——点中了会自动把那一层剥到位。</li>
+          <li>体表标注页里标过的位置会以红点出现在这里，点开就能看那一处底下最近的几件结构。</li>
+        </ol>
+      </section>
+    </div>
+
+    <div class="col col-right">
+      <section class="panel">
+        <h2>结构信息</h2>
+        <div id="infoBox">
+          <p class="info-empty">还没有选中任何结构：在模型上点一下，或者用下面的搜索。</p>
+        </div>
+        <div class="btn-row" style="margin-top:10px" id="infoActs" hidden>
+          <button id="btnFocus" class="btn" type="button">聚焦这件</button>
+          <button id="btnHideIt" class="btn" type="button">隐藏这件</button>
+          <button id="btnClearSel" class="btn" type="button">取消选中</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>找结构 <span class="badge">共 <span id="itemCount">0</span> 件</span></h2>
+        <input id="searchIn" class="search" type="search" placeholder="输入名字，如 腰椎 / 肋骨 / 阑尾 / 甲状腺">
+        <div class="pick-list" id="searchList"></div>
+      </section>
+
+      <section class="panel">
+        <h2>来自体表标注 <span class="badge">共 <span id="annCount">0</span> 处</span></h2>
+        <div class="pick-list" id="annList"></div>
+        <p class="panel-note">读的是体表标注页存在本机的那份记录，这一页不会改动它。</p>
+      </section>
+    </div>
+  </div>
+
+  <p class="disclaimer">
+    <strong>真实解剖</strong>模式用的是 BodyParts3D（生命科学数据库中心，CC BY 4.0）从一具成年男性标本上得到的实测网格，
+    按你填的身高等比缩放，所以形状是真的，但尺码和你本人不会一致，也只有男性一具；
+    数据里没有的小件（甲状腺、扁桃体、淋巴结、乙状结肠、脊髓下段，以及女性生殖器官和外生殖器）由本页现算补上，
+    说明里会写「示意结构」。<strong>程序化</strong>模式整套都是按体型参数现算的示意模型：
+    位置关系、左右和大致高度是对的，形状做了简化。两种模式都<strong>不能用来判断病灶</strong>，
+    任何身体不适请及时就医。所有数据只保存在你自己的浏览器中。
+  </p>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="./js/vendor/three-r128.min.js"></script>
+<script src="./js/orbit.js"></script>
+<script src="./js/body-model.js"></script>
+<script src="./js/inner-model.js"></script>
+<script src="./js/inner-mesh.js"></script>
+<script src="./js/inner-bones.js"></script>
+<script src="./js/inner-organs.js"></script>
+<script src="./js/inner-muscle.js"></script>
+<script src="./js/inner-extra.js"></script>
+<script src="./js/inner-main.js"></script>
+</body>
+</html>

@@ -66,8 +66,22 @@
     };
   }
 
-  /* 纵向标志点（占身高比例） */
-  var L = {
+  /** 手臂姿势：默认这一页的 A 字站姿（肩往下 0.022H 起手，上臂 0.184H、前臂 0.146H，
+   *  外展角来自 props，手臂略向前 lean）。内部解剖页在真实解剖数据模式下会传一份贴合
+   *  标本的姿势过来，不然半透明皮肤的手和里面的手骨差着二十多厘米。 */
+  function armPose(p, q) {
+    var a = (p && p.arm) || {};
+    return {
+      abduct: a.abduct == null ? q.abduct : a.abduct,
+      drop: a.drop == null ? 0.022 : a.drop,
+      upper: a.upper == null ? 0.184 : a.upper,
+      fore: a.fore == null ? 0.146 : a.fore,
+      lean: a.lean == null ? 0.06 : a.lean,
+      back: a.back == null ? 0 : a.back
+    };
+  }
+
+  /* 纵向标志点（占身高比例） */  var L = {
     top: 1.000, chin: 0.868, neck: 0.816, shoulder: 0.806, armpit: 0.758,
     bust: 0.715, underbust: 0.668, waist: 0.616, iliac: 0.576,
     hip: 0.520, crotch: 0.482, knee: 0.285, ankle: 0.043
@@ -474,6 +488,7 @@
     var waist = girth(p.waist, q.waistK);
     var hip = girth(p.hip, q.hipK);
     var sw = q.shoulderW * H;
+    var arm = armPose(p, q);
     var isF = p.gender === 'female';
 
     var group = new THREE.Group();
@@ -665,13 +680,13 @@
         axes: { aPos: '肩前', aNeg: '肩后', lPos: '肩外侧', lNeg: '靠颈一侧' }
       });
 
-      /* 上臂 / 肘 / 前臂 / 腕 */
-      var dir1 = new V(side * Math.sin(q.abduct), -Math.cos(q.abduct), 0.06).normalize();
-      var abd2 = q.abduct * 0.84;
-      var dir2 = new V(side * Math.sin(abd2), -Math.cos(abd2), 0.12).normalize();
-      var shoulder = new V(side * sw * 0.47, L.shoulder * H - 0.022 * H, 0);
-      var elbow = shoulder.clone().addScaledVector(dir1, 0.184 * H);
-      var wrist = elbow.clone().addScaledVector(dir2, 0.146 * H);
+      /* 上臂 / 肘 / 前臂 / 腕（姿势可由 p.arm 覆盖，见 armPose） */
+      var dir1 = new V(side * Math.sin(arm.abduct), -Math.cos(arm.abduct), arm.lean).normalize();
+      var abd2 = arm.abduct * 0.84;
+      var dir2 = new V(side * Math.sin(abd2), -Math.cos(abd2), arm.lean * 2).normalize();
+      var shoulder = new V(side * sw * 0.47, L.shoulder * H - arm.drop * H, arm.back * H);
+      var elbow = shoulder.clone().addScaledVector(dir1, arm.upper * H);
+      var wrist = elbow.clone().addScaledVector(dir2, arm.fore * H);
       function antOf(dir) {
         return AXIS_Z.clone().sub(dir.clone().multiplyScalar(dir.dot(AXIS_Z))).normalize();
       }
@@ -891,6 +906,8 @@
 
   window.BodyModel = {
     build: build, autoGirth: autoGirth, girth: girth, L: L, girthRange: GIRTH_RANGE,
-    maleGenitals: maleGenitals, femaleVulva: femaleVulva
+    maleGenitals: maleGenitals, femaleVulva: femaleVulva, props: props,
+    /* 内部解剖页（inner-*.js）复用这几件几何工具，免得再抄一份 */
+    geo: { tube: tube, blob: blob, loft: loft, frame: frame, applyFrame: applyFrame }
   };
 })();

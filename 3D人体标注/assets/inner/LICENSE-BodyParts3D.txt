@@ -1,0 +1,32 @@
+BodyParts3D / Anatomography
+===========================
+
+本目录下的 *.ibp 数据（bone / muscle / heart / resp / dig / urin / repro / endo /
+nerve / lymph）是由 BodyParts3D 的原始 OBJ 网格转换、简化、重新打包而来，
+转换脚本见 ../../tools/bp3d-build.js。
+
+原始数据版权与许可
+------------------
+
+    BodyParts3D, © The Database Center for Life Science
+    licensed under CC Attribution 4.0 International
+    https://creativecommons.org/licenses/by/4.0/
+
+    BodyParts3D/Anatomography
+    The Database Center for Life Science (DBCLS), Japan
+    https://dbarchive.biosciencedbc.jp/en/bodyparts3d/desc.html
+
+说明
+----
+
+* BodyParts3D 4.0 的部分 OBJ 文件头里写的是较早的
+  CC Attribution-Share Alike 2.1 Japan；数据集页面与 2025 年的 README 已统一为
+  CC BY 4.0，本目录按 CC BY 4.0 使用并保留上面这段署名。
+* 原始网格是一具成年男性标本，参考身高 171.95 cm（manifest.json 里的 ref.height）。
+  网页端按用户填的身高等比缩放，胖瘦只在左右和前后做小幅调整。
+* 相对原始数据做过的修改：按概念（FMA 编号）合并部件、顶点聚类简化三角面、
+  单位由 mm 改为 cm、坐标改为「脚底 y=0、面朝 +Z、自身左侧 +X」、
+  顶点量化为 int16 并打成本站自用的 .ibp 容器；法线在浏览器端重算，包里不存。
+* 数据集里没有的结构（甲状腺、扁桃体、淋巴结、乙状结肠、脊髓下段，
+  以及女性生殖器官和外生殖器）由网页现算补充，界面上标注为「示意结构」，
+  不属于 BodyParts3D 的内容。
