@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>浏览器指纹查看器 · Browser Fingerprint</title>
+  <meta name="description" content="纯前端浏览器指纹检测：User-Agent、硬件、屏幕、Canvas、WebGL、字体、WebRTC 本地 IP、音频指纹等，并提供可复制的检测 JS 代码。所有计算均在本机浏览器内完成，不上传任何服务器。" />
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --bg-soft: #121926;
+      --card: #151d2c;
+      --card-2: #1b2434;
+      --line: #263246;
+      --txt: #e6edf6;
+      --txt-dim: #93a1b8;
+      --accent: #4fd1c5;
+      --accent-2: #7aa2ff;
+      --warn: #ffb454;
+      --danger: #ff6b6b;
+      --mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--txt);
+      font-family: var(--sans);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(60rem 40rem at 15% -10%, rgba(79, 209, 197, 0.12), transparent 60%),
+        radial-gradient(50rem 40rem at 100% 0%, rgba(122, 162, 255, 0.12), transparent 55%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 28px 18px 64px;
+    }
+
+    header.masthead {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: flex-end;
+      justify-content: space-between;
+      margin-bottom: 22px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: clamp(1.5rem, 4vw, 2.1rem);
+      letter-spacing: 0.5px;
+    }
+
+    .brand .latin {
+      display: block;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 3px;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    .brand p {
+      margin: 8px 0 0;
+      color: var(--txt-dim);
+      font-size: 0.9rem;
+      max-width: 42ch;
+    }
+
+    .live {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      letter-spacing: 1px;
+      color: var(--txt-dim);
+      border: 1px solid var(--line);
+      background: var(--bg-soft);
+      padding: 6px 12px;
+      border-radius: 999px;
+    }
+
+    .live .pulse {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 0 rgba(79, 209, 197, 0.6);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(79, 209, 197, 0.5); }
+      70% { box-shadow: 0 0 0 8px rgba(79, 209, 197, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(79, 209, 197, 0); }
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 22px;
+    }
+
+    .btn {
+      font-family: var(--sans);
+      font-size: 0.85rem;
+      color: var(--txt);
+      background: var(--card-2);
+      border: 1px solid var(--line);
+      padding: 9px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: border-color .15s, background .15s, transform .05s;
+    }
+
+    .btn:hover { border-color: var(--accent); }
+    .btn:active { transform: translateY(1px); }
+    .btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #06121a; border: none; font-weight: 600; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px 18px;
+      overflow: hidden;
+    }
+
+    .card.wide { grid-column: 1 / -1; }
+
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      letter-spacing: 0.5px;
+    }
+
+    .card h2 .en {
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      letter-spacing: 2px;
+      color: var(--accent-2);
+      text-transform: uppercase;
+      font-weight: 400;
+    }
+
+    .kv {
+      display: grid;
+      grid-template-columns: minmax(88px, auto) 1fr;
+      gap: 6px 14px;
+      font-size: 0.85rem;
+    }
+
+    .kv dt {
+      color: var(--txt-dim);
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      word-break: break-word;
+    }
+
+    .kv dd {
+      margin: 0;
+      word-break: break-word;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+    }
+
+    .muted { color: var(--txt-dim); }
+    .accent { color: var(--accent); }
+    .warn { color: var(--warn); }
+    .danger { color: var(--danger); }
+
+    .big-hash {
+      font-family: var(--mono);
+      font-size: clamp(1rem, 3.5vw, 1.5rem);
+      color: var(--accent);
+      word-break: break-all;
+      letter-spacing: 1px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .chip {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      background: var(--bg-soft);
+      border: 1px solid var(--line);
+      color: var(--txt-dim);
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+
+    canvas.preview {
+      width: 100%;
+      max-width: 320px;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      image-rendering: pixelated;
+    }
+
+    .note {
+      font-size: 0.78rem;
+      color: var(--txt-dim);
+      margin-top: 10px;
+    }
+
+    pre.code {
+      margin: 0;
+      background: #0a0e16;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px;
+      overflow-x: auto;
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      line-height: 1.55;
+      color: #cfe3ff;
+      white-space: pre;
+      tab-size: 2;
+    }
+
+    .snippet {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      margin-bottom: 14px;
+      overflow: hidden;
+      background: var(--card);
+    }
+
+    .snippet-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 14px;
+      background: var(--card-2);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .snippet-head strong { font-size: 0.85rem; }
+    .snippet-head .copy {
+      font-size: 0.72rem;
+      font-family: var(--mono);
+      background: var(--bg-soft);
+      border: 1px solid var(--line);
+      color: var(--accent);
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .snippet-head .copy:hover { border-color: var(--accent); }
+
+    details.snippet-body summary {
+      cursor: pointer;
+      padding: 8px 14px;
+      font-size: 0.78rem;
+      color: var(--txt-dim);
+      list-style: none;
+    }
+    details.snippet-body summary::-webkit-details-marker { display: none; }
+    details.snippet-body[open] summary { border-bottom: 1px solid var(--line); }
+    details.snippet-body pre { margin: 0; border: none; border-radius: 0; }
+
+    footer.foot {
+      margin-top: 28px;
+      text-align: center;
+      color: var(--txt-dim);
+      font-size: 0.78rem;
+    }
+
+    #toast {
+      position: fixed;
+      left: 50%;
+      bottom: 28px;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--card-2);
+      border: 1px solid var(--accent);
+      color: var(--txt);
+      padding: 10px 18px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s, transform .2s;
+      z-index: 50;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    @media (max-width: 520px) {
+      .kv { grid-template-columns: 1fr; gap: 2px 0; }
+      .kv dd { margin-bottom: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="masthead">
+      <div class="brand">
+        <h1>浏览器指纹查看器<span class="latin">Browser&nbsp;Fingerprint</span></h1>
+        <p>看看网站能在“合法”权限内读到你的哪些设备信息 —— 全部在本机浏览器计算，不上传任何服务器。</p>
+      </div>
+      <div class="live"><span class="pulse"></span>LOCAL · NO BACKEND</div>
+    </header>
+
+    <div class="toolbar">
+      <button class="btn primary" id="btn-rescan" type="button">重新扫描</button>
+      <button class="btn" id="btn-copy-report" type="button">复制检测报告</button>
+      <button class="btn" id="btn-jump-code" type="button">查看可复制的 JS 代码</button>
+    </div>
+
+    <div class="grid">
+      <!-- 综合指纹 -->
+      <section class="card wide">
+        <h2>综合指纹哈希 <span class="en">Combined Hash</span></h2>
+        <div class="big-hash" id="fp-hash">计算中…</div>
+        <p class="note">由下方多项特征拼接后计算的 32 位哈希（FNV-1a），仅用于演示“为什么这些参数组合起来几乎唯一”。真实指纹库通常使用更多维度并做加权。</p>
+      </section>
+
+      <!-- 基础信息 -->
+      <section class="card">
+        <h2>基础信息 <span class="en">Navigator</span></h2>
+        <dl class="kv" id="fp-basic"></dl>
+      </section>
+
+      <!-- 屏幕与显示 -->
+      <section class="card">
+        <h2>屏幕与显示 <span class="en">Screen</span></h2>
+        <dl class="kv" id="fp-screen"></dl>
+      </section>
+
+      <!-- 系统与环境 -->
+      <section class="card">
+        <h2>系统与环境 <span class="en">Environment</span></h2>
+        <dl class="kv" id="fp-env"></dl>
+      </section>
+
+      <!-- 插件与 MIME -->
+      <section class="card">
+        <h2>插件与 MIME <span class="en">Plugins</span></h2>
+        <dl class="kv" id="fp-plugins"></dl>
+        <div class="chips" id="fp-plugin-list"></div>
+      </section>
+
+      <!-- Canvas -->
+      <section class="card">
+        <h2>Canvas 指纹 <span class="en">Canvas</span></h2>
+        <canvas class="preview" id="fp-canvas" width="280" height="140"></canvas>
+        <dl class="kv" id="fp-canvas-meta" style="margin-top:12px"></dl>
+      </section>
+
+      <!-- WebGL -->
+      <section class="card">
+        <h2>WebGL 指纹 <span class="en">WebGL</span></h2>
+        <dl class="kv" id="fp-webgl"></dl>
+      </section>
+
+      <!-- 音频 -->
+      <section class="card">
+        <h2>音频指纹 <span class="en">Audio</span></h2>
+        <dl class="kv" id="fp-audio"></dl>
+        <p class="note">通过 OfflineAudioContext 渲染一段信号并读取输出，不同声卡/驱动的浮点处理会产生细微差异。</p>
+      </section>
+
+      <!-- 字体 -->
+      <section class="card wide">
+        <h2>系统字体探测 <span class="en">Fonts</span></h2>
+        <div class="chips" id="fp-fonts"></div>
+        <p class="note">通过对比测试字体与基准字体的渲染宽高差异推断可用性，仅作演示，可能存在误差。</p>
+      </section>
+
+      <!-- WebRTC -->
+      <section class="card">
+        <h2>WebRTC 本地 IP <span class="en">WebRTC</span></h2>
+        <dl class="kv" id="fp-webrtc"></dl>
+        <p class="note">即使使用代理/VPN，WebRTC 有时仍会泄露内网或公网 IP。检测需数秒，若无 STUN 响应则可能超时。</p>
+      </section>
+    </div>
+
+    <!-- JS 代码片段 -->
+    <section class="card wide" id="code-section" style="margin-top:22px">
+      <h2>可复制的检测 JS 代码 <span class="en">Copy &amp; Run</span></h2>
+      <p class="note">按 F12 打开开发者工具，切到 Console 控制台，粘贴下面任意一段代码回车运行即可；也可在地址栏以 <code>javascript:</code> 前缀运行。</p>
+      <div id="snippets"></div>
+    </section>
+
+    <footer class="foot">
+      纯静态页面 · 所有检测均在你自己的浏览器内完成 · 不会向任何服务器发送你的指纹数据
+    </footer>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    "use strict";
+
+    // ---------- 工具函数 ----------
+    function el(id) { return document.getElementById(id); }
+
+    function fnv1a32(str) {
+      let h = 0x811c9dc5;
+      for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+      }
+      return ("00000000" + h.toString(16)).slice(-8);
+    }
+
+    function fillKV(container, pairs) {
+      container.innerHTML = "";
+      pairs.forEach(function (p) {
+        const dt = document.createElement("dt");
+        dt.textContent = p[0];
+        const dd = document.createElement("dd");
+        if (p[2]) { dd.className = p[2]; }
+        dd.textContent = p[1] == null ? "—" : String(p[1]);
+        container.appendChild(dt);
+        container.appendChild(dd);
+      });
+    }
+
+    function safe(fn, fallback) {
+      try { const v = fn(); return v == null ? (fallback || "不支持") : v; }
+      catch (e) { return fallback || ("读取失败: " + e.message); }
+    }
+
+    let toastTimer = null;
+    function toast(msg) {
+      const t = el("toast");
+      t.textContent = msg;
+      t.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { t.classList.remove("show"); }, 1800);
+    }
+
+    const reportParts = {};
+    function remember(key, value) { reportParts[key] = value; }
+
+    // ---------- 1. 基础信息 ----------
+    function collectBasic() {
+      const nav = navigator;
+      const pairs = [
+        ["User-Agent", safe(function () { return nav.userAgent; })],
+        ["平台 platform", safe(function () { return nav.platform || nav.userAgentData?.platform; })],
+        ["语言 language", safe(function () { return nav.language; })],
+        ["语言列表", safe(function () { return (nav.languages || []).join(", "); })],
+        ["CPU 核心数", safe(function () { return nav.hardwareConcurrency; })],
+        ["内存 (GB)", safe(function () { return nav.deviceMemory || "不支持读取"; })],
+        ["厂商 vendor", safe(function () { return nav.vendor || "(空)"; })],
+        ["在线 online", safe(function () { return nav.onLine ? "是" : "否"; })]
+      ];
+      fillKV(el("fp-basic"), pairs);
+      remember("基础信息", pairs);
+    }
+
+    // ---------- 2. 屏幕与显示 ----------
+    function collectScreen() {
+      const pairs = [
+        ["屏幕分辨率", safe(function () { return screen.width + " × " + screen.height; })],
+        ["可用工作区", safe(function () { return screen.availWidth + " × " + screen.availHeight; })],
+        ["颜色深度", safe(function () { return screen.colorDepth + " bit"; })],
+        ["像素深度", safe(function () { return screen.pixelDepth + " bit"; })],
+        ["设备像素比", safe(function () { return window.devicePixelRatio; })],
+        ["窗口内尺寸", safe(function () { return window.innerWidth + " × " + window.innerHeight; })],
+        ["屏幕方向", safe(function () { return screen.orientation?.type || (window.innerWidth > window.innerHeight ? "横向" : "纵向"); })]
+      ];
+      fillKV(el("fp-screen"), pairs);
+      remember("屏幕与显示", pairs);
+    }
+
+    // ---------- 3. 系统与环境 ----------
+    function collectEnv() {
+      const pairs = [
+        ["时区", safe(function () { return Intl.DateTimeFormat().resolvedOptions().timeZone; })],
+        ["时区偏移(分)", safe(function () { return -new Date().getTimezoneOffset(); })],
+        ["Cookie 启用", safe(function () { return navigator.cookieEnabled ? "是" : "否"; })],
+        ["Do Not Track", safe(function () { return navigator.doNotTrack || "未设置"; })],
+        ["触摸支持", safe(function () { return ("ontouchstart" in window || navigator.maxTouchPoints > 0) ? ("是 (maxTouchPoints=" + navigator.maxTouchPoints + ")") : "否"; })],
+        ["最大触摸点数", safe(function () { return navigator.maxTouchPoints; })],
+        ["PDF Viewer", safe(function () { return navigator.pdfViewerEnabled ? "支持" : "不支持/未知"; })]
+      ];
+      fillKV(el("fp-env"), pairs);
+      remember("系统与环境", pairs);
+    }
+
+    // ---------- 4. 插件与 MIME ----------
+    function collectPlugins() {
+      const nav = navigator;
+      let plugins = [];
+      try { plugins = Array.from(nav.plugins || []); } catch (e) { plugins = []; }
+      const pairs = [
+        ["插件数量", plugins.length || (nav.pdfViewerEnabled ? "现代浏览器已隐藏明细" : 0)],
+        ["MIME 类型数", safe(function () { return (nav.mimeTypes || []).length; })]
+      ];
+      fillKV(el("fp-plugins"), pairs);
+
+      const listBox = el("fp-plugin-list");
+      listBox.innerHTML = "";
+      if (plugins.length) {
+        plugins.forEach(function (p) {
+          const c = document.createElement("span");
+          c.className = "chip";
+          c.textContent = p.name || "(未命名插件)";
+          listBox.appendChild(c);
+        });
+      } else {
+        const c = document.createElement("span");
+        c.className = "chip muted";
+        c.textContent = "未暴露插件明细（Chromium 系新浏览器常见）";
+        listBox.appendChild(c);
+      }
+      remember("插件与MIME", pairs.concat([["插件列表", plugins.map(function (p) { return p.name; }).join(", ") || "(空)"]]));
+    }
+
+    // ---------- 5. Canvas 指纹 ----------
+    function collectCanvas() {
+      const canvas = el("fp-canvas");
+      const ctx = canvas.getContext("2d");
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      // 背景渐变
+      const grad = ctx.createLinearGradient(0, 0, W, H);
+      grad.addColorStop(0, "#f6f0ff");
+      grad.addColorStop(1, "#e6fbff");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.textBaseline = "top";
+      ctx.font = "22px 'Arial'";
+      ctx.fillStyle = "#f60";
+      ctx.fillRect(120, 6, 60, 18);
+      ctx.fillStyle = "#069";
+      ctx.fillText("指纹浏览器测试", 4, 10);
+      ctx.fillStyle = "rgba(102, 204, 0, 0.75)";
+      ctx.font = "italic bold 20px Georgia";
+      ctx.fillText("Canvas Fingerprint 123", 4, 40);
+
+      // 弧形与线条
+      ctx.strokeStyle = "#c0392b";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(70, 100, 34, 0, Math.PI * 2, true);
+      ctx.stroke();
+
+      ctx.strokeStyle = "#2980b9";
+      ctx.beginPath();
+      ctx.moveTo(120, 70);
+      ctx.bezierCurveTo(160, 120, 200, 80, 260, 130);
+      ctx.stroke();
+
+      // emoji / 半透明叠加，进一步放大渲染差异
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = "#8e44ad";
+      ctx.font = "28px serif";
+      ctx.fillText("🎨👾", 150, 88);
+      ctx.globalAlpha = 1;
+
+      let dataUrl = "";
+      let hash = "无法生成";
+      try {
+        dataUrl = canvas.toDataURL();
+        hash = fnv1a32(dataUrl);
+      } catch (e) {
+        hash = "读取失败: " + e.message;
+      }
+
+      const pairs = [
+        ["Canvas 哈希", hash],
+        ["数据长度", dataUrl ? dataUrl.length + " 字符" : "—"]
+      ];
+      fillKV(el("fp-canvas-meta"), pairs);
+      remember("Canvas指纹", [["hash", hash], ["dataURL前80", dataUrl.slice(0, 80)]]);
+    }
+
+    // ---------- 6. WebGL 指纹 ----------
+    function collectWebGL() {
+      const pairs = [];
+      try {
+        const canvas = document.createElement("canvas");
+        const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+        if (!gl) {
+          pairs.push(["WebGL", "不支持"]);
+        } else {
+          const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+          const vendor = dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR);
+          const renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+          pairs.push(["GPU 厂商", vendor]);
+          pairs.push(["GPU 渲染器", renderer]);
+          pairs.push(["WebGL 版本", safe(function () { return gl.getParameter(gl.VERSION); })]);
+          pairs.push(["GLSL 版本", safe(function () { return gl.getParameter(gl.SHADING_LANGUAGE_VERSION); })]);
+          pairs.push(["最大纹理尺寸", safe(function () { return gl.getParameter(gl.MAX_TEXTURE_SIZE); })]);
+          pairs.push(["扩展数量", safe(function () { return gl.getSupportedExtensions().length; })]);
+        }
+      } catch (e) {
+        pairs.push(["WebGL", "读取失败: " + e.message]);
+      }
+      fillKV(el("fp-webgl"), pairs);
+      remember("WebGL指纹", pairs);
+    }
+
+    // ---------- 7. 音频指纹 ----------
+    function collectAudio() {
+      const container = el("fp-audio");
+      fillKV(container, [["状态", "计算中…", "muted"]]);
+      try {
+        const Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+        if (!Ctx) {
+          fillKV(container, [["AudioContext", "不支持"]]);
+          remember("音频指纹", [["支持", "否"]]);
+          return;
+        }
+        const ctx = new Ctx(1, 44100, 44100);
+        const osc = ctx.createOscillator();
+        osc.type = "triangle";
+        osc.frequency.value = 10000;
+
+        const comp = ctx.createDynamicsCompressor();
+        comp.threshold.value = -50;
+        comp.knee.value = 40;
+        comp.ratio.value = 12;
+        comp.attack.value = 0;
+        comp.release.value = 0.25;
+
+        osc.connect(comp);
+        comp.connect(ctx.destination);
+        osc.start(0);
+
+        ctx.startRendering().then(function (buffer) {
+          let sum = 0;
+          const data = buffer.getChannelData(0);
+          for (let i = 4500; i < 5000; i++) { sum += Math.abs(data[i]); }
+          const hash = fnv1a32(String(sum));
+          fillKV(container, [["音频哈希", hash], ["采样和", sum.toFixed(10)]]);
+          remember("音频指纹", [["hash", hash], ["sum", sum]]);
+        }).catch(function (e) {
+          fillKV(container, [["音频指纹", "渲染失败: " + e.message, "warn"]]);
+        });
+      } catch (e) {
+        fillKV(container, [["音频指纹", "不支持: " + e.message, "warn"]]);
+      }
+    }
+
+    // ---------- 8. 字体探测 ----------
+    function collectFonts() {
+      const box = el("fp-fonts");
+      box.innerHTML = "";
+      const baseFonts = ["monospace", "sans-serif", "serif"];
+      const testString = "mmmmmmmmmmlli10O@#";
+      const fontSize = "72px";
+      const candidates = [
+        "Arial", "Verdana", "Helvetica", "Times New Roman", "Courier New", "Georgia",
+        "Tahoma", "Trebuchet MS", "Impact", "Comic Sans MS", "Calibri", "Cambria",
+        "Consolas", "Segoe UI", "Lucida Console", "Palatino", "Garamond", "Bookman",
+        "宋体", "SimSun", "微软雅黑", "Microsoft YaHei", "黑体", "SimHei", "楷体", "KaiTi",
+        "PingFang SC", "Hiragino Sans GB", "Noto Sans", "Noto Sans CJK SC", "Source Han Sans",
+        "WenQuanYi Micro Hei", "Heiti SC", "STHeiti", "Arial Unicode MS"
+      ];
+
+      const holder = document.createElement("div");
+      holder.style.cssText = "position:absolute;left:-9999px;top:-9999px;visibility:hidden;";
+      document.body.appendChild(holder);
+
+      function measure(fontFamily) {
+        const span = document.createElement("span");
+        span.style.cssText = "font-size:" + fontSize + ";font-family:" + fontFamily + ";";
+        span.textContent = testString;
+        holder.appendChild(span);
+        const size = { w: span.offsetWidth, h: span.offsetHeight };
+        holder.removeChild(span);
+        return size;
+      }
+
+      const baseSizes = baseFonts.map(function (f) { return measure(f); });
+      const found = [];
+
+      candidates.forEach(function (font) {
+        let detected = false;
+        for (let i = 0; i < baseFonts.length; i++) {
+          const s = measure("'" + font + "'," + baseFonts[i]);
+          if (s.w !== baseSizes[i].w || s.h !== baseSizes[i].h) { detected = true; break; }
+        }
+        if (detected) found.push(font);
+      });
+
+      document.body.removeChild(holder);
+
+      if (found.length) {
+        found.forEach(function (f) {
+          const c = document.createElement("span");
+          c.className = "chip accent";
+          c.textContent = f;
+          box.appendChild(c);
+        });
+      } else {
+        const c = document.createElement("span");
+        c.className = "chip muted";
+        c.textContent = "未探测到额外字体（或浏览器限制了探测）";
+        box.appendChild(c);
+      }
+
+      const count = document.createElement("span");
+      count.className = "chip";
+      count.textContent = "共 " + found.length + " 种";
+      box.prepend(count);
+      remember("字体探测", [["数量", found.length], ["列表", found.join(", ")]]);
+    }
+
+    // ---------- 9. WebRTC 本地 IP ----------
+    function collectWebRTC() {
+      const container = el("fp-webrtc");
+      fillKV(container, [["状态", "检测中…", "muted"]]);
+      const found = new Set();
+      let done = false;
+
+      function finish(reason) {
+        if (done) return;
+        done = true;
+        const ips = Array.from(found);
+        if (ips.length) {
+          fillKV(container, [["检测到的 IP", ips.join(", "), "warn"]]);
+        } else {
+          fillKV(container, [["结果", reason || "未发现可用 IP（可能已被屏蔽或超时）", "muted"]]);
+        }
+        remember("WebRTC", [["IPs", ips.join(", ") || reason || "无"]]);
+      }
+
+      try {
+        const RTCPeer = window.RTCPeerConnection || window.webkitRTCPeerConnection;
+        if (!RTCPeer) { fillKV(container, [["WebRTC", "不支持"]]); remember("WebRTC", [["支持", "否"]]); return; }
+
+        const pc = new RTCPeer({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+        pc.createDataChannel("fp");
+        pc.onicecandidate = function (e) {
+          if (!e.candidate) return;
+          const text = e.candidate.candidate;
+          const v4 = /([0-9]{1,3}\.){3}[0-9]{1,3}/.exec(text);
+          if (v4) found.add(v4[0]);
+          const v6 = /([0-9a-fA-F]{1,4}:){2,}[0-9a-fA-F:]+/.exec(text);
+          if (v6) found.add(v6[0]);
+          // 实时刷新展示
+          fillKV(container, [["候选 IP", Array.from(found).join(", ") || "收集…", "warn"]]);
+        };
+        pc.createOffer().then(function (offer) { return pc.setLocalDescription(offer); }).catch(function () {});
+
+        setTimeout(function () { try { pc.close(); } catch (e) {} finish("超时结束"); }, 6000);
+      } catch (e) {
+        finish("检测失败: " + e.message);
+      }
+    }
+
+    // ---------- 综合哈希 ----------
+    function computeCombinedHash() {
+      const raw = [
+        navigator.userAgent,
+        navigator.language,
+        navigator.hardwareConcurrency,
+        screen.width + "x" + screen.height + "x" + screen.colorDepth,
+        window.devicePixelRatio,
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
+        el("fp-canvas-meta").textContent,
+        el("fp-webgl").textContent
+      ].join("||");
+      const hash = fnv1a32(raw) + fnv1a32(raw.split("").reverse().join(""));
+      el("fp-hash").textContent = hash;
+      reportParts["综合哈希"] = hash;
+    }
+
+    // ---------- 可复制的 JS 代码片段 ----------
+    const SNIPPETS = [
+      {
+        title: "① 基础简历：User-Agent 与硬件",
+        code:
+`console.log("=== 你的基础设备信息 ===");
+console.log("User-Agent:", navigator.userAgent);
+console.log("操作系统平台:", navigator.platform);
+console.log("CPU核心数:", navigator.hardwareConcurrency);
+console.log("内存大小(GB):", navigator.deviceMemory || "不支持读取");
+console.log("浏览器语言:", navigator.language);`
+      },
+      {
+        title: "② 屏幕与插件",
+        code:
+`console.log("=== 屏幕与插件信息 ===");
+console.log("屏幕分辨率:", screen.width, "x", screen.height);
+console.log("可用工作区:", screen.availWidth, "x", screen.availHeight);
+console.log("颜色深度:", screen.colorDepth, "bit");
+console.log("已安装的插件列表:");
+for (let i = 0; i < navigator.plugins.length; i++) {
+  console.log("  " + (i + 1) + ". " + navigator.plugins[i].name);
+}`
+      },
+      {
+        title: "③ 经典 Canvas 指纹",
+        code:
+`function getCanvasFingerprint() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.textBaseline = "top";
+  ctx.font = "24px 'Arial'";
+  ctx.fillStyle = "#f60";
+  ctx.fillRect(125, 1, 62, 20);
+  ctx.fillStyle = "#069";
+  ctx.fillText("指纹浏览器测试", 2, 15);
+  ctx.fillStyle = "rgba(102, 204, 0, 0.7)";
+  ctx.fillText("Canvas Demo", 4, 45);
+  ctx.beginPath();
+  ctx.arc(50, 50, 40, 0, Math.PI * 2, true);
+  ctx.stroke();
+  return canvas.toDataURL(); // 实际指纹库会再做 MD5 哈希
+}
+console.log("=== 你的Canvas指纹（部分） ===");
+console.log(getCanvasFingerprint().substring(0, 100) + "...");`
+      },
+      {
+        title: "④ 系统字体列表探测",
+        code:
+`function getInstalledFonts() {
+  const fontList = ["Arial","Verdana","Helvetica","Times New Roman","Courier New","宋体","微软雅黑","PingFang SC","Noto Sans"];
+  const baseFont = "monospace";
+  const testString = "mmmmmmmmmmlli";
+  const container = document.createElement('div');
+  container.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
+  document.body.appendChild(container);
+  const available = [];
+  for (let font of fontList) {
+    const base = document.createElement('span');
+    base.style.cssText = 'font-family:' + baseFont + ';font-size:72px;';
+    base.textContent = testString;
+    container.appendChild(base);
+    const span = document.createElement('span');
+    span.style.cssText = 'font-family:' + font + ',' + baseFont + ';font-size:72px;';
+    span.textContent = testString;
+    container.appendChild(span);
+    if (span.offsetWidth !== base.offsetWidth) available.push(font);
+    container.removeChild(base);
+    container.removeChild(span);
+  }
+  document.body.removeChild(container);
+  return available;
+}
+console.log("=== 检测到的系统字体 ===");
+console.log(getInstalledFonts());`
+      },
+      {
+        title: "⑤ WebRTC 真实 IP 泄露",
+        code:
+`function getWebRTCIP() {
+  const pc = new RTCPeerConnection({
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+  });
+  pc.createDataChannel("test");
+  pc.createOffer()
+    .then(offer => pc.setLocalDescription(offer))
+    .catch(err => console.log(err));
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      const ipRegex = /([0-9]{1,3}\\.){3}[0-9]{1,3}/;
+      const ip = ipRegex.exec(event.candidate.candidate)?.[0];
+      if (ip) {
+        console.log(" 检测到本地/公网IP（可能绕过代理）:", ip);
+        pc.close();
+      }
+    }
+  };
+}
+console.log("=== WebRTC IP检测 ===");
+getWebRTCIP();`
+      },
+      {
+        title: "⑥ WebGL GPU 信息",
+        code:
+`const gl = document.createElement('canvas').getContext('webgl');
+const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+console.log("=== WebGL / GPU ===");
+console.log("GPU 厂商:", dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR));
+console.log("GPU 渲染器:", dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));`
+      }
+    ];
+
+    function renderSnippets() {
+      const box = el("snippets");
+      box.innerHTML = "";
+      SNIPPETS.forEach(function (s) {
+        const wrap = document.createElement("div");
+        wrap.className = "snippet";
+
+        const head = document.createElement("div");
+        head.className = "snippet-head";
+        const strong = document.createElement("strong");
+        strong.textContent = s.title;
+        const copyBtn = document.createElement("button");
+        copyBtn.className = "copy";
+        copyBtn.type = "button";
+        copyBtn.textContent = "复制代码";
+        copyBtn.addEventListener("click", function () { copyText(s.code, "已复制：" + s.title); });
+        head.appendChild(strong);
+        head.appendChild(copyBtn);
+
+        const details = document.createElement("details");
+        details.className = "snippet-body";
+        const summary = document.createElement("summary");
+        summary.textContent = "▸ 展开查看代码";
+        const pre = document.createElement("pre");
+        pre.className = "code";
+        const codeEl = document.createElement("code");
+        codeEl.textContent = s.code;
+        pre.appendChild(codeEl);
+        details.appendChild(summary);
+        details.appendChild(pre);
+        details.addEventListener("toggle", function () {
+          summary.textContent = details.open ? "▾ 收起代码" : "▸ 展开查看代码";
+        });
+
+        wrap.appendChild(head);
+        wrap.appendChild(details);
+        box.appendChild(wrap);
+      });
+    }
+
+    // ---------- 复制 ----------
+    function copyText(text, msg) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { toast(msg || "已复制"); }, function () { fallbackCopy(text, msg); });
+      } else {
+        fallbackCopy(text, msg);
+      }
+    }
+
+    function fallbackCopy(text, msg) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;left:-9999px;top:0;";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); toast(msg || "已复制"); }
+      catch (e) { toast("复制失败，请手动选择"); }
+      document.body.removeChild(ta);
+    }
+
+    function buildReport() {
+      const lines = ["===== 浏览器指纹检测报告 =====", "生成时间: " + new Date().toLocaleString(), ""];
+      Object.keys(reportParts).forEach(function (key) {
+        const val = reportParts[key];
+        lines.push("## " + key);
+        if (Array.isArray(val)) {
+          val.forEach(function (row) {
+            if (Array.isArray(row)) lines.push("  " + row[0] + ": " + row[1]);
+          });
+        } else {
+          lines.push("  " + val);
+        }
+        lines.push("");
+      });
+      lines.push("（报告仅保存在你的剪贴板，未上传任何服务器）");
+      return lines.join("\n");
+    }
+
+    // ---------- 扫描流程 ----------
+    function runScan() {
+      el("fp-hash").textContent = "计算中…";
+      collectBasic();
+      collectScreen();
+      collectEnv();
+      collectPlugins();
+      collectCanvas();
+      collectWebGL();
+      collectFonts();
+      collectAudio();
+      collectWebRTC();
+      computeCombinedHash();
+    }
+
+    // ---------- 初始化 ----------
+    document.addEventListener("DOMContentLoaded", function () {
+      renderSnippets();
+      runScan();
+
+      el("btn-rescan").addEventListener("click", function () { runScan(); toast("已重新扫描"); });
+      el("btn-copy-report").addEventListener("click", function () {
+        setTimeout(function () { copyText(buildReport(), "检测报告已复制"); }, 50);
+      });
+      el("btn-jump-code").addEventListener("click", function () {
+        el("code-section").scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+  </script>
+</body>
+</html>
