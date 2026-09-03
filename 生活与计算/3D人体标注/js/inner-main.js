@@ -149,7 +149,8 @@
 
   /* ---------------- 解剖层面板 ----------------
      每层两件事：开关（眼睛）和涂层深度（滑块）。
-     滑块最左边 = 这一层完完整整摆着，往右拉一格剥掉最外的一层，最右边是最里面那一级 */
+     滑块最右边 = 这一层完完整整摆着，往左拉一格剥掉最外的一层，最左边是最里面那一级。
+     滑块值存的是「还剩几级没剥」，和存进设置里的深度 d 方向相反：拉得越多显示越多 */
 
   var rows = {};
 
@@ -184,7 +185,8 @@
       model.setDepth(s.id, v.d);
     }
     if (!q) return;
-    q.range.value = String(v.d);
+    /* 滑块方向和深度相反：最右是完整一层（d=0），往左才剥 */
+    q.range.value = String((n - 1) - v.d);
     q.range.disabled = n < 2 || !v.on;
     q.val.textContent = n < 2 ? '单层' : lvName(s, v.d) + '（' + (v.d + 1) + '/' + n + '）';
     q.eye.setAttribute('aria-pressed', v.on ? 'true' : 'false');
@@ -229,12 +231,12 @@
       r.min = '0';
       r.max = String(Math.max(0, n - 1));
       r.step = '1';
-      r.setAttribute('aria-label', s.name + ' 涂层深度');
-      r.title = '往右拉：一层层剥进去（' + lvs(s).map(function (x) { return x.n; }).join(' → ') + '）';
+      r.setAttribute('aria-label', s.name + ' 涂层深度（最右完整，往左剥）');
+      r.title = '往左拉：一层层剥进去（' + lvs(s).map(function (x) { return x.n; }).join(' → ') + '）';
       var vl = el('span', 'vl');
       on(r, 'input', function () {
-        /* 最左边是完整的一层，往右每拉一格就剥掉最外面的一级 */
-        st(s).d = clamp(parseInt(r.value, 10) || 0, 0, n - 1);
+        /* 最右边是完整的一层，往左每拉一格就剥掉最外面的一级 */
+        st(s).d = clamp((n - 1) - (parseInt(r.value, 10) || 0), 0, n - 1);
         applyLayer(s);
         renderInfo();
         save();

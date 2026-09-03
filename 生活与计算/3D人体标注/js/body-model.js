@@ -68,16 +68,31 @@
 
   /** 手臂姿势：默认这一页的 A 字站姿（肩往下 0.022H 起手，上臂 0.184H、前臂 0.146H，
    *  外展角来自 props，手臂略向前 lean）。内部解剖页在真实解剖数据模式下会传一份贴合
-   *  标本的姿势过来，不然半透明皮肤的手和里面的手骨差着二十多厘米。 */
+   *  标本的姿势过来，不然半透明皮肤的手和里面的手骨差着二十多厘米。
+   *  前臂单独给 abduct2/lean2（标本的前臂比上臂更向外、更向前）；handPitch 是腕关节
+   *  往前屈的量（tan 值，掌轴相对前臂轴再往前偏），fingerBase/fingerCurl/thumbPalm 管
+   *  手指的屈曲——标本的手是微握的，不弯的话皮肤手会直挺挺地落在手骨后面 */
   function armPose(p, q) {
     var a = (p && p.arm) || {};
+    var abduct = a.abduct == null ? q.abduct : a.abduct;
+    var lean = a.lean == null ? 0.06 : a.lean;
     return {
-      abduct: a.abduct == null ? q.abduct : a.abduct,
+      abduct: abduct,
       drop: a.drop == null ? 0.022 : a.drop,
       upper: a.upper == null ? 0.184 : a.upper,
       fore: a.fore == null ? 0.146 : a.fore,
-      lean: a.lean == null ? 0.06 : a.lean,
-      back: a.back == null ? 0 : a.back
+      lean: lean,
+      back: a.back == null ? 0 : a.back,
+      abduct2: a.abduct2 == null ? abduct * 0.84 : a.abduct2,
+      lean2: a.lean2 == null ? lean * 2 : a.lean2,
+      handPitch: a.handPitch == null ? 0 : a.handPitch,
+      fingerBase: a.fingerBase == null ? 0.08 : a.fingerBase,
+      fingerCurl: a.fingerCurl == null ? 0.07 : a.fingerCurl,
+      /* 掌长缩放与四指展开缩放：标本的手比公式手小一圈，不缩的话皮肤手包不住手骨 */
+      palmScale: a.palmScale == null ? 1 : a.palmScale,
+      fingerSpread: a.fingerSpread == null ? 1 : a.fingerSpread,
+      /* 拇指方向 = 掌轴×along + 外侧×side + 掌侧×palm，len 是长度缩放；默认即 A 字站姿那副张开的拇指 */
+      thumb: a.thumb || null
     };
   }
 
@@ -682,8 +697,7 @@
 
       /* 上臂 / 肘 / 前臂 / 腕（姿势可由 p.arm 覆盖，见 armPose） */
       var dir1 = new V(side * Math.sin(arm.abduct), -Math.cos(arm.abduct), arm.lean).normalize();
-      var abd2 = arm.abduct * 0.84;
-      var dir2 = new V(side * Math.sin(abd2), -Math.cos(abd2), arm.lean * 2).normalize();
+      var dir2 = new V(side * Math.sin(arm.abduct2), -Math.cos(arm.abduct2), arm.lean2).normalize();
       var shoulder = new V(side * sw * 0.47, L.shoulder * H - arm.drop * H, arm.back * H);
       var elbow = shoulder.clone().addScaledVector(dir1, arm.upper * H);
       var wrist = elbow.clone().addScaledVector(dir2, arm.fore * H);
@@ -733,8 +747,10 @@
       }, '靠近肘部', '靠近腕部');
       joint('腕', wrist, wristR, dir2, { aPos: '掌侧(手心一侧)', aNeg: '背侧(手背一侧)', lPos: '拇指一侧', lNeg: '小指一侧' });
 
-      /* 手（含五指与各指关节） */
-      landmarks[side > 0 ? 'handL' : 'handR'] = buildHand(side, sn, wrist, dir2, add, H, q, fat);
+      /* 手（含五指与各指关节）：掌轴在腕上再往前屈 handPitch，手指屈曲量由姿势给 */
+      var palmRef = AXIS_Z.clone().sub(dir2.clone().multiplyScalar(dir2.dot(AXIS_Z))).normalize();
+      var handDir = dir2.clone().addScaledVector(palmRef, arm.handPitch).normalize();
+      landmarks[side > 0 ? 'handL' : 'handR'] = buildHand(side, sn, wrist, handDir, add, H, q, fat, arm);
       /* 大腿 / 膝 / 小腿 / 踝 / 足
          髋部位置与大腿粗细都跟着臀围走，臀腿衔接才不会脱节 */
       var hipHalf = hip.a * 0.95;
@@ -792,13 +808,18 @@
   }
   /* ---------------- 手：手掌 + 五指 + 各指关节 ---------------- */
 
-  function buildHand(side, sn, wrist, distal, add, H, q, fat) {
+  function buildHand(side, sn, wrist, distal, add, H, q, fat, hp) {
+    hp = hp || {};
+    var curl = hp.fingerCurl == null ? 0.07 : hp.fingerCurl;
+    var baseBend = hp.fingerBase == null ? 0.08 : hp.fingerBase;
     var palmDir = AXIS_Z.clone().sub(distal.clone().multiplyScalar(distal.dot(AXIS_Z))).normalize();
     var latAxis = new V().crossVectors(distal, palmDir);
     var thumbSign = (latAxis.x * side) >= 0 ? 1 : -1;
     var thumbDir = latAxis.clone().multiplyScalar(thumbSign);
     var AXES = { aPos: '掌侧(手心一侧)', aNeg: '背侧(手背一侧)', lPos: '拇指一侧', lNeg: '小指一侧' };
-    var palmLen = 0.056 * H, palmW = 0.050 * H, palmT = 0.020 * H;
+    var palmLen = 0.056 * H * (hp.palmScale == null ? 1 : hp.palmScale);
+    var spread = hp.fingerSpread == null ? 1 : hp.fingerSpread;
+    var palmW = 0.050 * H, palmT = 0.020 * H;
     var palmC = wrist.clone().addScaledVector(distal, palmLen * 0.52);
     var basis = { x: latAxis, y: distal, z: palmDir };
     var k = Math.pow(fat, 0.35);
@@ -816,7 +837,7 @@
         dirs.push(cd.clone());
         cur = cur.clone().addScaledVector(cd, lens[i]);
         pts.push(cur.clone());
-        cd = cd.clone().addScaledVector(palmDir, 0.07).normalize();
+        cd = cd.clone().addScaledVector(palmDir, curl).normalize();
       }
       var tip = pts[lens.length].clone().addScaledVector(dirs[lens.length - 1], r0 * 0.8);
       for (i = 0; i < lens.length; i++) {
@@ -844,18 +865,23 @@
     ];
     var base0 = palmC.clone().addScaledVector(distal, palmLen * 0.48);
     digits.forEach(function (d) {
-      var start = base0.clone().addScaledVector(thumbDir, d.x * H);
-      var dir = distal.clone().addScaledVector(thumbDir, d.sp).addScaledVector(palmDir, 0.08).normalize();
+      var start = base0.clone().addScaledVector(thumbDir, d.x * H * spread);
+      var dir = distal.clone().addScaledVector(thumbDir, d.sp).addScaledVector(palmDir, baseBend).normalize();
       var total = d.len * H;
       digit(sn + '手' + d.n, start, dir, [total * 0.45, total * 0.32, total * 0.23], d.r * H * k, JOINT, SEG);
     });
 
-    /* 拇指 */
+    /* 拇指：方向由姿势的 thumb 微调（标本的拇指贴着大腿往前下，不像 A 字站姿那样张开） */
+    var tc = hp.thumb || {};
+    var tAlong = tc.along == null ? 0.55 : tc.along;
+    var tSide = tc.side == null ? 0.82 : tc.side;
+    var tPalm = tc.palm == null ? 0.16 : tc.palm;
+    var tLen = tc.len == null ? 1 : tc.len;
     var tStart = palmC.clone()
       .addScaledVector(thumbDir, palmW * 0.40)
       .addScaledVector(distal, -palmLen * 0.22);
-    var tDir = distal.clone().multiplyScalar(0.55).addScaledVector(thumbDir, 0.82).addScaledVector(palmDir, 0.16).normalize();
-    digit(sn + '手拇指', tStart, tDir, [0.031 * H, 0.025 * H], 0.0072 * H * k,
+    var tDir = distal.clone().multiplyScalar(tAlong).addScaledVector(thumbDir, tSide).addScaledVector(palmDir, tPalm).normalize();
+    digit(sn + '手拇指', tStart, tDir, [0.031 * H * tLen, 0.025 * H * tLen], 0.0072 * H * k,
       ['掌指关节', '指间关节(最外侧关节)'], ['近节', '末节']);
 
     return palmC.clone().addScaledVector(distal, 0.035 * H);

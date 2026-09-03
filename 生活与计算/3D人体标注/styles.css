@@ -71,7 +71,7 @@ a {
 }
 
 .shell {
-  max-width: 1560px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 14px 20px 48px;
 }
@@ -93,10 +93,11 @@ a {
   font-size: 14px;
 }
 
-/* ===== 三栏布局 ===== */
+/* ===== 三栏布局 =====
+   左栏要容下「层名 + 滑块 + 级名」一整行，窄了级名会被截断 */
 .layout {
   display: grid;
-  grid-template-columns: 268px minmax(0, 1fr) 330px;
+  grid-template-columns: 320px minmax(0, 1fr) 330px;
   gap: 14px;
   align-items: start;
 }
@@ -616,7 +617,7 @@ textarea:focus {
 /* ===== 响应式 ===== */
 @media (max-width: 1280px) {
   .layout {
-    grid-template-columns: 250px minmax(0, 1fr);
+    grid-template-columns: 292px minmax(0, 1fr);
   }
 
   .col-right {

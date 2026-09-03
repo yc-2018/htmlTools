@@ -14,7 +14,7 @@
   function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
   /* ---------------- 图层（顺序即面板里的顺序：由外向内） ----------------
-     每层的滑块不是透明度，而是**涂层深度**：满格是这一层的外表面，往里拉一格就剥开一层。
+     每层的滑块不是透明度，而是**涂层深度**：最右是这一层的外表面，往左拉一格就剥开一层。
      lv 列出这一层有几级（从外到内），op 是这一层固定的不透明度（骨骼半透，好看见里面）。
      件登记时用 opt.lv 说明自己属于第几级、opt.to 说明剥到第几级就该让位。 */
 
@@ -104,22 +104,33 @@
   var MODE = 'proc';
   function setMode(m) { MODE = (m === 'real') ? 'real' : 'proc'; }
 
-  /* 真实解剖那具标本的手臂几乎是垂着的：肩关节约 0.81H、肘约 0.65H、腕约 0.518H，
-     外展只有 5～8°，而本站体表那套人体是 A 字站姿（外展 38°），到手腕处能差出二十多厘米。
+  /* 真实解剖那具标本的手臂几乎是垂着的：肩关节约 0.81H、肘约 0.65H、腕约 0.51H，
+     而本站体表那套人体是 A 字站姿（外展 38°），到手腕处能差出二十多厘米。
      所以真实模式下体表外壳按标本的姿势摆手臂，透明皮肤的手才和里面的手骨对得上。
-     数值是从 assets/inner/bone.ibp 里肱骨、桡骨、掌骨的包围盒量出来的（参考身高 171.95 cm）。 */
-  var ARM_REAL = { abduct: 0.095, drop: 0.006, upper: 0.1546, fore: 0.1291, lean: 0.04, back: -0.012 };
+     数值是从 assets/inner/bone.ibp 的包围盒量出来的（参考身高 171.95 cm）：
+     肱骨远端定肘（±22.2, 111.4, -1.6），腕骨中心定腕（±25.7, 87.5, 2.2）——前臂比上臂
+     更向外、更向前，所以 abduct2/lean2 单独给；掌骨轴前倾约 17°（handPitch），
+     指骨逐节前屈 35°→45°→54°（fingerBase/fingerCurl）；标本的掌比公式手短一圈、
+     四指并得更拢（palmScale/fingerSpread），拇指收着贴向大腿且短一截（thumb）。 */
+  var ARM_REAL = {
+    abduct: 0.0884, drop: 0.006, upper: 0.1528, fore: 0.1422, lean: 0.0175, back: -0.012,
+    abduct2: 0.1437, lean2: 0.1554,
+    handPitch: 0.13, fingerBase: 0.34, fingerCurl: 0.20,
+    palmScale: 0.82, fingerSpread: 0.66,
+    thumb: { along: 0.92, side: 0.21, palm: 0.27, len: 0.75 }
+  };
   var ARM_A = { abduct: null, drop: 0.022, upper: 0.184, fore: 0.146, lean: 0.06, back: 0 };
   function armPose() { return MODE === 'real' ? ARM_REAL : null; }
 
   /** 一条手臂的骨架：肩 → 肘 → 腕 → 指尖，公式和 body-model.js 里一致 */
   function armChain(H, q, ap) {
     var abd = ap.abduct == null ? q.abduct : ap.abduct;
+    var ab2 = ap.abduct2 == null ? abd * 0.84 : ap.abduct2;
+    var lean2 = ap.lean2 == null ? ap.lean * 2 : ap.lean2;
     var out = {};
     [1, -1].forEach(function (side) {
       var d1 = new V(side * Math.sin(abd), -Math.cos(abd), ap.lean).normalize();
-      var ab2 = abd * 0.84;
-      var d2 = new V(side * Math.sin(ab2), -Math.cos(ab2), ap.lean * 2).normalize();
+      var d2 = new V(side * Math.sin(ab2), -Math.cos(ab2), lean2).normalize();
       var sh = new V(side * (q.shoulderW * H) * 0.47, L.shoulder * H - ap.drop * H, ap.back * H);
       var el = sh.clone().addScaledVector(d1, ap.upper * H);
       var wr = el.clone().addScaledVector(d2, ap.fore * H);

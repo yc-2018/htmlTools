@@ -1,4 +1,4 @@
-/* 简易轨道控制器：拖拽旋转 / 滚轮缩放 / 中键或 Shift 拖拽平移 / 触摸单指旋转双指缩放 */
+/* 简易轨道控制器：拖拽旋转 / 滚轮缩放 / 中键或 Shift 拖拽平移 / 触摸单指旋转、双指捏合缩放、同时按中点平移 */
 (function () {
   'use strict';
 
@@ -22,6 +22,7 @@
     this._act = null;               // 'rotate' | 'pan'
     this._last = { x: 0, y: 0 };
     this._pinch = 0;
+    this._mid = null;               // 双指中点，移动它即平移（触屏唯一的平移入口）
     this._anim = null;
     this._bind();
     this.update();
@@ -40,6 +41,7 @@
       if (self._pointers.size === 2) {
         self._act = 'pinch';
         self._pinch = self._pointerGap();
+        self._mid = self._pointerMid();
         return;
       }
       var pan = e.button === 1 || e.shiftKey || (e.button === 2 && e.ctrlKey);
@@ -58,9 +60,24 @@
       self._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (self._act === 'pinch') {
         var gap = self._pointerGap();
+        var mid = self._pointerMid();
+        var moved = false;
         if (self._pinch > 0 && gap > 0) {
           self.distance = clamp(self.distance * (self._pinch / gap), self.minDistance, self.maxDistance);
           self._pinch = gap;
+          moved = true;
+        }
+        /* 两指距离管缩放，两指中点的移动管平移：手机上没有中键，平移只能走这里 */
+        if (self._mid && mid) {
+          var mx = mid.x - self._mid.x;
+          var my = mid.y - self._mid.y;
+          if (Math.abs(mx) + Math.abs(my) > 0.5) {
+            self.pan(mx, my);
+            moved = true;
+          }
+        }
+        self._mid = mid;
+        if (moved) {
           self.dragged = true;
           self.update();
         }
@@ -84,7 +101,10 @@
 
     function release(e) {
       self._pointers.delete(e.pointerId);
-      if (self._pointers.size < 2 && self._act === 'pinch') self._act = null;
+      if (self._pointers.size < 2 && self._act === 'pinch') {
+        self._act = null;
+        self._mid = null;
+      }
       if (self._pointers.size === 0) self._act = null;
     }
 
@@ -119,6 +139,12 @@
     var dx = pts[0].x - pts[1].x;
     var dy = pts[0].y - pts[1].y;
     return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  Orbit.prototype._pointerMid = function () {
+    var pts = Array.from(this._pointers.values());
+    if (pts.length < 2) return null;
+    return { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
   };
 
   /** 沿屏幕方向平移观察点 */
