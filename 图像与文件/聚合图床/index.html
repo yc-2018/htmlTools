@@ -207,6 +207,28 @@
             background: rgba(0, 0, 0, 0.7);
             text-decoration: underline;
         }
+
+        /* 右下角漂浮的当前 IP 信息卡片 */
+        .ip-info {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            max-width: 260px;
+            padding: 10px 14px;
+            background: rgba(0, 0, 0, 0.55);
+            color: #fff;
+            font-size: 12px;
+            line-height: 1.6;
+            border-radius: 8px;
+            z-index: 9998;
+            text-align: left;
+            word-break: break-all;
+        }
+
+        .ip-info .ip-title {
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
     </style>
 </head>
 
@@ -253,6 +275,11 @@
     </div>
 
     <a class="api-source" href="https://api.xinyew.cn/" target="_blank" rel="noopener">API 来源：新野API</a>
+
+    <div class="ip-info" id="ipInfo">
+        <div class="ip-title">当前 IP</div>
+        <div id="ipContent">正在获取中…</div>
+    </div>
     <script>
         const okBtns = document.getElementById('okBtns');
         const fileInput = document.getElementById('fileInput');
@@ -362,6 +389,27 @@
             showMessage('');
             okBtns.style.display = 'none';
         });
+
+        // ——————————————进入页面自动获取当前 IP，渲染到右下角——————————
+        (function loadCurrentIp() {
+            const ipContent = document.getElementById('ipContent');
+            fetch('https://api.xinyew.cn/api/ip')
+               .then(res => res.json())
+               .then(data => {
+                    if (data.ret === 0 && data.ip) {
+                        const region = [data.country, data.province, data.city, data.district]
+                           .filter(Boolean).join(' ');
+                        ipContent.innerHTML = `${data.ip}`
+                            + (region ? `<br>${region}` : '')
+                            + (data.isp ? `<br>${data.isp}` : '');
+                    } else {
+                        ipContent.textContent = data.errMsg || 'IP 获取失败';
+                    }
+                })
+               .catch(() => {
+                    ipContent.textContent = 'IP 获取失败';
+                });
+        })();
 
 
         // ——————————————拖放功能实现————————————————————
