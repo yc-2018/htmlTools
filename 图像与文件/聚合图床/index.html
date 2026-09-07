@@ -33,7 +33,7 @@
             border-radius: 8px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
             width: 100%;
-            max-width: 500px;
+            max-width: 600px;
             text-align: center;
         }
 
@@ -82,6 +82,20 @@
             border: 1px solid #888;
             color: #666;
             text-decoration: line-through;
+        }
+
+        /* 上传按钮分组：按钮下方可带提示文案 */
+        .upload-item {
+            display: inline-block;
+            vertical-align: top;
+            margin: 5px;
+        }
+
+        .btn-tip {
+            margin-top: 4px;
+            font-size: 12px;
+            color: #888;
+            line-height: 1.4;
         }
 
         /* 上传结果区域样式 */
@@ -172,6 +186,27 @@
             overflow: hidden;
             margin: 0; /* 移除默认边距 */
         }
+
+        /* 底部居中漂浮的 API 来源链接 */
+        .api-source {
+            position: fixed;
+            left: 50%;
+            bottom: 16px;
+            transform: translateX(-50%);
+            padding: 6px 16px;
+            background: rgba(0, 0, 0, 0.45);
+            color: #fff;
+            font-size: 13px;
+            border-radius: 16px;
+            text-decoration: none;
+            z-index: 9998;
+            transition: background 0.3s ease;
+        }
+
+        .api-source:hover {
+            background: rgba(0, 0, 0, 0.7);
+            text-decoration: underline;
+        }
     </style>
 </head>
 
@@ -203,13 +238,21 @@
 
 
         <div class="result" id="resultDiv"></div>
-        <button id="neteaseUploadBtn">网易图床</button>
-        <button id="_360UploadBtn">360 图床</button>
-        <button id="sougouUploadBtn">搜狗图床</button>
-        <button id="jdUploadBtn">京东图床</button>
-        <button id="yzUploadBtn">邮政图床</button>
+        <div class="upload-item">
+            <button id="_360UploadBtn">360 图床</button>
+        </div>
+        <div class="upload-item">
+            <button id="sougouUploadBtn">搜狗图床</button>
+            <p class="btn-tip">需增加 meta 头部才能绕过防盗链</p>
+        </div>
+        <div class="upload-item">
+            <button id="yzUploadBtn">邮政图床</button>
+            <p class="btn-tip">图片大小限制 2MB</p>
+        </div>
 
     </div>
+
+    <a class="api-source" href="https://api.xinyew.cn/" target="_blank" rel="noopener">API 来源：新野API</a>
     <script>
         const okBtns = document.getElementById('okBtns');
         const fileInput = document.getElementById('fileInput');
@@ -228,6 +271,20 @@
             resultDiv.textContent = message;
         }
 
+        // 注入接口返回的 referrer meta 标签，用于绕过图床（如搜狗）防盗链
+        function applyReferrerMeta(metaHtml) {
+            const existing = document.getElementById('apiReferrerMeta');
+            if (existing) existing.remove();
+            if (typeof metaHtml !== 'string' || !metaHtml.trim()) return;
+            const temp = document.createElement('div');
+            temp.innerHTML = metaHtml.trim();
+            const metaEl = temp.querySelector('meta');
+            if (metaEl) {
+                metaEl.id = 'apiReferrerMeta';
+                document.head.appendChild(metaEl);
+            }
+        }
+
         async function bindUploadButton(button, url) {
             button.addEventListener('click', async () => {
                 const file = fileInput.files[0];
@@ -235,14 +292,9 @@
 
                 const fileSize = file.size;
                 const twoMB = 2 * 1024 * 1024;
-                const fiveMB = 5 * 1024 * 1024;
 
                 if (url === 'https://api.xinyew.cn/api/psbctc' && fileSize > twoMB) {
                     return showMessage('上传的图片大小超过2MB，无法使用邮政图床上传！', true);
-                }
-
-                if (url === 'https://api.xinyew.cn/api/jdtc' && fileSize > fiveMB) {
-                    return showMessage('上传的图片大小超过5MB，无法使用京东图床上传！', true);
                 }
 
                 // ——————————开始准备上传————————————
@@ -259,12 +311,19 @@
                             if (data.errno === 0) {
                                 okBtns.style.display = 'block';
                                 const imageUrl = data.data.url;
+                                // 搜狗等图床有防盗链，接口会返回用于设置 referrer 的 meta 标签，
+                                // 需注入页面头部，并给预览图/链接加上 referrerpolicy 才能正常显示
+                                applyReferrerMeta(data.meta);
+                                const metaTip = (typeof data.meta === 'string' && data.meta.trim())
+                                    ? `<p class="center-url">防盗链 meta（在引用页面头部加入才能显示）：<code>${data.meta.trim().replace(/</g, '&lt;')}</code></p>`
+                                    : '';
                                 resultDiv.innerHTML = `
                                         <p>上传成功！</p>
-                                        <p class="center-url">图片链接: <a href="${imageUrl}" target="_blank">${imageUrl}</a></p>
-                                        <img src="${imageUrl}" alt="上传的图片" class="uploaded-image" />
+                                        <p class="center-url">图片链接: <a href="${imageUrl}" target="_blank" referrerpolicy="no-referrer">${imageUrl}</a></p>
+                                        ${metaTip}
+                                        <img src="${imageUrl}" alt="上传的图片" class="uploaded-image" referrerpolicy="no-referrer" />
                                     `;
-                            } else showMessage(data.error, true);
+                            } else showMessage(data.error || data.message || '上传失败', true);
                         } else showMessage('请求发生错误：' + xhr.statusText, true);
                     }
                 };
@@ -275,10 +334,8 @@
         }
 
         // 绑定所有上传按钮事件
-        bindUploadButton(document.getElementById('neteaseUploadBtn'), 'https://api.xinyew.cn/api/yanxuantc');
         bindUploadButton(document.getElementById('_360UploadBtn'), 'https://api.xinyew.cn/api/360tc');
         bindUploadButton(document.getElementById('sougouUploadBtn'), 'https://api.xinyew.cn/api/sogotc');
-        bindUploadButton(document.getElementById('jdUploadBtn'), 'https://api.xinyew.cn/api/jdtc');
         bindUploadButton(document.getElementById('yzUploadBtn'), 'https://api.xinyew.cn/api/psbctc');
 
         // 复制图片链接按钮点击事件
