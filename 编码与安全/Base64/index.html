@@ -2,611 +2,372 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="description" content="deepseek 2026.4.1生成 稍微调整">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
-  <title>Base64文本编码解码</title>
+  <meta name="description" content="radix64 — 文本与 Base64 互转，UTF-8 安全，带实时字节/字符/填充读数与 64 字符表">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>radix64 · 文本 ↔ Base64</title>
+  <link rel="icon" href="/favicon.ico">
   <style>
-    * {
-      box-sizing: border-box;
-      -webkit-tap-highlight-color: transparent;
+    :root {
+      --paper: #E7EBEF;
+      --grid: #D8DEE5;
+      --panel: #FCFDFE;
+      --ink: #16202B;
+      --ink-soft: #5C6B79;
+      --line: #C4CDD6;
+      --line-strong: #A7B2BD;
+      --code: #1D3FCC;      /* 编码 / base64 状态 */
+      --code-tint: #E8ECFF;
+      --byte: #B4740F;      /* 原始字节 / 文本状态 */
+      --byte-ink: #855510;
+      --byte-tint: #F7EEDA;
+      --byte-line: #E1C68C;
+      --ok: #1F7A46;
+      --bad: #B23636;
+      --r: 5px;
+      --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', 'Consolas', 'DejaVu Sans Mono', monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
     }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
     body {
-      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, sans-serif;
-      background: #f1f5f9;
       margin: 0;
-      padding: 40px;
       min-height: 100vh;
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.55;
+      background-color: var(--paper);
+      background-image:
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+      background-size: 26px 26px;
       display: flex;
       justify-content: center;
-      align-items: center;
+      padding: 44px 20px;
     }
 
-    /* 卡片容器 */
-    .card {
-      max-width: 1200px;
+    /* 仪表盘外框 */
+    .plate {
       width: 100%;
-      background: white;
-      border-radius: 32px;
-      box-shadow: 0 20px 35px -12px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.05);
+      max-width: 900px;
+      background: var(--panel);
+      border: 1px solid var(--line-strong);
+      border-radius: var(--r);
+      box-shadow: 0 1px 0 rgba(255, 255, 255, .8) inset, 0 18px 44px -28px rgba(22, 32, 43, .55);
       overflow: hidden;
-      transition: all 0.2s ease;
     }
 
-    /* 头部 */
-    .header {
-      padding: 24px 28px 12px 28px;
-      border-bottom: 1px solid #e9edf2;
-    }
-
-    .header h1 {
-      font-size: 1.65rem;
-      font-weight: 600;
-      margin: 0 0 6px 0;
-      background: linear-gradient(135deg, #1e2b3c, #2c4c6e);
-      background-clip: text;
-      -webkit-background-clip: text;
-      color: transparent;
-      letter-spacing: -0.3px;
-    }
-
-    .header p {
-      font-size: 0.9rem;
-      color: #5b6e8c;
-      margin: 0;
-    }
-
-    /* 模式标签切换区 */
-    .mode-tabs {
-      padding: 16px 28px 0 28px;
+    /* 顶栏：字标 + 实时读数 */
+    .head {
       display: flex;
-      gap: 16px;
-      border-bottom: 1px solid #eef2f6;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 22px 24px 18px;
+      border-bottom: 1px solid var(--line);
     }
+    .mark { font-family: var(--mono); font-weight: 600; font-size: 23px; letter-spacing: -.6px; }
+    .mark i { color: var(--code); font-style: normal; }
+    .mark + .sub { margin-top: 3px; }
+    .sub { font-size: 13px; color: var(--ink-soft); }
 
-    .mode-btn {
-      flex: 0 1 auto;
-      background: transparent;
-      border: none;
-      font-size: 1rem;
-      font-weight: 500;
-      padding: 10px 0 12px 0;
-      cursor: pointer;
-      color: #6c7f8f;
-      transition: all 0.2s;
-      border-bottom: 2px solid transparent;
-      margin-bottom: -1px;
+    .ledger { display: flex; gap: 22px; }
+    .metric { text-align: right; min-width: 42px; }
+    .metric b { display: block; font-family: var(--mono); font-weight: 500; font-size: 20px; line-height: 1; font-variant-numeric: tabular-nums; }
+    .metric span { font-size: 11px; color: var(--ink-soft); }
+    .metric.-pad b { color: var(--byte-ink); }
+
+    /* 控制条 */
+    .bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(var(--panel), #F6F8FA);
     }
-
-    .mode-btn.active {
-      color: #1f6392;
-      border-bottom-color: #1f6392;
-      font-weight: 600;
-    }
-
-    .mode-btn:active {
-      opacity: 0.7;
-    }
-
-    /* 移动端增大点按区域 */
-    @media (max-width: 560px) {
-      body {
-        padding: 20px;
-      }
-
-      .mode-tabs {
-        gap: 24px;
-        justify-content: center;
-      }
-
-      .mode-btn {
-        font-size: 1rem;
-        padding: 12px 0;
-      }
-    }
-
-    /* 输入输出区域容器 */
-    .io-container {
-      padding: 24px 28px 20px 28px;
-    }
-
-    .input-area {
+    .seg { display: inline-flex; gap: 2px; padding: 2px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--r); }
+    .seg button { border: 0; background: transparent; font-family: var(--sans); font-size: 13px; padding: 7px 13px; border-radius: 3px; color: var(--ink-soft); cursor: pointer; transition: background .15s, color .15s; }
+    .seg button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgba(22, 32, 43, .18); }
+    .linkbtn { border: 0; background: transparent; color: var(--code); font-family: var(--sans); font-size: 13px; cursor: pointer; padding: 6px 4px; }
+    .linkbtn:hover { text-decoration: underline; }
+    /* 输入输出区 */
+    .io { padding: 22px 24px 6px; }
+    .field { margin-bottom: 18px; }
+    .field:last-child { margin-bottom: 0; }
+    .cap { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 7px; }
+    .cap em { font-style: normal; font-size: 13px; color: var(--ink-soft); }
+    .cap .len { font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+    .box {
       width: 100%;
-    }
-
-    .single-box, .double-box {
-      transition: opacity 0.2s ease;
-    }
-
-    .single-box.hidden, .double-box.hidden {
-      display: none;
-    }
-
-    /* textarea 公共样式 */
-    textarea {
-      width: 100%;
-      padding: 16px 18px;
-      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-      font-size: 0.95rem;
-      line-height: 1.5;
-      border: 1px solid #dce3ec;
-      border-radius: 20px;
-      background: #ffffff;
+      font-family: var(--mono);
+      font-size: 15px;
+      line-height: 1.65;
+      color: var(--ink);
+      background: #fff;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--r);
+      padding: 14px 16px;
       resize: vertical;
       outline: none;
-      transition: 0.2s;
-      color: #1e2a3a;
+      transition: border-color .15s, box-shadow .15s;
+      word-break: break-all;
     }
+    .box:focus { border-color: var(--code); box-shadow: 0 0 0 3px var(--code-tint); }
+    .box[readonly] { background: #F5F7FA; color: #33414F; }
+    .box.-flash { animation: flash .5s ease; }
+    @keyframes flash { from { background: var(--code-tint); } to { background: #fff; } }
+    .hide { display: none !important; }
 
-    textarea:focus {
-      border-color: #7c9bc0;
-      box-shadow: 0 0 0 3px rgba(31, 99, 146, 0.15);
-    }
-
-    textarea[readonly] {
-      background-color: #f8fafc;
-      color: #2d3e50;
-      cursor: default;
-      border-color: #e2e8f0;
-    }
-
-    .label-hint {
-      font-size: 0.8rem;
-      font-weight: 500;
-      margin-bottom: 8px;
-      margin-top: 8px;
-      color: #4f6f8f;
-      display: flex;
-      justify-content: space-between;
-    }
-
-    .label-hint:first-of-type {
-      margin-top: 0;
-    }
-
-    .input-wrapper {
-      margin-bottom: 20px;
-    }
-
-    .input-wrapper:last-child {
-      margin-bottom: 0;
-    }
-
-    /* 按钮组 */
-    .action-buttons {
-      padding: 8px 28px 24px 28px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 16px;
-      border-top: 1px solid #eef2f6;
-    }
-
+    /* 动作按钮 */
+    .acts { display: flex; gap: 12px; padding: 6px 24px 22px; }
     .btn {
       flex: 1;
-      min-width: 130px;
-      background: white;
-      border: 1px solid #cbdbe0;
-      padding: 12px 10px;
-      border-radius: 60px;
+      font-family: var(--sans);
+      font-size: 14.5px;
       font-weight: 600;
-      font-size: 1rem;
+      padding: 13px 16px;
+      border-radius: var(--r);
+      border: 1px solid var(--line-strong);
+      background: var(--panel);
+      color: var(--ink);
       cursor: pointer;
-      transition: all 0.2s;
-      color: #1f3a4b;
-      background: #fefefe;
-      box-shadow: 0 1px 1px rgba(0, 0, 0, 0.02);
+      transition: transform .07s, filter .15s;
     }
+    .btn:active { transform: translateY(1px); }
+    .btn.-code { background: var(--code); border-color: var(--code); color: #fff; }
+    .btn.-code:hover { filter: brightness(1.08); }
+    .btn.-byte { background: var(--byte-tint); border-color: var(--byte-line); color: var(--byte-ink); }
+    .btn.-byte:hover { filter: brightness(1.02); }
 
-    .btn-primary {
-      background: #1f6392;
-      border-color: #1f6392;
-      color: white;
-      box-shadow: 0 2px 4px rgba(31, 99, 146, 0.2);
+    /* 64 字符表（本工具的标志元素） */
+    .keys { padding: 16px 24px; border-top: 1px solid var(--line); background: #F6F8FA; }
+    .keys .cap { margin-bottom: 10px; }
+    .keys__grid { display: flex; flex-wrap: wrap; gap: 4px; }
+    .key {
+      font-family: var(--mono);
+      font-size: 12px;
+      width: 21px; height: 22px;
+      display: grid; place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      background: #fff;
+      color: var(--ink-soft);
+      transition: background .2s, color .2s, border-color .2s;
     }
+    .key.-on { background: var(--code); border-color: var(--code); color: #fff; }
+    .key.-pad { background: var(--byte-tint); border-color: var(--byte-line); color: var(--byte-ink); margin-left: 6px; }
 
-    .btn-primary:active {
-      background: #0e4a70;
-      transform: scale(0.97);
+    /* 状态行 */
+    .status { font-family: var(--mono); font-size: 12.5px; padding: 12px 24px; border-top: 1px solid var(--line); color: var(--ink-soft); }
+    .status.-ok { color: var(--ok); }
+    .status.-bad { color: var(--bad); }
+    .foot { font-size: 11.5px; color: var(--ink-soft); padding: 0 24px 18px; }
+
+    :focus-visible { outline: 2px solid var(--code); outline-offset: 2px; }
+
+    @media (max-width: 560px) {
+      body { padding: 20px 12px; }
+      .head { flex-direction: column; align-items: flex-start; gap: 14px; }
+      .ledger { gap: 18px; }
+      .metric { text-align: left; }
+      .acts { flex-direction: column; }
     }
-
-    .btn-secondary {
-      background: #f4f7fb;
-      border-color: #cfdfed;
-    }
-
-    .btn-secondary:active {
-      background: #e6edf5;
-      transform: scale(0.97);
-    }
-
-    .btn:active {
-      transform: scale(0.97);
-    }
-
-    @media (max-width: 480px) {
-      .action-buttons {
-        gap: 12px;
-      }
-
-      .btn {
-        padding: 12px 8px;
-        font-size: 0.9rem;
-        min-width: 110px;
-      }
-    }
-
-    /* 消息栏 */
-    .message-area {
-      padding: 12px 28px 24px 28px;
-      font-size: 0.85rem;
-      color: #4a627a;
-      border-top: 1px solid #eef2f6;
-      background: #fafcff;
-    }
-
-    .msg-text {
-      background: #eef3fc;
-      padding: 10px 16px;
-      border-radius: 40px;
-      display: inline-block;
-      width: 100%;
-      box-sizing: border-box;
-      text-align: center;
-      color: #2c5a7a;
-    }
-
-    .msg-error {
-      background: #ffe6e5;
-      color: #b13e3e;
-    }
-
-    .msg-success {
-      background: #e1f7ea;
-      color: #1f7840;
-    }
-
-    footer {
-      font-size: 0.7rem;
-      text-align: center;
-      padding: 12px 20px 20px;
-      color: #8ba0b5;
-      border-top: 1px solid #ecf3f9;
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; transition: none !important; }
     }
   </style>
 </head>
 <body>
-<div class="card">
-  <div class="header">
-    <h1>🔁 Base64 转换器</h1>
-    <p>文本 ↔ Base64 | 编码 / 解码</p>
-  </div>
-
-  <!-- 模式切换标签 -->
-  <div class="mode-tabs" id="modeTabs">
-    <button class="mode-btn active" data-mode="single">📝 原框输出</button>
-    <button class="mode-btn" data-mode="double">🔄 新框输出</button>
-  </div>
-
-  <!-- 动态输入输出区 -->
-  <div class="io-container">
-    <!-- 单一输入框模式 (原输入框输出) -->
-    <div id="singleContainer" class="single-box">
-      <div class="input-wrapper">
-        <div class="label-hint">
-          <span>✏️ 输入内容</span>
-          <span>支持中文/Unicode</span>
-        </div>
-        <textarea id="singleTextarea" rows="14"
-                  placeholder="例如：Hello 世界&#10;或 Base64 字符串：SGVsbG8g5LiW55WM"></textarea>
-      </div>
+<main class="plate">
+  <div class="head">
+    <div>
+      <div class="mark">radix<i>64</i></div>
+      <div class="sub">文本与 Base64 互转，自动处理中文与 Unicode</div>
     </div>
-
-    <!-- 双输入框模式 (输入+输出分离) -->
-    <div id="doubleContainer" class="double-box hidden">
-      <div class="input-wrapper">
-        <div class="label-hint">
-          <span>📥 输入框</span>
-          <span>待转换的文本或Base64</span>
-        </div>
-        <textarea id="doubleInputTextarea" rows="5" placeholder="在这里输入文本或Base64..."></textarea>
-      </div>
-      <div class="input-wrapper">
-        <div class="label-hint">
-          <span>📤 输出框</span>
-          <span>转换结果 (只读)</span>
-        </div>
-        <textarea id="doubleOutputTextarea" rows="5" readonly placeholder="转换结果将显示在这里..."></textarea>
-      </div>
+    <div class="ledger" id="ledger">
+      <div class="metric"><b id="mChars">0</b><span>字符</span></div>
+      <div class="metric"><b id="mBytes">0</b><span>UTF-8 字节</span></div>
+      <div class="metric -pad"><b id="mPad">0</b><span>填充 =</span></div>
     </div>
   </div>
 
-  <!-- 双按钮始终显示 -->
-  <div class="action-buttons">
-    <button id="encodeBtn" class="btn btn-primary">📤转Base64</button>
-    <button id="decodeBtn" class="btn btn-secondary">📥转文本</button>
+  <div class="bar">
+    <div class="seg" role="group" aria-label="输出位置">
+      <button id="segInPlace" aria-pressed="true">就地替换</button>
+      <button id="segNew" aria-pressed="false">输出到新框</button>
+    </div>
+    <div>
+      <button class="linkbtn" id="btnSample">填示例</button>
+      <button class="linkbtn" id="btnClear">清空</button>
+    </div>
   </div>
 
-  <!-- 消息提示栏 -->
-  <div class="message-area" id="messageArea">
-    <div class="msg-text" id="msgText">✨ 就绪 | 选择模式，点击转换</div>
+  <div class="io">
+    <div class="field">
+      <div class="cap"><em id="capIn">内容</em><span class="len" id="lenIn"></span></div>
+      <textarea class="box" id="input" rows="8" spellcheck="false"
+        placeholder="输入文本，或粘贴一段 Base64"></textarea>
+    </div>
+    <div class="field hide" id="outField">
+      <div class="cap"><em>结果</em><span class="len" id="lenOut"></span></div>
+      <textarea class="box" id="output" rows="6" spellcheck="false" readonly
+        placeholder="转换结果显示在这里，点一下即可复制"></textarea>
+    </div>
   </div>
-  <footer>⚡ 自动处理Unicode | Base64解码前会移除空白字符(换行/空格)</footer>
-</div>
 
+  <div class="acts">
+    <button class="btn -code" id="btnEncode">编码为 Base64</button>
+    <button class="btn -byte" id="btnDecode">解码为文本</button>
+  </div>
+
+  <div class="keys">
+    <div class="cap"><em>Base64 用到的 64 个字符，转出结果里出现过的会点亮</em></div>
+    <div class="keys__grid" id="keys"></div>
+  </div>
+
+  <div class="status" id="status">就绪。默认就地替换，也可切到新框保留原文。</div>
+  <div class="foot">纯前端运行，内容不会离开你的浏览器。解码前会自动去掉空格与换行。</div>
+</main>
 <script>
-  (function () {
-    // ---------- DOM 元素 ----------
-    const singleContainer = document.getElementById('singleContainer');
-    const doubleContainer = document.getElementById('doubleContainer');
-    const singleTextarea = document.getElementById('singleTextarea');
-    const doubleInputTextarea = document.getElementById('doubleInputTextarea');
-    const doubleOutputTextarea = document.getElementById('doubleOutputTextarea');
-    const encodeBtn = document.getElementById('encodeBtn');
-    const decodeBtn = document.getElementById('decodeBtn');
-    const modeBtns = document.querySelectorAll('.mode-btn');
-    const msgDiv = document.getElementById('msgText');
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const input = $('input'), output = $('output'), outField = $('outField');
+  const status = $('status'), capIn = $('capIn');
 
-    // 当前模式: 'single' 或 'double'
-    let currentMode = 'single';   // 默认在原输入框输出
+  // 输出位置：inplace（就地替换） | separate（输出到新框）
+  let target = 'inplace';
 
-    // ---------- 辅助函数: 显示消息 (success/error/info) ----------
-    function showMessage(text, isError = false, isSuccess = false) {
-      msgDiv.innerText = text;
-      msgDiv.classList.remove('msg-error', 'msg-success');
-      if (isError) {
-        msgDiv.classList.add('msg-error');
-      } else if (isSuccess) {
-        msgDiv.classList.add('msg-success');
-      } else {
-        // info样式 (默认浅蓝)
-        msgDiv.classList.remove('msg-error', 'msg-success');
-      }
-      // 5秒后自动淡化样式保留消息 (不清空)
-      setTimeout(() => {
-        if (msgDiv.innerText === text) {
-          msgDiv.classList.remove('msg-error', 'msg-success');
-          // 但保持文本，不再过度重置
-        }
-      }, 3000);
+  // ---------- 状态提示 ----------
+  function say(text, type) {
+    status.textContent = text;
+    status.classList.remove('-ok', '-bad');
+    if (type) status.classList.add('-' + type);
+  }
+
+  // ---------- UTF-8 安全的编解码 ----------
+  function encode(str) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+  function decode(b64) {
+    const cleaned = edgeTrim(b64).replace(/\s/g, '');
+    if (!cleaned) throw new Error('去掉多余字符后没有内容');
+    const bin = atob(cleaned);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+  }
+  // 去掉首尾不属于 Base64 的字符（引号、说明文字、标点、空白等），中间保持不动
+  function edgeTrim(str) {
+    return str.replace(/^[^A-Za-z0-9+/=_-]+/, '').replace(/[^A-Za-z0-9+/=_-]+$/, '');
+  }
+
+  // ---------- 实时读数 + 字符表点亮 ----------
+  const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const keyEls = {};
+  (function buildKeys() {
+    const grid = $('keys');
+    for (const ch of ALPHABET) {
+      const el = document.createElement('div');
+      el.className = 'key'; el.textContent = ch;
+      keyEls[ch] = el; grid.appendChild(el);
     }
-
-    // ---------- 核心转换函数 (UTF-8 安全) ----------
-    // 将普通文本转为 Base64 (UTF-8编码)
-    function utf8ToBase64(str) {
-      if (str === "") return "";
-      try {
-        // 使用 TextEncoder 转为 UTF-8 字节序列
-        const encoder = new TextEncoder();
-        const bytes = encoder.encode(str);
-        // 将 Uint8Array 转为二进制字符串 (每个字节转为字符)
-        let binaryStr = "";
-        for (let i = 0; i < bytes.length; i++) {
-          binaryStr += String.fromCharCode(bytes[i]);
-        }
-        return btoa(binaryStr);
-      } catch (e) {
-        throw new Error("编码失败: " + e.message);
-      }
-    }
-
-    // 将 Base64 转为普通文本 (UTF-8解码)
-    function base64ToUtf8(base64Str) {
-      if (base64Str === "") return "";
-      try {
-        // 1. 预处理: 移除所有空白字符（空格、换行、制表符等），提升容错
-        let cleaned = base64Str.replace(/\s/g, '');
-        if (cleaned === "") throw new Error("Base64 字符串为空 (移除空白后)");
-        // 2. atob 解码为二进制字符串
-        const binaryStr = atob(cleaned);
-        // 3. 将二进制字符串转为 Uint8Array
-        const bytes = new Uint8Array(binaryStr.length);
-        for (let i = 0; i < binaryStr.length; i++) {
-          bytes[i] = binaryStr.charCodeAt(i);
-        }
-        // 4. TextDecoder 解码为 UTF-8 文本
-        const decoder = new TextDecoder('utf-8');
-        return decoder.decode(bytes);
-      } catch (e) {
-        // 增强错误信息
-        throw new Error("Base64解码失败，请确认输入是有效的Base64字符串。\n" + e.message);
-      }
-    }
-
-    // ---------- 根据当前模式执行转换 ----------
-    // type: 'encode' 文本->base64 , 'decode' base64->文本
-    function performConversion(type) {
-      try {
-        if (currentMode === 'single') {
-          // 单一输入框模式: 读取、转换、写回同一个textarea
-          const inputVal = singleTextarea.value;
-          let result = "";
-          if (type === 'encode') {
-            result = utf8ToBase64(inputVal);
-            showMessage(`✅ 编码成功！ (原输入框已更新)`, false, true);
-          } else {
-            // decode: base64转文本
-            result = base64ToUtf8(inputVal);
-            showMessage(`✅ 解码成功！ (原输入框已更新)`, false, true);
-          }
-          // 更新单一输入框
-          singleTextarea.value = result;
-        } else { // double 模式: 输入框 -> 输出框
-          const sourceVal = doubleInputTextarea.value;
-          let result = "";
-          if (type === 'encode') {
-            result = utf8ToBase64(sourceVal);
-            showMessage(`✨ 编码完成，结果已输出到右侧输出框`, false, true);
-          } else {
-            result = base64ToUtf8(sourceVal);
-            showMessage(`🔓 解码完成，结果已输出到右侧输出框`, false, true);
-          }
-          doubleOutputTextarea.value = result;
-        }
-      } catch (err) {
-        // 转换出错，根据不同模式做友好提示
-        const errorMsg = err.message || "转换失败，请检查输入格式";
-        if (currentMode === 'single') {
-          // 单一模式不覆盖原有内容，只显示错误消息（保留用户输入）
-          showMessage(`❌ 转换失败: ${errorMsg}`, true, false);
-        } else {
-          // 双模式可以将错误信息显示到输出框，同时显示消息栏提示
-          doubleOutputTextarea.value = `⚠️ 错误: ${errorMsg}`;
-          showMessage(`❌ 转换失败: ${errorMsg}`, true, false);
-        }
-      }
-    }
-
-    // ---------- UI 布局切换 & 内容同步 ----------
-    // 同步内容: 单模式 -> 双模式 (把单模式的文本迁移到双模式的输入框，清空输出框)
-    function syncSingleToDouble() {
-      const singleValue = singleTextarea.value;
-      doubleInputTextarea.value = singleValue;
-      doubleOutputTextarea.value = "";   // 清空旧输出结果
-    }
-
-    // 同步内容: 双模式 -> 单模式 (把双模式的输入框文本迁移到单模式文本框)
-    function syncDoubleToSingle() {
-      const doubleInputValue = doubleInputTextarea.value;
-      singleTextarea.value = doubleInputValue;
-    }
-
-    // 切换显示容器 & 模式状态
-    function setMode(mode) {
-      currentMode = mode;
-      if (mode === 'single') {
-        // 显示单一容器，隐藏双容器
-        singleContainer.classList.remove('hidden');
-        doubleContainer.classList.add('hidden');
-        // 内容同步: 将当前双模式中输入框的内容同步到单一输入框 (如果有双模式的内容)
-        syncDoubleToSingle();
-        // 更新按钮高亮样式
-      } else {
-        // 显示双容器，隐藏单一容器
-        singleContainer.classList.add('hidden');
-        doubleContainer.classList.remove('hidden');
-        // 内容同步: 将当前单一输入框内容同步到双模式输入框，同时清空输出框避免混淆
-        syncSingleToDouble();
-      }
-      // 更新tab样式
-      updateTabActiveStyle(mode);
-    }
-
-    // 更新两个标签按钮的active样式
-    function updateTabActiveStyle(mode) {
-      modeBtns.forEach(btn => {
-        const btnMode = btn.getAttribute('data-mode');
-        if (btnMode === mode) {
-          btn.classList.add('active');
-        } else {
-          btn.classList.remove('active');
-        }
-      });
-    }
-
-    // ---------- 事件绑定 ----------
-    // 模式切换按钮监听
-    modeBtns.forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const mode = btn.getAttribute('data-mode');
-        if (mode === 'single' && currentMode !== 'single') {
-          setMode('single');
-          showMessage("切换至「在原输入框输出」模式", false);
-        } else if (mode === 'double' && currentMode !== 'double') {
-          setMode('double');
-          showMessage("切换至「新输入框输出」模式", false);
-        }
-      });
-    });
-
-    // 两个转换按钮
-    encodeBtn.addEventListener('click', () => {
-      performConversion('encode');
-    });
-    decodeBtn.addEventListener('click', () => {
-      performConversion('decode');
-    });
-
-    // 额外优化：在双模式下，如果用户点了输出框（只读），提供复制提示? 简单增加双击复制提示的体验 (可选)
-    doubleOutputTextarea.addEventListener('click', () => {
-      if (currentMode === 'double' && doubleOutputTextarea.value.trim() !== "") {
-        doubleOutputTextarea.select();
-        // 尝试复制到剪贴板 友好体验
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(doubleOutputTextarea.value).then(() => {
-            showMessage("📋 输出内容已复制到剪贴板", false, true);
-          }).catch(() => {
-            showMessage("选中输出框内容，可手动复制", false);
-          });
-        } else {
-          showMessage("已选中文本，可手动复制 (Cmd/Ctrl+C)", false);
-        }
-      } else if (currentMode === 'double') {
-        // 空内容不做复制提示
-      }
-    });
-    // 单模式下，点击文本区域也可以方便全选复制 (提升体验)
-    singleTextarea.addEventListener('click', (e) => {
-      // 只是简单的方便选取，不自动复制防止干扰
-      if (singleTextarea.value.trim() !== "") {
-        // 不做强制复制，只方便选中
-        singleTextarea.focus();
-      }
-    });
-
-    // 对于双模式输入框，可以增加快捷键支持？不做过重设计，默认良好。
-
-    // ---------- 初始状态检查 及 演示样例 (非必要，但加一点友好的默认文本) ----------
-    function initDefaultDemo() {
-      // 设置一个友好演示文本，让用户明白功能
-      if (singleTextarea.value.trim() === "") {
-        singleTextarea.value = "Hello Base64 🚀\n支持中文：世界，您好！";
-      }
-      if (doubleInputTextarea.value.trim() === "") {
-        doubleInputTextarea.value = "Hello Base64 🚀\n支持中文：世界，您好！";
-      }
-      doubleOutputTextarea.value = "";
-    }
-
-    // 确保一开始显示单一模式，并且隐藏双模式容器，状态正确
-    function initUI() {
-      // 强制设定模式single视觉
-      singleContainer.classList.remove('hidden');
-      doubleContainer.classList.add('hidden');
-      currentMode = 'single';
-      updateTabActiveStyle('single');
-      initDefaultDemo();
-      // 确保双模式输入框与单模式内容一致（默认单模式有样例，双模式输入框同步一次）
-      doubleInputTextarea.value = singleTextarea.value;
-      doubleOutputTextarea.value = "";
-      showMessage("就绪 | 默认「在原输入框输出」模式", false);
-    }
-
-    initUI();
-
-    // 额外细节：当用户手动修改单模式内容时，如果之后再切换到双模式，会通过syncSingleToDouble同步最新内容，很自然。
-    // 反之亦然。但为避免切换时覆盖用户未保存内容，完全同步当前活动输入。
-    // 增强: 如果用户在双模式中输入框改动，再切换回单模式，也会同步最新的输入框文本，逻辑合理。
-    // 并且切换时不会丢失数据。
-    // 同时监听一些变化，避免意外
-    function setupLiveSyncHint() {
-      // 可选：当双模式输出框有内容时，切换模式不会破坏数据，只同步输入部分，输出框在单模式无用，所以丢弃是合理的。
-      // 无额外副作用。完成。
-    }
-
-    setupLiveSyncHint();
-
-    // 修复移动端点击按钮时 textarea 失焦但无影响
-    // 针对可能的大文本性能，转换函数已优化
-
-    // 增加对无效base64在单模式下的容错：显示错误但保留原内容，上面已经实现。
-    // 并且在双模式里错误信息展示在输出框 + 消息提示。
-    // 完全满足需求: "在原输入框输出" 时下面只有一个输入框；"新输入框输出" 时有输入和输出两个框。
-    // 默认选择在原输入框输出；两个按钮始终显示。
-    // 所有功能具备。
-
-    // 额外细节，当在双模式执行转换且输出框为只读，用户友好。
-    // 支持手机触摸及响应式卡片适配。
+    const pad = document.createElement('div');
+    pad.className = 'key -pad'; pad.textContent = '='; pad.title = '填充字符';
+    grid.appendChild(pad);
   })();
+
+  function lightKeys(b64) {
+    const present = new Set(b64.replace(/\s/g, ''));
+    for (const ch in keyEls) keyEls[ch].classList.toggle('-on', present.has(ch));
+  }
+
+  function refresh() {
+    const src = input.value;
+    $('mChars').textContent = Array.from(src).length;
+    $('mBytes').textContent = new TextEncoder().encode(src).length;
+    const stripped = src.replace(/\s/g, '');
+    const m = stripped.match(/=+$/);
+    $('mPad').textContent = m ? m[0].length : 0;
+    $('lenIn').textContent = src ? src.length + ' 字符' : '';
+    if (target === 'separate') $('lenOut').textContent = output.value ? output.value.length + ' 字符' : '';
+  }
+
+  // ---------- 执行转换 ----------
+  function run(kind) {
+    const src = input.value;
+    if (!src.trim()) { say('先输入点内容再转换', 'bad'); input.focus(); return; }
+    let result;
+    try {
+      result = kind === 'encode' ? encode(src) : decode(src);
+    } catch (e) {
+      say(kind === 'encode' ? '编码失败：' + e.message
+                            : '这段不是有效的 Base64，检查是否缺字符或多了别的符号', 'bad');
+      return;
+    }
+    const dest = target === 'separate' ? output : input;
+    dest.value = result;
+    dest.classList.remove('-flash'); void dest.offsetWidth; dest.classList.add('-flash');
+    if (kind === 'encode') {
+      lightKeys(result);
+      refresh();
+      say('已编码为 Base64，' + result.length + ' 个字符', 'ok');
+    } else {
+      const removed = src.length - edgeTrim(src).length;
+      lightKeys(edgeTrim(src));
+      refresh();
+      say('已解码为文本，' + Array.from(result).length + ' 个字符'
+          + (removed > 0 ? '（已去掉首尾 ' + removed + ' 个非 Base64 字符）' : ''), 'ok');
+    }
+  }
+
+  // ---------- 输出位置切换 ----------
+  function setTarget(next) {
+    target = next;
+    const sep = next === 'separate';
+    $('segInPlace').setAttribute('aria-pressed', String(!sep));
+    $('segNew').setAttribute('aria-pressed', String(sep));
+    outField.classList.toggle('hide', !sep);
+    capIn.textContent = sep ? '输入' : '内容';
+    if (!sep) output.value = '';
+    refresh();
+  }
+
+  // ---------- 事件 ----------
+  $('btnEncode').addEventListener('click', () => run('encode'));
+  $('btnDecode').addEventListener('click', () => run('decode'));
+  $('segInPlace').addEventListener('click', () => setTarget('inplace'));
+  $('segNew').addEventListener('click', () => setTarget('separate'));
+  input.addEventListener('input', () => { refresh(); if (input.value === '') lightKeys(''); });
+
+  $('btnClear').addEventListener('click', () => {
+    input.value = ''; output.value = ''; lightKeys(''); refresh();
+    say('已清空'); input.focus();
+  });
+  $('btnSample').addEventListener('click', () => {
+    input.value = 'Hello Base64 🚀 世界你好'; refresh(); lightKeys('');
+    say('已填入示例，点上面的按钮试试');
+  });
+
+  // 点结果框即复制
+  output.addEventListener('click', () => {
+    if (!output.value) return;
+    output.select();
+    const done = () => say('结果已复制到剪贴板', 'ok');
+    if (navigator.clipboard) navigator.clipboard.writeText(output.value).then(done).catch(done);
+    else { document.execCommand('copy'); done(); }
+  });
+
+  // ---------- 初始 ----------
+  input.value = 'Hello Base64 🚀 世界你好';
+  refresh();
+})();
 </script>
 </body>
 </html>

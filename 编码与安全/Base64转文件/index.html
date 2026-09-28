@@ -2,552 +2,521 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="description" content="Base64 与文件互转：文件转 Base64、Base64 转文件下载，内置照片/音频/视频等常用 data URI 头部，支持自动识别文件类型">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
-  <title>Base64 ↔ 文件互转</title>
+  <meta name="description" content="radix64 — 文件与 Base64 互转：文件转 Base64、Base64 转文件下载，内置照片/音频/视频等头部，按文件签名自动识别类型">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>radix64 · 文件 ↔ Base64</title>
   <link rel="icon" href="/favicon.ico">
   <style>
+    :root {
+      --paper: #E7EBEF;
+      --grid: #D8DEE5;
+      --panel: #FCFDFE;
+      --ink: #16202B;
+      --ink-soft: #5C6B79;
+      --line: #C4CDD6;
+      --line-strong: #A7B2BD;
+      --code: #1D3FCC;
+      --code-tint: #E8ECFF;
+      --byte: #B4740F;
+      --byte-ink: #855510;
+      --byte-tint: #F7EEDA;
+      --byte-line: #E1C68C;
+      --ok: #1F7A46;
+      --bad: #B23636;
+      --r: 5px;
+      --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', 'Consolas', 'DejaVu Sans Mono', monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    }
+
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
     body {
-      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, sans-serif;
-      background: #f1f5f9;
-      margin: 0;
-      padding: 40px;
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
+      margin: 0; min-height: 100vh; color: var(--ink);
+      font-family: var(--sans); font-size: 15px; line-height: 1.55;
+      background-color: var(--paper);
+      background-image:
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+      background-size: 26px 26px;
+      display: flex; justify-content: center; padding: 44px 20px;
     }
 
-    .card {
-      max-width: 960px;
-      width: 100%;
-      background: #fff;
-      border-radius: 32px;
-      box-shadow: 0 20px 35px -12px rgba(0, 0, 0, .1), 0 1px 3px rgba(0, 0, 0, .05);
+    .plate {
+      width: 100%; max-width: 900px; background: var(--panel);
+      border: 1px solid var(--line-strong); border-radius: var(--r);
+      box-shadow: 0 1px 0 rgba(255, 255, 255, .8) inset, 0 18px 44px -28px rgba(22, 32, 43, .55);
       overflow: hidden;
     }
-
-    .header {
-      padding: 24px 28px 12px;
-      border-bottom: 1px solid #e9edf2;
+    .head {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      gap: 20px; padding: 22px 24px 18px; border-bottom: 1px solid var(--line);
     }
+    .mark { font-family: var(--mono); font-weight: 600; font-size: 23px; letter-spacing: -.6px; }
+    .mark i { color: var(--code); font-style: normal; }
+    .sub { font-size: 13px; color: var(--ink-soft); margin-top: 3px; }
+    .ledger { display: flex; gap: 22px; }
+    .metric { text-align: right; min-width: 42px; }
+    .metric b { display: block; font-family: var(--mono); font-weight: 500; font-size: 20px; line-height: 1; font-variant-numeric: tabular-nums; }
+    .metric span { font-size: 11px; color: var(--ink-soft); }
+    .metric.-code b { color: var(--code); }
 
-    .header h1 {
-      font-size: 1.6rem;
-      font-weight: 600;
-      margin: 0 0 6px;
-      background: linear-gradient(135deg, #1e2b3c, #2c4c6e);
-      background-clip: text;
-      -webkit-background-clip: text;
-      color: transparent;
-      letter-spacing: -.3px;
+    .bar {
+      display: flex; align-items: center; gap: 12px; padding: 14px 24px;
+      border-bottom: 1px solid var(--line); background: linear-gradient(var(--panel), #F6F8FA);
     }
+    .seg { display: inline-flex; gap: 2px; padding: 2px; background: var(--paper); border: 1px solid var(--line-strong); border-radius: var(--r); }
+    .seg button { border: 0; background: transparent; font-family: var(--sans); font-size: 13px; padding: 7px 13px; border-radius: 3px; color: var(--ink-soft); cursor: pointer; transition: background .15s, color .15s; }
+    .seg button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgba(22, 32, 43, .18); }
 
-    .header p { font-size: .9rem; color: #5b6e8c; margin: 0; }
+    .panel { padding: 22px 24px 8px; display: none; }
+    .panel.on { display: block; }
 
-    /* 模式切换 */
-    .mode-tabs {
-      padding: 16px 28px 0;
-      display: flex;
-      gap: 24px;
-      border-bottom: 1px solid #eef2f6;
+    .field { margin-bottom: 18px; }
+    .cap { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 7px; }
+    .cap em { font-style: normal; font-size: 13px; color: var(--ink-soft); }
+    .mini { border: 1px solid var(--line-strong); background: var(--panel); color: var(--code); font-family: var(--sans); font-size: 12px; padding: 4px 12px; border-radius: 3px; cursor: pointer; }
+    .mini:hover { background: var(--code-tint); }
+
+    .box {
+      width: 100%; font-family: var(--mono); font-size: 14px; line-height: 1.6;
+      color: var(--ink); background: #fff; border: 1px solid var(--line-strong);
+      border-radius: var(--r); padding: 13px 15px; resize: vertical; outline: none;
+      transition: border-color .15s, box-shadow .15s; word-break: break-all;
     }
-    .mode-btn {
-      background: none; border: none; font-size: 1rem; font-weight: 500;
-      padding: 10px 0 12px; cursor: pointer; color: #6c7f8f;
-      border-bottom: 2px solid transparent; margin-bottom: -1px; transition: .2s;
+    .box:focus { border-color: var(--code); box-shadow: 0 0 0 3px var(--code-tint); }
+    .box[readonly] { background: #F5F7FA; color: #33414F; }
+    /* 文件投入口 */
+    .intake {
+      display: block;
+      border: 1.5px dashed var(--line-strong); border-radius: var(--r);
+      padding: 34px 20px; text-align: center; cursor: pointer; background: #F6F8FA;
+      transition: border-color .15s, background .15s;
     }
-    .mode-btn.active { color: #1f6392; border-bottom-color: #1f6392; font-weight: 600; }
-    .mode-btn:active { opacity: .7; }
+    .intake:hover, .intake.-drag { border-color: var(--code); background: var(--code-tint); }
+    .intake .big { font-family: var(--mono); font-size: 15px; color: var(--ink); }
+    .intake .tip { font-size: 12.5px; color: var(--ink-soft); margin-top: 6px; }
+    .intake input { display: none; }
 
-    .panel { padding: 24px 28px; display: none; }
-    .panel.active { display: block; }
-
-    .label-hint {
-      font-size: .8rem; font-weight: 500; margin: 0 0 8px; color: #4f6f8f;
-      display: flex; justify-content: space-between; align-items: center; gap: 8px;
-    }
-    .wrap { margin-bottom: 20px; }
-    .wrap:last-child { margin-bottom: 0; }
-
-    textarea {
-      width: 100%; padding: 14px 16px;
-      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-      font-size: .9rem; line-height: 1.5; border: 1px solid #dce3ec;
-      border-radius: 18px; background: #fff; resize: vertical; outline: none;
-      transition: .2s; color: #1e2a3a; word-break: break-all;
-    }
-    textarea:focus { border-color: #7c9bc0; box-shadow: 0 0 0 3px rgba(31, 99, 146, .15); }
-    textarea[readonly] { background: #f8fafc; color: #2d3e50; border-color: #e2e8f0; }
-
-    /* 拖放区 */
-    .dropzone {
-      border: 2px dashed #b9cbe0; border-radius: 22px; padding: 40px 20px;
-      text-align: center; color: #5b7a9c; cursor: pointer;
-      transition: .2s; background: #f8fbff;
-    }
-    .dropzone:hover, .dropzone.dragover { border-color: #1f6392; background: #eef5fc; }
-    .dropzone .big { font-size: 2.2rem; margin-bottom: 8px; }
-    .dropzone .tip { font-size: .82rem; color: #90a4bb; margin-top: 6px; }
-    .dropzone input[type=file] { display: none; }
-
-    /* 文件信息 */
-    .fileinfo {
-      display: none; margin: 16px 0; padding: 12px 16px; border-radius: 16px;
-      background: #eef3fc; font-size: .85rem; color: #2c5a7a; line-height: 1.7;
-    }
-    .fileinfo.show { display: block; }
-    .fileinfo b { color: #1f3a4b; }
+    /* 文件签名读数（本工具的标志元素） */
+    .sig { display: none; margin: 16px 0; border: 1px solid var(--line-strong); border-left: 3px solid var(--code); border-radius: var(--r); background: #F6F8FA; overflow: hidden; }
+    .sig.show { display: block; }
+    .sig__top { display: flex; align-items: center; gap: 12px; padding: 11px 14px; }
+    .sig__name { flex: 1 1 auto; min-width: 0; font-size: 13px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sig__mime { flex: 0 0 auto; font-family: var(--mono); font-size: 12.5px; color: var(--code); background: var(--code-tint); padding: 4px 10px; border-radius: 3px; white-space: nowrap; }
+    .sig__mime.-guess { color: var(--byte-ink); background: var(--byte-tint); }
+    .sig__hex { font-family: var(--mono); font-size: 12.5px; letter-spacing: 1.5px; color: var(--ink-soft); padding: 0 14px 12px; word-break: break-all; }
+    .sig__hex b { color: var(--code); font-weight: 600; }
 
     /* 选择器 / 输入 */
-    select, input[type=text] {
-      width: 100%; padding: 11px 14px; border: 1px solid #dce3ec; border-radius: 14px;
-      font-size: .9rem; outline: none; background: #fff; color: #1e2a3a; transition: .2s;
-    }
-    select:focus, input[type=text]:focus { border-color: #7c9bc0; box-shadow: 0 0 0 3px rgba(31, 99, 146, .15); }
     .row { display: flex; gap: 14px; flex-wrap: wrap; }
-    .row > .col { flex: 1; min-width: 200px; }
-
-    /* 按钮 */
-    .btns { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
-    .btn {
-      flex: 1; min-width: 130px; border: 1px solid #cbdbe0; padding: 12px 10px;
-      border-radius: 60px; font-weight: 600; font-size: .95rem; cursor: pointer;
-      transition: .2s; color: #1f3a4b; background: #fefefe;
+    .row > .col { flex: 1; min-width: 210px; }
+    select, input[type="text"] {
+      width: 100%; padding: 11px 13px; border: 1px solid var(--line-strong);
+      border-radius: var(--r); font-size: 14px; font-family: var(--sans);
+      outline: none; background: #fff; color: var(--ink); transition: border-color .15s, box-shadow .15s;
     }
-    .btn-primary { background: #1f6392; border-color: #1f6392; color: #fff; box-shadow: 0 2px 4px rgba(31, 99, 146, .2); }
-    .btn-primary:active { background: #0e4a70; transform: scale(.97); }
-    .btn-secondary { background: #f4f7fb; border-color: #cfdfed; }
-    .btn:active { transform: scale(.97); }
+    select:focus, input[type="text"]:focus { border-color: var(--code); box-shadow: 0 0 0 3px var(--code-tint); }
 
-    /* 预览 */
-    .preview { display: none; margin-top: 20px; text-align: center; }
+    .acts { display: flex; gap: 12px; padding: 8px 0 0; }
+    .btn {
+      flex: 1; font-family: var(--sans); font-size: 14.5px; font-weight: 600;
+      padding: 13px 16px; border-radius: var(--r); border: 1px solid var(--line-strong);
+      background: var(--panel); color: var(--ink); cursor: pointer; transition: transform .07s, filter .15s;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn.-code { background: var(--code); border-color: var(--code); color: #fff; }
+    .btn.-code:hover { filter: brightness(1.08); }
+    .btn.-ghost { background: var(--panel); }
+    .btn.-ghost:hover { background: #F0F3F6; }
+
+    .preview { display: none; margin-top: 18px; text-align: center; }
     .preview.show { display: block; }
-    .preview img, .preview video { max-width: 100%; max-height: 340px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0, 0, 0, .1); }
+    .preview img, .preview video { max-width: 100%; max-height: 320px; border: 1px solid var(--line); border-radius: var(--r); }
     .preview audio { width: 100%; }
 
-    /* 消息栏 */
-    .message-area { padding: 12px 28px 20px; border-top: 1px solid #eef2f6; background: #fafcff; }
-    .msg-text {
-      background: #eef3fc; padding: 10px 16px; border-radius: 40px; display: block;
-      text-align: center; color: #2c5a7a; font-size: .85rem;
-    }
-    .msg-error { background: #ffe6e5; color: #b13e3e; }
-    .msg-success { background: #e1f7ea; color: #1f7840; }
+    .status { font-family: var(--mono); font-size: 12.5px; padding: 12px 24px; border-top: 1px solid var(--line); color: var(--ink-soft); }
+    .status.-ok { color: var(--ok); }
+    .status.-bad { color: var(--bad); }
+    .foot { font-size: 11.5px; color: var(--ink-soft); padding: 0 24px 18px; }
+    .hide { display: none !important; }
 
-    footer { font-size: .7rem; text-align: center; padding: 12px 20px 20px; color: #8ba0b5; border-top: 1px solid #ecf3f9; }
+    :focus-visible { outline: 2px solid var(--code); outline-offset: 2px; }
 
     @media (max-width: 560px) {
-      body { padding: 16px; }
-      .mode-tabs { gap: 18px; justify-content: center; }
-      .panel { padding: 20px; }
-      .btn { min-width: 110px; font-size: .9rem; }
+      body { padding: 20px 12px; }
+      .head { flex-direction: column; align-items: flex-start; gap: 14px; }
+      .metric { text-align: left; }
+      .acts { flex-direction: column; }
     }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
   </style>
 </head>
 <body>
-<div class="card">
-  <div class="header">
-    <h1>🗂️ Base64 ↔ 文件互转</h1>
-    <p>文件转 Base64 · Base64 转文件下载 | 内置照片 / 音频 / 视频等常用头部，可自动识别类型</p>
+<main class="plate">
+  <div class="head">
+    <div>
+      <div class="mark">radix<i>64</i></div>
+      <div class="sub">文件与 Base64 互转，按文件签名认出类型</div>
+    </div>
+    <div class="ledger">
+      <div class="metric"><b id="mIn">0</b><span id="mInK">输入</span></div>
+      <div class="metric -code"><b id="mOut">0</b><span id="mOutK">Base64</span></div>
+    </div>
   </div>
 
-  <div class="mode-tabs">
-    <button class="mode-btn active" data-mode="file2b64">📤 文件 → Base64</button>
-    <button class="mode-btn" data-mode="b642file">📥 Base64 → 文件</button>
+  <div class="bar">
+    <div class="seg" role="group" aria-label="转换方向">
+      <button id="segF2B" aria-pressed="true">文件转 Base64</button>
+      <button id="segB2F" aria-pressed="false">Base64 转文件</button>
+    </div>
   </div>
 
-  <!-- 面板1：文件 → Base64 -->
-  <div class="panel active" id="panelFile2b64">
-    <div class="dropzone" id="dropzone">
-      <div class="big">📁</div>
-      <div>点击选择文件，或把文件拖拽到这里</div>
-      <div class="tip">任意类型都行：图片 / 音频 / 视频 / PDF / 压缩包……</div>
+  <!-- 文件 → Base64 -->
+  <div class="panel on" id="panelF2B">
+    <label class="intake" id="intake">
+      <div class="big">拖入文件，或点这里选择</div>
+      <div class="tip">图片、音频、视频、PDF、压缩包都行，全部在本地处理</div>
       <input type="file" id="fileInput">
+    </label>
+
+    <div class="sig" id="sigA">
+      <div class="sig__top">
+        <span class="sig__name" id="sigAName"></span>
+        <span class="sig__mime" id="sigAMime"></span>
+      </div>
+      <div class="sig__hex" id="sigAHex"></div>
     </div>
 
-    <div class="fileinfo" id="fileInfo"></div>
-
-    <div class="wrap">
-      <div class="label-hint">
-        <span>🔢 纯 Base64（不含头部）</span>
-        <button class="btn btn-secondary" style="flex:0 0 auto;min-width:auto;padding:6px 16px;font-size:.8rem" data-copy="outRaw">复制</button>
-      </div>
-      <textarea id="outRaw" rows="5" readonly placeholder="选择文件后，纯 Base64 显示在这里"></textarea>
+    <div class="field">
+      <div class="cap"><em>纯 Base64（不含头部）</em><button class="mini" data-copy="outRaw">复制</button></div>
+      <textarea class="box" id="outRaw" rows="5" readonly spellcheck="false" placeholder="选择文件后显示在这里"></textarea>
     </div>
-
-    <div class="wrap">
-      <div class="label-hint">
-        <span>🔗 完整 Data URI（含 data: 头部，可直接粘到浏览器地址栏 / img src）</span>
-        <button class="btn btn-secondary" style="flex:0 0 auto;min-width:auto;padding:6px 16px;font-size:.8rem" data-copy="outUri">复制</button>
-      </div>
-      <textarea id="outUri" rows="4" readonly placeholder="形如 data:image/png;base64,iVBORw0K..."></textarea>
+    <div class="field">
+      <div class="cap"><em>完整 Data URI（可直接用作图片地址）</em><button class="mini" data-copy="outUri">复制</button></div>
+      <textarea class="box" id="outUri" rows="4" readonly spellcheck="false" placeholder="形如 data:image/png;base64,iVBORw0K…"></textarea>
     </div>
   </div>
 
-  <!-- 面板2：Base64 → 文件 -->
-  <div class="panel" id="panelB642file">
-    <div class="wrap">
-      <div class="label-hint">
-        <span>📝 粘贴 Base64（可带 data: 头部，也可以是纯 Base64）</span>
-        <button class="btn btn-secondary" style="flex:0 0 auto;min-width:auto;padding:6px 16px;font-size:.8rem" id="clearInput">清空</button>
+  <!-- Base64 → 文件 -->
+  <div class="panel" id="panelB2F">
+    <div class="field">
+      <div class="cap"><em>粘贴 Base64（带 data: 头部或纯 Base64 都行）</em><button class="mini" id="clearInput">清空</button></div>
+      <textarea class="box" id="b64Input" rows="6" spellcheck="false"
+        placeholder="在这里粘贴 Base64，例如 data:image/png;base64,iVBORw0K… 或直接 iVBORw0KGgo…"></textarea>
+    </div>
+
+    <div class="sig" id="sigB">
+      <div class="sig__top">
+        <span class="sig__name" id="sigBName">文件签名</span>
+        <span class="sig__mime" id="sigBMime"></span>
       </div>
-      <textarea id="b64Input" rows="7" placeholder="在这里粘贴 Base64 字符串……&#10;例如 data:image/png;base64,iVBORw0K... 或直接 iVBORw0KGgo..."></textarea>
+      <div class="sig__hex" id="sigBHex"></div>
     </div>
 
     <div class="row">
-      <div class="col wrap">
-        <div class="label-hint"><span>🏷️ 文件头部（类型）</span><span id="autoTag" style="color:#1f7840"></span></div>
+      <div class="col field">
+        <div class="cap"><em>文件头部（类型）</em></div>
         <select id="headerSelect"></select>
       </div>
-      <div class="col wrap">
-        <div class="label-hint"><span>📄 保存文件名</span><span style="color:#90a4bb">可修改</span></div>
-        <input type="text" id="fileName" placeholder="例如 图片.png">
+      <div class="col field">
+        <div class="cap"><em>保存文件名</em></div>
+        <input type="text" id="fileName" placeholder="下载文件.png">
       </div>
     </div>
-
-    <div class="wrap" id="customMimeWrap" style="display:none">
-      <div class="label-hint"><span>✍️ 自定义 MIME 类型</span></div>
-      <input type="text" id="customMime" placeholder="例如 image/avif、font/woff2……">
+    <div class="field hide" id="customMimeWrap">
+      <div class="cap"><em>自定义 MIME 类型</em></div>
+      <input type="text" id="customMime" placeholder="例如 image/avif、font/woff2">
     </div>
 
-    <div class="btns">
-      <button class="btn btn-secondary" id="detectBtn">🔍 自动识别类型</button>
-      <button class="btn btn-primary" id="downloadBtn">⬇️ 下载为文件</button>
+    <div class="acts">
+      <button class="btn -ghost" id="detectBtn">识别类型</button>
+      <button class="btn -code" id="downloadBtn">下载为文件</button>
     </div>
 
     <div class="preview" id="preview"></div>
   </div>
 
-  <div class="message-area">
-    <div class="msg-text" id="msgText">✨ 就绪 · 上方切换方向</div>
-  </div>
-  <footer>⚡ 纯前端处理，文件不会上传 | Base64 解码前自动移除空白字符</footer>
-</div>
+  <div class="status" id="status">就绪。选文件生成 Base64，或粘贴 Base64 还原成文件。</div>
+  <div class="foot">纯前端运行，文件不会上传。解码前会自动去掉空格与换行。</div>
+</main>
 <script>
 (function () {
-  // ---------- 内置头部预设（照片 / 音频 / 视频 等）----------
-  const 预设 = [
-    { 组: '照片', 名: 'PNG 图片',  mime: 'image/png',   后缀: 'png'  },
-    { 组: '照片', 名: 'JPEG 图片', mime: 'image/jpeg',  后缀: 'jpg'  },
-    { 组: '照片', 名: 'GIF 图片',  mime: 'image/gif',   后缀: 'gif'  },
-    { 组: '照片', 名: 'WebP 图片', mime: 'image/webp',  后缀: 'webp' },
-    { 组: '照片', 名: 'BMP 图片',  mime: 'image/bmp',   后缀: 'bmp'  },
-    { 组: '照片', 名: 'SVG 图片',  mime: 'image/svg+xml', 后缀: 'svg' },
-    { 组: '照片', 名: 'ICO 图标',  mime: 'image/x-icon', 后缀: 'ico' },
-    { 组: '音频', 名: 'MP3 音频',  mime: 'audio/mpeg',  后缀: 'mp3'  },
-    { 组: '音频', 名: 'WAV 音频',  mime: 'audio/wav',   后缀: 'wav'  },
-    { 组: '音频', 名: 'OGG 音频',  mime: 'audio/ogg',   后缀: 'ogg'  },
-    { 组: '音频', 名: 'FLAC 音频', mime: 'audio/flac',  后缀: 'flac' },
-    { 组: '音频', 名: 'M4A 音频',  mime: 'audio/mp4',   后缀: 'm4a'  },
-    { 组: '视频', 名: 'MP4 视频',  mime: 'video/mp4',   后缀: 'mp4'  },
-    { 组: '视频', 名: 'WebM 视频', mime: 'video/webm',  后缀: 'webm' },
-    { 组: '视频', 名: 'MOV 视频',  mime: 'video/quicktime', 后缀: 'mov' },
-    { 组: '文档', 名: 'PDF 文档',  mime: 'application/pdf', 后缀: 'pdf' },
-    { 组: '文档', 名: '纯文本',    mime: 'text/plain',  后缀: 'txt'  },
-    { 组: '文档', 名: 'JSON',      mime: 'application/json', 后缀: 'json' },
-    { 组: '文档', 名: 'HTML',      mime: 'text/html',   后缀: 'html' },
-    { 组: '压缩', 名: 'ZIP 压缩包', mime: 'application/zip', 后缀: 'zip' },
-    { 组: '压缩', 名: 'GZIP',      mime: 'application/gzip', 后缀: 'gz' },
-    { 组: '其它', 名: '二进制流（通用）', mime: 'application/octet-stream', 后缀: 'bin' },
-    { 组: '其它', 名: '★ 自定义 MIME…', mime: '__custom__', 后缀: 'bin' },
+  const $ = (id) => document.getElementById(id);
+  const status = $('status');
+
+  function say(text, type) {
+    status.textContent = text;
+    status.classList.remove('-ok', '-bad');
+    if (type) status.classList.add('-' + type);
+  }
+  function size(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1048576).toFixed(2) + ' MB';
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+  // ---------- 内置头部预设 ----------
+  const PRESETS = [
+    { g: '照片', n: 'PNG 图片', mime: 'image/png', ext: 'png' },
+    { g: '照片', n: 'JPEG 图片', mime: 'image/jpeg', ext: 'jpg' },
+    { g: '照片', n: 'GIF 图片', mime: 'image/gif', ext: 'gif' },
+    { g: '照片', n: 'WebP 图片', mime: 'image/webp', ext: 'webp' },
+    { g: '照片', n: 'BMP 图片', mime: 'image/bmp', ext: 'bmp' },
+    { g: '照片', n: 'SVG 图片', mime: 'image/svg+xml', ext: 'svg' },
+    { g: '照片', n: 'ICO 图标', mime: 'image/x-icon', ext: 'ico' },
+    { g: '音频', n: 'MP3 音频', mime: 'audio/mpeg', ext: 'mp3' },
+    { g: '音频', n: 'WAV 音频', mime: 'audio/wav', ext: 'wav' },
+    { g: '音频', n: 'OGG 音频', mime: 'audio/ogg', ext: 'ogg' },
+    { g: '音频', n: 'FLAC 音频', mime: 'audio/flac', ext: 'flac' },
+    { g: '音频', n: 'M4A 音频', mime: 'audio/mp4', ext: 'm4a' },
+    { g: '视频', n: 'MP4 视频', mime: 'video/mp4', ext: 'mp4' },
+    { g: '视频', n: 'WebM 视频', mime: 'video/webm', ext: 'webm' },
+    { g: '视频', n: 'MOV 视频', mime: 'video/quicktime', ext: 'mov' },
+    { g: '文档', n: 'PDF 文档', mime: 'application/pdf', ext: 'pdf' },
+    { g: '文档', n: '纯文本', mime: 'text/plain', ext: 'txt' },
+    { g: '文档', n: 'JSON', mime: 'application/json', ext: 'json' },
+    { g: '文档', n: 'HTML', mime: 'text/html', ext: 'html' },
+    { g: '压缩', n: 'ZIP 压缩包', mime: 'application/zip', ext: 'zip' },
+    { g: '压缩', n: 'GZIP', mime: 'application/gzip', ext: 'gz' },
+    { g: '其它', n: '二进制流（通用）', mime: 'application/octet-stream', ext: 'bin' },
+    { g: '其它', n: '自定义 MIME…', mime: '__custom__', ext: 'bin' },
   ];
 
-  // ---------- 魔数（文件头字节）识别表 ----------
-  // 每项：偏移、字节序列（16进制）、命中的 mime；返回预设里对应的项
-  const 魔数表 = [
-    { off: 0, sig: [0x89, 0x50, 0x4e, 0x47], mime: 'image/png' },
-    { off: 0, sig: [0xff, 0xd8, 0xff],       mime: 'image/jpeg' },
-    { off: 0, sig: [0x47, 0x49, 0x46, 0x38], mime: 'image/gif' },
-    { off: 0, sig: [0x42, 0x4d],             mime: 'image/bmp' },
-    { off: 0, sig: [0x00, 0x00, 0x01, 0x00], mime: 'image/x-icon' },
-    { off: 0, sig: [0x25, 0x50, 0x44, 0x46], mime: 'application/pdf' },   // %PDF
-    { off: 0, sig: [0x49, 0x44, 0x33],       mime: 'audio/mpeg' },        // ID3 (mp3)
-    { off: 0, sig: [0xff, 0xfb],             mime: 'audio/mpeg' },
-    { off: 0, sig: [0x4f, 0x67, 0x67, 0x53], mime: 'audio/ogg' },        // OggS
-    { off: 0, sig: [0x66, 0x4c, 0x61, 0x43], mime: 'audio/flac' },       // fLaC
-    { off: 0, sig: [0x1a, 0x45, 0xdf, 0xa3], mime: 'video/webm' },       // EBML (webm/mkv)
-    { off: 0, sig: [0x50, 0x4b, 0x03, 0x04], mime: 'application/zip' },
-    { off: 0, sig: [0x50, 0x4b, 0x05, 0x06], mime: 'application/zip' },
-    { off: 0, sig: [0x1f, 0x8b],             mime: 'application/gzip' },
+  // ---------- 文件签名（魔数）----------
+  const MAGIC = [
+    { sig: [0x89, 0x50, 0x4e, 0x47], mime: 'image/png' },
+    { sig: [0xff, 0xd8, 0xff], mime: 'image/jpeg' },
+    { sig: [0x47, 0x49, 0x46, 0x38], mime: 'image/gif' },
+    { sig: [0x42, 0x4d], mime: 'image/bmp' },
+    { sig: [0x00, 0x00, 0x01, 0x00], mime: 'image/x-icon' },
+    { sig: [0x25, 0x50, 0x44, 0x46], mime: 'application/pdf' },
+    { sig: [0x49, 0x44, 0x33], mime: 'audio/mpeg' },
+    { sig: [0xff, 0xfb], mime: 'audio/mpeg' },
+    { sig: [0x4f, 0x67, 0x67, 0x53], mime: 'audio/ogg' },
+    { sig: [0x66, 0x4c, 0x61, 0x43], mime: 'audio/flac' },
+    { sig: [0x1a, 0x45, 0xdf, 0xa3], mime: 'video/webm' },
+    { sig: [0x50, 0x4b, 0x03, 0x04], mime: 'application/zip' },
+    { sig: [0x50, 0x4b, 0x05, 0x06], mime: 'application/zip' },
+    { sig: [0x1f, 0x8b], mime: 'application/gzip' },
   ];
-  // 需要看更靠后字节才能确定的：RIFF 系列(WebP/WAV) 和 ftyp(MP4/MOV)
-  function 复合识别(bytes) {
-    // RIFF....(WEBP / WAVE)
-    if (匹配(bytes, 0, [0x52, 0x49, 0x46, 0x46])) {
-      if (匹配(bytes, 8, [0x57, 0x45, 0x42, 0x50])) return 'image/webp';
-      if (匹配(bytes, 8, [0x57, 0x41, 0x56, 0x45])) return 'audio/wav';
+  function match(bytes, off, sig) {
+    for (let i = 0; i < sig.length; i++) if (bytes[off + i] !== sig[i]) return false;
+    return true;
+  }
+  function sniff(bytes) {
+    if (match(bytes, 0, [0x52, 0x49, 0x46, 0x46])) {
+      if (match(bytes, 8, [0x57, 0x45, 0x42, 0x50])) return 'image/webp';
+      if (match(bytes, 8, [0x57, 0x41, 0x56, 0x45])) return 'audio/wav';
     }
-    // ....ftyp（偏移4）→ MP4 / MOV / M4A
-    if (匹配(bytes, 4, [0x66, 0x74, 0x79, 0x70])) {
+    if (match(bytes, 4, [0x66, 0x74, 0x79, 0x70])) {
       const brand = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
       if (brand.startsWith('qt')) return 'video/quicktime';
       if (brand.startsWith('M4A')) return 'audio/mp4';
       return 'video/mp4';
     }
+    for (const r of MAGIC) if (match(bytes, 0, r.sig)) return r.mime;
     return null;
   }
-  function 匹配(bytes, off, sig) {
-    for (let i = 0; i < sig.length; i++) {
-      if (bytes[off + i] !== sig[i]) return false;
-    }
-    return true;
+  function hexHead(bytes, n) {
+    const out = [];
+    for (let i = 0; i < Math.min(n, bytes.length); i++) out.push(bytes[i].toString(16).toUpperCase().padStart(2, '0'));
+    return out.join(' ');
   }
 
-  // ---------- DOM ----------
-  const $ = (id) => document.getElementById(id);
-  const msg = $('msgText');
-  const dropzone = $('dropzone'), fileInput = $('fileInput'), fileInfo = $('fileInfo');
-  const outRaw = $('outRaw'), outUri = $('outUri');
-  const b64Input = $('b64Input'), headerSelect = $('headerSelect'), fileName = $('fileName');
-  const customMimeWrap = $('customMimeWrap'), customMime = $('customMime');
-  const preview = $('preview'), autoTag = $('autoTag');
-
-  function 提示(text, 类型) {
-    msg.textContent = text;
-    msg.classList.remove('msg-error', 'msg-success');
-    if (类型 === 'error') msg.classList.add('msg-error');
-    else if (类型 === 'success') msg.classList.add('msg-success');
+  // ---------- 方向切换 ----------
+  function setDir(dir) {
+    const f2b = dir === 'f2b';
+    $('segF2B').setAttribute('aria-pressed', String(f2b));
+    $('segB2F').setAttribute('aria-pressed', String(!f2b));
+    $('panelF2B').classList.toggle('on', f2b);
+    $('panelB2F').classList.toggle('on', !f2b);
+    $('mInK').textContent = f2b ? '输入' : 'Base64';
+    $('mOutK').textContent = f2b ? 'Base64' : '还原字节';
+    say(f2b ? '选一个文件，得到它的 Base64' : '粘贴 Base64，还原成文件');
   }
-
-  function 人性化大小(n) {
-    if (n < 1024) return n + ' B';
-    if (n < 1048576) return (n / 1024).toFixed(2) + ' KB';
-    return (n / 1048576).toFixed(2) + ' MB';
-  }
-
-  // ---------- 模式切换 ----------
-  document.querySelectorAll('.mode-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const mode = btn.dataset.mode;
-      document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('active', b === btn));
-      $('panelFile2b64').classList.toggle('active', mode === 'file2b64');
-      $('panelB642file').classList.toggle('active', mode === 'b642file');
-      提示(mode === 'file2b64' ? '📤 文件 → Base64' : '📥 Base64 → 文件');
-    });
-  });
+  $('segF2B').addEventListener('click', () => setDir('f2b'));
+  $('segB2F').addEventListener('click', () => setDir('b2f'));
 
   // ========== 文件 → Base64 ==========
-  function 读取文件(file) {
+  const intake = $('intake'), fileInput = $('fileInput');
+  function readFile(file) {
     if (!file) return;
-    提示('⏳ 正在读取「' + file.name + '」……');
+    say('正在读取 “' + file.name + '” …');
     const reader = new FileReader();
     reader.onload = () => {
-      const dataUri = reader.result;               // 形如 data:xxx;base64,....
-      const comma = dataUri.indexOf(',');
-      const raw = comma >= 0 ? dataUri.slice(comma + 1) : dataUri;
-      outUri.value = dataUri;
-      outRaw.value = raw;
-      const mime = file.type || (dataUri.slice(5, comma).replace(';base64', '')) || '未知';
-      fileInfo.classList.add('show');
-      fileInfo.innerHTML =
-        '<b>文件名：</b>' + escapeHtml(file.name) + '<br>' +
-        '<b>类型：</b>' + escapeHtml(mime) + '<br>' +
-        '<b>大小：</b>' + 人性化大小(file.size) +
-        '　→　Base64 约 ' + 人性化大小(raw.length);
-      提示('✅ 转换完成，可复制下方 Base64', 'success');
+      const uri = reader.result;
+      const comma = uri.indexOf(',');
+      const raw = comma >= 0 ? uri.slice(comma + 1) : uri;
+      $('outUri').value = uri;
+      $('outRaw').value = raw;
+      $('mIn').textContent = size(file.size);
+      $('mOut').textContent = size(raw.length);
+      // 签名读数
+      const head = atob(raw.slice(0, 32));
+      const bytes = new Uint8Array(head.length);
+      for (let i = 0; i < head.length; i++) bytes[i] = head.charCodeAt(i);
+      const guessed = sniff(bytes);
+      const mime = file.type || guessed || '未知类型';
+      $('sigAName').textContent = file.name + '，' + size(file.size);
+      $('sigAMime').textContent = mime;
+      $('sigAMime').classList.toggle('-guess', !file.type && !!guessed);
+      $('sigAHex').innerHTML = '<b>' + hexHead(bytes, 12) + '</b>';
+      $('sigA').classList.add('show');
+      say('转换完成，可复制下面的 Base64', 'ok');
     };
-    reader.onerror = () => 提示('❌ 文件读取失败', 'error');
+    reader.onerror = () => say('文件读取失败，换个文件再试', 'bad');
     reader.readAsDataURL(file);
   }
+  intake.addEventListener('click', (e) => { if (e.target !== fileInput) fileInput.click(); });
+  fileInput.addEventListener('change', () => readFile(fileInput.files[0]));
+  ['dragenter', 'dragover'].forEach((ev) => intake.addEventListener(ev, (e) => { e.preventDefault(); intake.classList.add('-drag'); }));
+  ['dragleave', 'drop'].forEach((ev) => intake.addEventListener(ev, (e) => { e.preventDefault(); intake.classList.remove('-drag'); }));
+  intake.addEventListener('drop', (e) => { const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) readFile(f); });
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  }
-
-  dropzone.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', () => 读取文件(fileInput.files[0]));
-  ['dragenter', 'dragover'].forEach((ev) =>
-    dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.add('dragover'); }));
-  ['dragleave', 'drop'].forEach((ev) =>
-    dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.remove('dragover'); }));
-  dropzone.addEventListener('drop', (e) => {
-    const f = e.dataTransfer.files && e.dataTransfer.files[0];
-    if (f) 读取文件(f);
-  });
-
-  // 复制按钮（两个面板通用）
+  // 复制按钮
   document.querySelectorAll('[data-copy]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const el = $(btn.dataset.copy);
-      if (!el.value) { 提示('没有可复制的内容', 'error'); return; }
-      const done = () => 提示('📋 已复制到剪贴板', 'success');
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(el.value).then(done).catch(() => { el.select(); done(); });
-      } else { el.select(); document.execCommand('copy'); done(); }
+      if (!el.value) { say('还没有可复制的内容', 'bad'); return; }
+      const done = () => say('已复制到剪贴板', 'ok');
+      if (navigator.clipboard) navigator.clipboard.writeText(el.value).then(done).catch(() => { el.select(); done(); });
+      else { el.select(); document.execCommand('copy'); done(); }
     });
   });
 
   // ========== Base64 → 文件 ==========
-  // 填充头部下拉框（分组）
-  (function 建下拉() {
-    const 组集 = {};
-    预设.forEach((p, i) => {
-      (组集[p.组] = 组集[p.组] || []).push({ p, i });
-    });
-    Object.keys(组集).forEach((组名) => {
-      const og = document.createElement('optgroup');
-      og.label = 组名;
-      组集[组名].forEach(({ p, i }) => {
-        const op = document.createElement('option');
-        op.value = String(i);
-        op.textContent = p.名 + '（' + p.mime + '）';
-        og.appendChild(op);
+  const headerSelect = $('headerSelect'), fileName = $('fileName');
+  const customMimeWrap = $('customMimeWrap'), customMime = $('customMime');
+  const b64Input = $('b64Input'), preview = $('preview');
+
+  (function buildSelect() {
+    const groups = {};
+    PRESETS.forEach((p, i) => { (groups[p.g] = groups[p.g] || []).push({ p, i }); });
+    Object.keys(groups).forEach((g) => {
+      const og = document.createElement('optgroup'); og.label = g;
+      groups[g].forEach(({ p, i }) => {
+        const op = document.createElement('option'); op.value = String(i);
+        op.textContent = p.n + '（' + p.mime + '）'; og.appendChild(op);
       });
       headerSelect.appendChild(og);
     });
-    headerSelect.value = '0'; // 默认 PNG 照片
+    headerSelect.value = '0';
   })();
 
+  function curMime() {
+    const p = PRESETS[+headerSelect.value];
+    return p.mime === '__custom__' ? (customMime.value.trim() || 'application/octet-stream') : p.mime;
+  }
+  function curExt() { return PRESETS[+headerSelect.value].ext; }
+  function syncName() { if (!fileName.dataset.touched) fileName.value = '下载文件.' + curExt(); }
+
   headerSelect.addEventListener('change', () => {
-    const p = 预设[+headerSelect.value];
-    customMimeWrap.style.display = p.mime === '__custom__' ? 'block' : 'none';
-    autoTag.textContent = '';
-    同步默认文件名();
+    customMimeWrap.classList.toggle('hide', PRESETS[+headerSelect.value].mime !== '__custom__');
+    syncName();
   });
-
-  function 当前MIME() {
-    const p = 预设[+headerSelect.value];
-    if (p.mime === '__custom__') return (customMime.value.trim() || 'application/octet-stream');
-    return p.mime;
-  }
-
-  function 当前后缀() {
-    const p = 预设[+headerSelect.value];
-    return p.后缀;
-  }
-
-  function 同步默认文件名() {
-    // 若用户没有手动改过（或为空），给一个默认名
-    if (!fileName.dataset.touched) {
-      fileName.value = '下载文件.' + 当前后缀();
-    }
-  }
   fileName.addEventListener('input', () => { fileName.dataset.touched = '1'; });
-  同步默认文件名();
+  syncName();
 
-  $('clearInput').addEventListener('click', () => {
-    b64Input.value = ''; autoTag.textContent = ''; 关闭预览(); 提示('已清空输入');
-  });
-
-  // 解析输入：拆出 data 头部里的 mime 与纯 base64，并清洗空白
-  function 解析输入() {
+  function parse() {
     let v = b64Input.value.trim();
-    if (!v) throw new Error('请先粘贴 Base64 字符串');
-    let 头部MIME = null;
+    if (!v) throw new Error('先粘贴一段 Base64');
+    let headMime = null;
     const m = v.match(/^data:([^;,]*)(;base64)?,/i);
-    if (m) {
-      头部MIME = m[1] || null;
-      v = v.slice(m[0].length);
-    }
-    v = v.replace(/\s/g, '');
-    // 兼容 URL-safe base64
-    v = v.replace(/-/g, '+').replace(/_/g, '/');
-    if (!v) throw new Error('去掉头部/空白后没有内容');
-    return { 头部MIME, b64: v };
+    if (m) { headMime = m[1] || null; v = v.slice(m[0].length); }
+    // 去掉首尾不属于 Base64 的字符（引号、说明文字、标点等），中间保持不动
+    const body = v;
+    v = v.replace(/^[^A-Za-z0-9+/=_-]+/, '').replace(/[^A-Za-z0-9+/=_-]+$/, '');
+    const removed = body.length - v.length;
+    v = v.replace(/\s/g, '').replace(/-/g, '+').replace(/_/g, '/');
+    if (!v) throw new Error('去掉多余字符后没有内容');
+    return { headMime, b64: v, removed };
   }
-
-  // base64 → Uint8Array
-  function 转字节(b64) {
+  function toBytes(b64) {
     let bin;
-    try { bin = atob(b64); }
-    catch (e) { throw new Error('不是合法的 Base64（解码失败），请检查是否有缺字符'); }
+    try { bin = atob(b64); } catch (e) { throw new Error('这不是有效的 Base64，检查是否缺了字符'); }
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     return bytes;
   }
-
-  // 根据字节魔数猜类型，返回 mime 或 null
-  function 猜类型(bytes) {
-    const 复合 = 复合识别(bytes);
-    if (复合) return 复合;
-    for (const r of 魔数表) {
-      if (匹配(bytes, r.off, r.sig)) return r.mime;
-    }
-    return null;
+  function selectMime(mime) {
+    const idx = PRESETS.findIndex((p) => p.mime === mime);
+    if (idx < 0) return false;
+    headerSelect.value = String(idx);
+    customMimeWrap.classList.add('hide');
+    fileName.dataset.touched = ''; syncName();
+    return true;
+  }
+  function showSig(bytes, mime, guessed) {
+    $('sigBMime').textContent = mime;
+    $('sigBMime').classList.toggle('-guess', !guessed);
+    $('sigBHex').innerHTML = '<b>' + hexHead(bytes, 12) + '</b>';
+    $('sigB').classList.add('show');
+  }
+  function closePreview() { preview.classList.remove('show'); preview.innerHTML = ''; }
+  function showPreview(bytes, mime) {
+    closePreview();
+    if (!/^(image|audio|video)\//.test(mime)) return;
+    const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    let el;
+    if (mime.startsWith('image/')) { el = new Image(); el.src = url; }
+    else if (mime.startsWith('audio/')) { el = document.createElement('audio'); el.controls = true; el.src = url; }
+    else { el = document.createElement('video'); el.controls = true; el.src = url; }
+    el.onerror = () => say('预览失败，但仍然可以下载', 'bad');
+    preview.appendChild(el); preview.classList.add('show');
   }
 
-  // 把 mime 定位到下拉框某一项
-  function 选中MIME(mime) {
-    const idx = 预设.findIndex((p) => p.mime === mime);
-    if (idx >= 0) {
-      headerSelect.value = String(idx);
-      customMimeWrap.style.display = 'none';
-      fileName.dataset.touched = ''; 同步默认文件名();
-      return true;
-    }
-    return false;
-  }
+  $('clearInput').addEventListener('click', () => {
+    b64Input.value = ''; closePreview(); $('sigB').classList.remove('show');
+    $('mIn').textContent = '0'; $('mOut').textContent = '0'; say('已清空');
+  });
 
   $('detectBtn').addEventListener('click', () => {
     try {
-      const { 头部MIME, b64 } = 解析输入();
-      const bytes = 转字节(b64);
-      const 猜 = 猜类型(bytes);
-      const 命中 = 猜 || 头部MIME;
-      if (命中 && 选中MIME(命中)) {
-        autoTag.textContent = '已识别：' + 命中 + (猜 ? '（按内容）' : '（按 data 头部）');
-        提示('🔍 识别为 ' + 命中, 'success');
-        预览(bytes, 命中);
-      } else if (命中) {
-        // 识别到但预设里没有，走自定义
-        headerSelect.value = String(预设.findIndex((p) => p.mime === '__custom__'));
-        customMimeWrap.style.display = 'block';
-        customMime.value = 命中;
-        autoTag.textContent = '已识别：' + 命中;
-        提示('🔍 识别为 ' + 命中 + '（已填入自定义）', 'success');
-        预览(bytes, 命中);
-      } else {
-        autoTag.textContent = '未能识别，按当前选择处理';
-        提示('未能从内容识别类型，请手动选择头部', 'error');
+      const { headMime, b64, removed } = parse();
+      const bytes = toBytes(b64);
+      $('mIn').textContent = size(b64.length);
+      $('mOut').textContent = size(bytes.length);
+      const note = removed > 0 ? '，已去掉首尾 ' + removed + ' 个多余字符' : '';
+      const guessed = sniff(bytes);
+      const mime = guessed || headMime;
+      if (!mime) { showSig(bytes, '未能识别', false); say('内容里没找到已知签名，请手动选头部' + note, 'bad'); return; }
+      if (!selectMime(mime)) {
+        headerSelect.value = String(PRESETS.findIndex((p) => p.mime === '__custom__'));
+        customMimeWrap.classList.remove('hide'); customMime.value = mime;
       }
-    } catch (e) { 提示('❌ ' + e.message, 'error'); }
+      showSig(bytes, mime, !!guessed);
+      showPreview(bytes, mime);
+      say('识别为 ' + mime + (guessed ? '（按文件签名）' : '（按 data 头部）') + note, 'ok');
+    } catch (e) { say(e.message, 'bad'); }
   });
-
-  function 关闭预览() { preview.classList.remove('show'); preview.innerHTML = ''; }
-
-  function 预览(bytes, mime) {
-    关闭预览();
-    if (!/^(image|audio|video)\//.test(mime)) return;
-    const blob = new Blob([bytes], { type: mime });
-    const url = URL.createObjectURL(blob);
-    let el;
-    if (mime.startsWith('image/')) { el = document.createElement('img'); el.src = url; }
-    else if (mime.startsWith('audio/')) { el = document.createElement('audio'); el.controls = true; el.src = url; }
-    else { el = document.createElement('video'); el.controls = true; el.src = url; }
-    el.onerror = () => 提示('⚠️ 预览失败，但仍可尝试下载', 'error');
-    preview.appendChild(el);
-    preview.classList.add('show');
-  }
 
   $('downloadBtn').addEventListener('click', () => {
     try {
-      const { b64 } = 解析输入();
-      const bytes = 转字节(b64);
-      const mime = 当前MIME();
-      let 名 = fileName.value.trim() || ('下载文件.' + 当前后缀());
-      if (!/\.[^.\\/]+$/.test(名)) 名 += '.' + 当前后缀();  // 没后缀就补一个
-      const blob = new Blob([bytes], { type: mime });
-      const url = URL.createObjectURL(blob);
+      const { b64, removed } = parse();
+      const bytes = toBytes(b64);
+      const mime = curMime();
+      let name = fileName.value.trim() || ('下载文件.' + curExt());
+      if (!/\.[^.\\/]+$/.test(name)) name += '.' + curExt();
+      $('mIn').textContent = size(b64.length);
+      $('mOut').textContent = size(bytes.length);
+      const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
       const a = document.createElement('a');
-      a.href = url; a.download = 名;
+      a.href = url; a.download = name;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 4000);
-      提示('⬇️ 已生成「' + 名 + '」（' + 人性化大小(bytes.length) + '），若无弹窗请查看下载目录', 'success');
-      预览(bytes, mime);
-    } catch (e) { 提示('❌ ' + e.message, 'error'); }
+      showPreview(bytes, mime);
+      const note = removed > 0 ? '，已去掉首尾 ' + removed + ' 个多余字符' : '';
+      say('已生成 “' + name + '”（' + size(bytes.length) + '）' + note + '，没弹窗就看下载目录', 'ok');
+    } catch (e) { say(e.message, 'bad'); }
   });
 
-  // 粘贴后若带 data 头部，自动尝试对齐一次
   b64Input.addEventListener('paste', () => {
     setTimeout(() => {
       const m = b64Input.value.trim().match(/^data:([^;,]+)/i);
-      if (m && 选中MIME(m[1])) autoTag.textContent = '按粘贴内容的头部：' + m[1];
+      if (m) selectMime(m[1]);
     }, 0);
   });
-
 })();
 </script>
 </body>
