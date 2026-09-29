@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>月相演示 — 太阳·地球·月球</title>
+<link rel="icon" href="/favicon.ico">
+<style>
+  :root {
+    --bg: #05070f;
+    --panel: rgba(16, 20, 34, .82);
+    --line: rgba(120, 150, 210, .22);
+    --text: #dde5f5;
+    --dim: #8b97b5;
+    --accent: #ffd479;
+    --earth: #5ba9e8;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: "PingFang SC", "Microsoft YaHei", -apple-system, sans-serif;
+  }
+
+  /* ---------- 分屏主体：左 3D / 右 2D ---------- */
+  #stage { display: flex; height: 100%; width: 100%; }
+  .view { position: relative; min-width: 0; }
+  #view3d { flex: 1 1 62%; }
+  #view2d {
+    flex: 0 0 38%; max-width: 560px;
+    border-left: 1px solid var(--line);
+    background: radial-gradient(circle at 50% 38%, #101528 0%, #05070f 72%);
+    display: flex; flex-direction: column;
+  }
+  /* touch-action 必须关掉，否则触摸拖动会被浏览器当成页面滚动手势吃掉 */
+  #canvas3d { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; }
+
+  .view-tag {
+    position: absolute; top: 14px; left: 16px; z-index: 5;
+    font-size: 12px; letter-spacing: .14em; color: var(--dim);
+    pointer-events: none; text-transform: uppercase;
+  }
+  .view-tag b { display: block; font-size: 15px; letter-spacing: .04em; color: var(--text); margin-bottom: 2px; }
+
+  /* ---------- 3D 场景里的天体标签（HTML 覆盖层） ---------- */
+  #labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 4; }
+  .label {
+    position: absolute; transform: translate(-50%, -130%);
+    font-size: 12px; white-space: nowrap; padding: 2px 7px;
+    border-radius: 10px; background: rgba(6, 10, 22, .58);
+    border: 1px solid var(--line); text-shadow: 0 1px 3px #000;
+    transition: opacity .18s;
+  }
+  .label i { font-style: normal; color: var(--dim); margin-left: 5px; font-size: 11px; }
+  .label[data-body="sun"]   { color: var(--accent); }
+  .label[data-body="earth"] { color: var(--earth); }
+  .label[data-body="moon"]  { color: #e8e2d4; }
+  .label[data-body="observer"] { color: #63e6c8; }
+
+  /* ---------- 右侧 2D 月相 ---------- */
+  #phaseWrap { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; padding: 46px 20px 8px; }
+  #canvas2d { max-width: 100%; max-height: 100%; }
+  #phaseInfo { flex: 0 0 auto; padding: 0 22px 22px; text-align: center; }
+  #phaseName { font-size: 21px; letter-spacing: .06em; margin-bottom: 10px; }
+  #eclipseTag {
+    display: inline-block; margin: -4px 0 10px; padding: 3px 11px; border-radius: 11px;
+    font-size: 12px; letter-spacing: .04em;
+    background: rgba(226, 110, 84, .16); border: 1px solid rgba(226, 110, 84, .5);
+    color: #ff9c7a;
+  }
+  #eclipseTag[hidden] { display: none; }
+  #obsWarn {
+    display: inline-block; margin: -4px 0 10px; padding: 3px 11px; border-radius: 11px;
+    font-size: 12px; background: rgba(120, 132, 160, .14);
+    border: 1px solid rgba(120, 132, 160, .4); color: #97a3bd;
+  }
+  #obsWarn[hidden] { display: none; }
+  #phaseMeta { display: flex; justify-content: center; gap: 22px; flex-wrap: wrap; font-size: 12px; color: var(--dim); }
+  #phaseMeta span b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+  #phaseNote {
+    margin: 13px auto 0; max-width: 380px; font-size: 11px; line-height: 1.75;
+    color: #6b768f; text-align: left;
+  }
+  #phaseNote b { color: #63e6c8; font-weight: 500; }
+
+  /* ---------- 控制面板 ---------- */
+  #panel {
+    position: absolute; left: 16px; right: 16px; bottom: 16px; z-index: 6;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 11px 16px; backdrop-filter: blur(9px);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .prow { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  #more { border-top: 1px solid var(--line); padding-top: 10px; }
+  #more[hidden] { display: none; }
+
+  select {
+    font: inherit; font-size: 12px; color: var(--text); cursor: pointer;
+    background: rgba(60, 76, 116, .42); border: 1px solid var(--line);
+    border-radius: 7px; padding: 5px 7px;
+  }
+  select option { background: #141a2c; }
+  .hintline { font-size: 12px; color: var(--dim); }
+  .ctrl { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--dim); }
+  .ctrl > label { flex: 0 0 auto; }
+  .ctrl output { color: var(--text); font-variant-numeric: tabular-nums; min-width: 52px; font-size: 12px; }
+  #cAge { flex: 1 1 260px; min-width: 200px; }
+  #cAge input { flex: 1 1 auto; }
+
+  input[type=range] {
+    -webkit-appearance: none; appearance: none; height: 4px; border-radius: 3px;
+    background: #2c3550; outline: none; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); border: 2px solid #1a2036; cursor: pointer;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--accent); border: 2px solid #1a2036; cursor: pointer;
+  }
+
+  button {
+    font: inherit; font-size: 12px; color: var(--text); cursor: pointer;
+    background: rgba(60, 76, 116, .42); border: 1px solid var(--line);
+    border-radius: 7px; padding: 6px 12px; transition: background .15s, border-color .15s;
+  }
+  button:hover { background: rgba(88, 110, 165, .5); border-color: rgba(150, 180, 240, .4); }
+  button.on { background: rgba(255, 212, 121, .16); border-color: rgba(255, 212, 121, .45); color: var(--accent); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+  button:disabled:hover { background: rgba(60, 76, 116, .42); border-color: var(--line); }
+
+  .toggles { display: flex; gap: 7px; margin-left: auto; flex-wrap: wrap; }
+
+  /* 提示：相机被转离俯视角时高亮重置按钮 */
+  #btnTop.hint { box-shadow: 0 0 0 1px rgba(255, 212, 121, .5), 0 0 14px rgba(255, 212, 121, .22); }
+
+  #home {
+    position: absolute; top: 12px; right: 16px; z-index: 6;
+    font-size: 12px; color: var(--dim); text-decoration: none;
+    padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line);
+    background: rgba(6, 10, 22, .5);
+  }
+  #home:hover { color: var(--text); }
+
+  #hintDrag {
+    position: absolute; left: 50%; top: 18px; transform: translateX(-50%);
+    z-index: 5; font-size: 12px; color: var(--dim); pointer-events: none;
+    transition: opacity .6s; opacity: 1;
+  }
+  #fpHint {
+    position: absolute; left: 50%; top: 16px; transform: translateX(-50%);
+    z-index: 6; font-size: 12px; color: #ff9c7a; pointer-events: none;
+    padding: 4px 12px; border-radius: 11px;
+    background: rgba(226, 110, 84, .16); border: 1px solid rgba(226, 110, 84, .5);
+  }
+  #fpHint[hidden] { display: none; }
+
+  /* ---------- 窄屏：改为上下分屏 ---------- */
+  @media (max-width: 860px) {
+    #stage { flex-direction: column; }
+    #view3d { flex: 1 1 52%; }
+    #view2d { flex: 1 1 48%; max-width: none; border-left: 0; border-top: 1px solid var(--line); }
+    #panel { flex-direction: column; align-items: stretch; gap: 10px; padding: 11px 13px; }
+    .toggles { margin-left: 0; justify-content: space-between; }
+    #phaseWrap { padding: 34px 16px 4px; }
+    #phaseName { font-size: 17px; }
+    #phaseNote { display: none; }   /* 窄屏留给月相图，说明文字让位 */
+  }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <!-- 左：3D 俯视 -->
+  <div class="view" id="view3d">
+    <canvas id="canvas3d"></canvas>
+    <div id="labels"></div>
+    <div class="view-tag"><b>3D 俯视</b>日地月系统</div>
+    <a id="home" href="/index.html">← 返回首页</a>
+    <div id="fpHint" hidden>观测者视角 · 月亮在地平线下，看不到</div>
+    <div id="hintDrag">左键拖动旋转（可一直翻）· 中键/右键拖动平移 · 滚轮缩放 · F 切观测者视角</div>
+
+    <div id="panel">
+      <div class="prow">
+        <div class="ctrl" id="cAge">
+          <label for="age">月龄</label>
+          <input type="range" id="age" min="0" max="29.53" step="0.01" value="0">
+          <output id="ageOut">0.00 天</output>
+        </div>
+        <div class="ctrl">
+          <label for="speed">速度</label>
+          <input type="range" id="speed" min="0.1" max="8" step="0.1" value="1.6" style="width:84px">
+          <output id="speedOut">1.6×</output>
+        </div>
+        <button id="btnPlay" class="on">暂停</button>
+        <div class="toggles">
+          <button id="btnTop" title="回到默认俯视角度（快捷键 R）">俯视</button>
+          <button id="btnFP" title="把相机放到观测者头顶朝月球看（快捷键 F）">观测者视角</button>
+          <button id="btnFocus" title="拉近看月球">聚焦月球</button>
+          <button id="btnMore">更多 ▾</button>
+        </div>
+      </div>
+
+      <div class="prow" id="more" hidden>
+        <div class="ctrl">
+          <span class="hintline">点击地球任意位置放置观测者</span>
+          <button id="btnObsReset" title="把观测者放回背光面正中">回到背光面</button>
+        </div>
+        <div class="ctrl">
+          <label for="nodeAngle" title="轨道交点线与日地连线的夹角。0° 就是食季">交点角</label>
+          <input type="range" id="nodeAngle" min="0" max="90" step="1" value="72" style="width:88px">
+          <output id="nodeAngleOut">72°</output>
+        </div>
+        <div class="toggles">
+          <button id="btnOrbit" class="on">轨道线</button>
+          <button id="btnShadow" class="on">影锥</button>
+          <button id="btnRay" class="on">光线</button>
+          <button id="btnObs" class="on">观测者</button>
+          <button id="btnLabel" class="on">标签</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右：2D 月相 -->
+  <div class="view" id="view2d">
+    <div class="view-tag"><b>2D 月相</b>地面所见</div>
+    <div id="phaseWrap"><canvas id="canvas2d" width="420" height="420"></canvas></div>
+    <div id="phaseInfo">
+      <div id="phaseName">新月</div>
+      <div id="eclipseTag" hidden></div>
+      <div id="obsWarn" hidden></div>
+      <div id="phaseMeta">
+        <span>照亮 <b id="mIllum">0%</b></span>
+        <span>相位角 <b id="mAngle">0°</b></span>
+        <span>月龄 <b id="mAge">0.00 天</b></span>
+      </div>
+      <p id="phaseNote">
+        这里画的就是左图中那个<b>观测者</b>沿视线看过去的样子。他固定站在你点选的位置，
+        默认在<b>背光面</b>（夜半球）正中——在「更多」里点地球任意处就能把他挪过去。
+        当他所在处是白天、或月亮转到地平线以下时会提示"看不见"：新月前后必然如此，
+        因为那时月亮和太阳同方向，夜里的人必然背对它。
+        <br>
+        三者连成一线也<b>通常不会月食</b>：月球轨道相对黄道倾斜 5.14°，满月时多半从地影
+        上方或下方掠过。只有交点线接近日地连线时（把「交点角」拖到 0° 附近试试）才会成食，
+        现实中一年约两三次。
+      </p>
+    </div>
+  </div>
+</div>
+
+<script src="lib/three.min.js"></script>
+<script>
+  // 本地 three.js 缺失时回退到 CDN，保证页面仍能打开。
+  // document.write 在解析阶段是同步的，后续脚本能确保拿到 THREE。
+  if (!window.THREE) {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>');
+  }
+</script>
+<script src="js/orbit.js"></script>
+<script src="js/textures.js"></script>
+<script src="js/scene3d.js"></script>
+<script src="js/phase2d.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
