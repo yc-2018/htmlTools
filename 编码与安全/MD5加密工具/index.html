@@ -1,129 +1,357 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<!--主要由 deepSeek于20250224生成-->
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MD5加密工具</title>
-    <script src="./md5.min.js"></script>
-    <style>
-        body {
-            max-width: 800px;
-            margin: 20px auto;
-            padding: 20px;
-            font-family: Arial, sans-serif;
-        }
-        
-        .input-group {
-            margin-bottom: 20px;
-        }
-        
-        input[type="text"] {
-            width: 100%;
-            padding: 8px;
-            margin: 5px 0;
-            box-sizing: border-box;
-        }
-        
-        button {
-            padding: 8px 15px;
-            margin: 5px;
-            cursor: pointer;
-        }
-        
-        .result-group {
-            margin: 15px 0;
-        }
-        
-        .copy-btn {
-            background-color: #4CAF50;
-            color: white;
-        }
-        
-        .clear-btn {
-            background-color: #f44336;
-            color: white;
-        }
-        
-        .encrypt-btn {
-            background-color: #008CBA;
-            color: white;
-        }
-		.result-group{
-			display: grid;
-            grid-template-columns: 6rem 1fr 6rem;
-           gap: 10px;
-           align-items: center;
-		}
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="description" content="MD5 摘要工具 — 实时算 32/16 位摘要，支持 HMAC-MD5 加密钥，可与手上的哈希逐位对照">
+<title>md5 · 摘要与对照</title>
+<link rel="icon" href="/favicon.ico">
+<script src="./md5.min.js"></script>
+<style>
+  :root {
+    --bg: #0D1B21;
+    --panel: #132630;
+    --panel-2: #17303C;
+    --line: #22414E;
+    --line-2: #2E5866;
+    --text: #DCE9EC;
+    --soft: #86A3AC;
+    --dim: #7C959E;
+    --brass: #E0A63C;
+    --brass-dim: #8A6520;
+    --match: #4FBF8B;
+    --diff: #F06A5B;
+    --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;
+    --sans: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    margin: 0;
+    padding: 40px 20px;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .unit {
+    width: 100%;
+    max-width: 720px;
+    background: var(--panel);
+    border: 1px solid var(--line-2);
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 24px 60px -34px #000;
+  }
+
+  /* 顶栏 */
+  .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 18px 22px 15px; border-bottom: 1px solid var(--line); }
+  .mark { font-family: var(--mono); font-size: 21px; font-weight: 600; letter-spacing: 1.5px; color: var(--brass); }
+  .tagline { font-size: 13px; color: var(--soft); margin-top: 3px; }
+  .gauge { display: flex; gap: 18px; flex-shrink: 0; }
+  .gauge div { text-align: right; }
+  .gauge b { display: block; font-family: var(--mono); font-size: 17px; font-weight: 500; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .gauge span { font-size: 11px; color: var(--dim); }
+
+  /* 输入 */
+  .zone { padding: 17px 22px; border-bottom: 1px solid var(--line); }
+  .lab { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 7px; font-size: 13px; color: var(--soft); }
+  .lab button { border: 0; background: none; font: inherit; color: var(--brass); cursor: pointer; padding: 2px 3px; }
+  .lab button:hover { text-decoration: underline; }
+
+  textarea, input[type=text] {
+    width: 100%;
+    font-family: var(--mono);
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--text);
+    background: #0E2028;
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
+    padding: 11px 13px;
+    outline: none;
+    resize: vertical;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  textarea::placeholder, input::placeholder { color: #4D6B75; }
+  textarea:focus, input[type=text]:focus { border-color: var(--brass); box-shadow: 0 0 0 3px rgba(224,166,60,.14); }
+
+  /* 密钥开关 */
+  .hmac { margin-top: 13px; }
+  .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--soft); cursor: pointer; user-select: none; }
+  .switch input { appearance: none; width: 34px; height: 19px; margin: 0; border-radius: 10px; background: #1E3A45; border: 1px solid var(--line-2); position: relative; cursor: pointer; transition: background .18s, border-color .18s; flex-shrink: 0; }
+  .switch input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--dim); transition: transform .18s, background .18s; }
+  .switch input:checked { background: var(--brass-dim); border-color: var(--brass); }
+  .switch input:checked::after { transform: translateX(15px); background: var(--brass); }
+  .keybox { margin-top: 10px; }
+  .keybox[hidden] { display: none; }
+
+  /* 摘要：本页主角 */
+  .digest { padding: 22px 22px 18px; background: var(--panel-2); border-bottom: 1px solid var(--line); }
+  .hex {
+    font-family: var(--mono);
+    font-size: clamp(17px, 4.1vw, 25px);
+    font-weight: 500;
+    letter-spacing: .5px;
+    line-height: 1.5;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 .62em;
+    word-break: break-all;
+    min-height: 1.5em;
+    color: var(--text);
+  }
+  .hex .grp { white-space: nowrap; }
+  .hex .x { color: var(--diff); font-weight: 700; }
+  .hex.-idle { color: var(--dim); font-size: 15px; font-family: var(--sans); letter-spacing: 0; align-items: center; }
+
+  .knobs { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-top: 16px; }
+  .seg { display: inline-flex; padding: 2px; gap: 2px; background: #0E2028; border: 1px solid var(--line-2); border-radius: 4px; }
+  .seg button { border: 0; background: none; font: inherit; font-size: 12.5px; color: var(--soft); padding: 5px 11px; border-radius: 3px; cursor: pointer; transition: background .15s, color .15s; }
+  .seg button[aria-pressed=true] { background: var(--line); color: var(--text); }
+  .act { margin-left: auto; font: inherit; font-size: 13px; font-weight: 600; color: #21160A; background: var(--brass); border: 0; border-radius: 4px; padding: 8px 17px; cursor: pointer; transition: filter .15s; }
+  .act:hover { filter: brightness(1.1); }
+  .act.-done { background: var(--match); }
+
+  /* 对照 */
+  .verdict { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-family: var(--mono); font-size: 13px; min-height: 1.5em; color: var(--dim); }
+  .verdict.-yes { color: var(--match); }
+  .verdict.-no { color: var(--diff); }
+  .verdict .pip { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .verdict.-idle .pip { display: none; }
+
+  .note { padding: 14px 22px; font-size: 12px; line-height: 1.6; color: var(--soft); background: #0F2129; }
+  .note b { color: var(--soft); font-weight: 600; }
+
+  :focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+  @media (max-width: 560px) {
+    body { padding: 14px 10px; }
+    .head { flex-direction: column; align-items: flex-start; gap: 12px; }
+    .gauge div { text-align: left; }
+    .head, .zone, .digest, .note { padding-left: 15px; padding-right: 15px; }
+    .act { margin-left: 0; width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
 </head>
 <body>
-    <h2>MD5加密工具</h2>
-    
-    <div class="input-group">
-        <input type="text" id="inputText" placeholder="请输入要加密的内容">
-    </div>
-    
+<main class="unit">
+  <div class="head">
     <div>
-        <button class="encrypt-btn" onclick="generateMD5()">加密</button>
-        <button class="clear-btn" onclick="clearAll()">清空</button>
+      <div class="mark">MD5</div>
+      <div class="tagline">边输边算，可与手上的哈希逐位对照</div>
     </div>
-    
-    <div class="result-group">
-        <label>32位大写：</label>
-        <input type="text" id="result32Upper" readonly>
-        <button class="copy-btn" onclick="copyText('result32Upper')">复制</button>
+    <div class="gauge">
+      <div><b id="nChars">0</b><span>字符</span></div>
+      <div><b id="nBytes">0</b><span>UTF-8 字节</span></div>
     </div>
-    
-    <div class="result-group">
-        <label>32位小写：</label>
-        <input type="text" id="result32Lower" readonly>
-        <button class="copy-btn" onclick="copyText('result32Lower')">复制</button>
-    </div>
-    
-    <div class="result-group">
-        <label>16位大写：</label>
-        <input type="text" id="result16Upper" readonly>
-        <button class="copy-btn" onclick="copyText('result16Upper')">复制</button>
-    </div>
-    
-    <div class="result-group">
-        <label>16位小写：</label>
-        <input type="text" id="result16Lower" readonly>
-        <button class="copy-btn" onclick="copyText('result16Lower')">复制</button>
-    </div>
+  </div>
 
-    <script>
-        function generateMD5() {
-            const input = document.getElementById('inputText').value.trim();
-            if (!input) return;
+  <div class="zone">
+    <div class="lab">
+      <span>要算摘要的内容</span>
+      <span><button id="btnClear">清空</button></span>
+    </div>
+    <textarea id="src" rows="3" spellcheck="false" autocapitalize="off" autocorrect="off"
+      placeholder="输入任意文本，下面立刻出摘要"></textarea>
 
-            // 生成32位MD5
-            const md32 = md5(input);
-            
-            // 生成16位MD5（取32位的8-24位）
-            const md16 = md32.substring(8, 24);
+    <div class="hmac">
+      <label class="switch">
+        <input type="checkbox" id="useKey">
+        <span>加密钥算 HMAC-MD5（接口签名常用）</span>
+      </label>
+      <div class="keybox" id="keybox" hidden>
+        <input type="text" id="key" spellcheck="false" autocapitalize="off" autocomplete="off"
+          placeholder="密钥">
+      </div>
+    </div>
+  </div>
 
-            // 设置结果
-            document.getElementById('result32Upper').value = md32.toUpperCase();
-            document.getElementById('result32Lower').value = md32.toLowerCase();
-            document.getElementById('result16Upper').value = md16.toUpperCase();
-            document.getElementById('result16Lower').value = md16.toLowerCase();
+  <div class="digest">
+    <div class="hex -idle" id="hex">上面输入内容后，摘要显示在这里</div>
+
+    <div class="knobs">
+      <div class="seg" role="group" aria-label="长度">
+        <button id="len32" aria-pressed="true">32 位</button>
+        <button id="len16" aria-pressed="false">16 位</button>
+      </div>
+      <div class="seg" role="group" aria-label="大小写">
+        <button id="caseLower" aria-pressed="true">小写</button>
+        <button id="caseUpper" aria-pressed="false">大写</button>
+      </div>
+      <button class="act" id="btnCopy">复制摘要</button>
+    </div>
+  </div>
+
+  <div class="zone">
+    <div class="lab"><span>对照：把别人给你的哈希粘进来</span></div>
+    <input type="text" id="target" spellcheck="false" autocapitalize="off" autocomplete="off"
+      placeholder="粘贴 32 位或 16 位哈希，不区分大小写和空格">
+    <div class="verdict -idle" id="verdict"><span class="pip"></span><span id="verdictText"></span></div>
+  </div>
+
+  <div class="note">
+    全部在浏览器里算，内容不会离开本机。<b>MD5 早已能被碰撞攻击</b>，别拿它存密码或做防篡改校验——那些场合请用 bcrypt、Argon2 或 SHA-256。它现在合适的用途是对接老接口、校验文件是否传完整、做缓存键。
+  </div>
+</main>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const src = $('src'), keyEl = $('key'), useKey = $('useKey'), target = $('target');
+  const hex = $('hex'), verdict = $('verdict'), verdictText = $('verdictText');
+
+  let len = 32;        // 显示 32 位还是 16 位
+  let upper = false;   // 大写还是小写
+
+  // ---------- 算摘要 ----------
+  // md5(值) 出 32 位十六进制；md5(值, 密钥) 出 HMAC-MD5
+  function digests() {
+    const text = src.value;
+    if (!text) return null;
+    const k = useKey.checked ? keyEl.value : '';
+    const d32 = k ? md5(text, k) : md5(text);
+    return { 32: d32, 16: d32.substring(8, 24) };
+  }
+
+  const norm = (s) => s.trim().replace(/\s+/g, '').toLowerCase();
+
+  // ---------- 渲染：四个一组，方便用眼睛逐段核对 ----------
+  function paint(shown, diffAt) {
+    hex.textContent = '';
+    hex.classList.remove('-idle');
+    for (let i = 0; i < shown.length; i += 4) {
+      const grp = document.createElement('span');
+      grp.className = 'grp';
+      for (let j = i; j < i + 4 && j < shown.length; j++) {
+        if (diffAt && diffAt.has(j)) {
+          const x = document.createElement('span');
+          x.className = 'x';
+          x.textContent = shown[j];
+          grp.appendChild(x);
+        } else {
+          grp.appendChild(document.createTextNode(shown[j]));
         }
+      }
+      hex.appendChild(grp);
+    }
+  }
 
-        function copyText(elementId) {
-            const copyText = document.getElementById(elementId);
-            copyText.select();
-            document.execCommand('copy');
-        }
+  function idle(msg) {
+    hex.textContent = msg;
+    hex.classList.add('-idle');
+  }
 
-        function clearAll() {
-            document.getElementById('inputText').value = '';
-            document.getElementById('result32Upper').value = '';
-            document.getElementById('result32Lower').value = '';
-            document.getElementById('result16Upper').value = '';
-            document.getElementById('result16Lower').value = '';
-        }
-    </script>
+  function say(text, kind) {
+    verdictText.textContent = text;
+    verdict.className = 'verdict' + (kind ? ' -' + kind : ' -idle');
+  }
+
+  // ---------- 主刷新 ----------
+  function refresh() {
+    $('nChars').textContent = Array.from(src.value).length;
+    $('nBytes').textContent = new TextEncoder().encode(src.value).length;
+
+    const d = digests();
+    const t = norm(target.value);
+
+    if (!d) {
+      idle(useKey.checked && keyEl.value ? '上面输入内容后，用这个密钥算 HMAC-MD5' : '上面输入内容后，摘要显示在这里');
+      say(t ? '先在上面输入要算摘要的内容' : '');
+      return;
+    }
+
+    const mine = d[len];
+    const shown = upper ? mine.toUpperCase() : mine;
+
+    if (!t) { paint(shown, null); say(''); return; }
+
+    if (!/^[0-9a-f]+$/.test(t)) {
+      paint(shown, null);
+      say('对照的那段里有不是十六进制的字符', 'no');
+      return;
+    }
+    if (t.length !== 32 && t.length !== 16) {
+      paint(shown, null);
+      say('哈希该是 32 位或 16 位，这段是 ' + t.length + ' 位', 'no');
+      return;
+    }
+
+    // 始终拿同位数的摘要去比；只有当前显示的位数也对得上时才逐位标红
+    const same = d[t.length];
+    const diffAt = new Set();
+    for (let i = 0; i < same.length; i++) if (same[i] !== t[i]) diffAt.add(i);
+    paint(shown, t.length === len ? diffAt : null);
+
+    const scope = t.length === len ? '' : '（按 ' + t.length + ' 位比的）';
+    if (diffAt.size === 0) say('一致，是同一个摘要' + scope, 'yes');
+    else say(diffAt.size + ' 位不同' + (t.length === len ? '，标红的就是' : scope), 'no');
+  }
+
+  // ---------- 开关 ----------
+  function setLen(next, quiet) {
+    len = next;
+    $('len32').setAttribute('aria-pressed', String(next === 32));
+    $('len16').setAttribute('aria-pressed', String(next === 16));
+    if (!quiet) refresh();
+  }
+  function setCase(nextUpper) {
+    upper = nextUpper;
+    $('caseLower').setAttribute('aria-pressed', String(!nextUpper));
+    $('caseUpper').setAttribute('aria-pressed', String(nextUpper));
+    refresh();
+  }
+
+  $('len32').addEventListener('click', () => setLen(32));
+  $('len16').addEventListener('click', () => setLen(16));
+  $('caseLower').addEventListener('click', () => setCase(false));
+  $('caseUpper').addEventListener('click', () => setCase(true));
+
+  useKey.addEventListener('change', () => {
+    $('keybox').hidden = !useKey.checked;
+    if (useKey.checked) keyEl.focus();
+    refresh();
+  });
+
+  src.addEventListener('input', refresh);
+  keyEl.addEventListener('input', refresh);
+
+  // 粘进来的哈希是多少位，就把显示切成对应位数，省得用户自己去点；
+  // 之后手动点位数开关不会被这里推回去
+  target.addEventListener('input', () => {
+    const t = norm(target.value);
+    if (t.length === 32 || t.length === 16) setLen(t.length, true);
+    refresh();
+  });
+
+  $('btnClear').addEventListener('click', () => {
+    src.value = ''; target.value = '';
+    refresh(); src.focus();
+  });
+
+  $('btnCopy').addEventListener('click', () => {
+    const d = digests();
+    if (!d) { src.focus(); return; }
+    const text = upper ? d[len].toUpperCase() : d[len];
+    const btn = $('btnCopy');
+    const done = () => {
+      btn.textContent = '已复制';
+      btn.classList.add('-done');
+      clearTimeout(btn._t);
+      btn._t = setTimeout(() => { btn.textContent = '复制摘要'; btn.classList.remove('-done'); }, 1600);
+    };
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, done);
+    else done();
+  });
+
+  refresh();
+})();
+</script>
 </body>
 </html>

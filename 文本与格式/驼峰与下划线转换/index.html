@@ -1,322 +1,342 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<!-- from：豆包  time：2026年3月3日 10:13:58-->
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>命名格式转换工具（下划线↔驼峰）</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: "Microsoft YaHei", sans-serif;
-        }
-        body {
-            background-color: #f5f5f5;
-            padding: 50px 20px;
-        }
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 30px;
-            font-size: 24px;
-        }
-        /* 转换类型切换标签 */
-        .tab-group {
-            display: flex;
-            margin-bottom: 20px;
-            border-bottom: 1px solid #ddd;
-        }
-        .tab {
-            padding: 10px 20px;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            color: #666;
-            font-weight: 500;
-            transition: all 0.3s;
-        }
-        .tab.active {
-            border-bottom-color: #409eff;
-            color: #409eff;
-        }
-        /* 大小写选择区域（仅驼峰转下划线显示） */
-        .case-option {
-            margin-bottom: 15px;
-            display: none;
-        }
-        .case-option.show {
-            display: block;
-        }
-        .case-option label {
-            display: inline-block;
-            margin-right: 20px;
-            cursor: pointer;
-        }
-        .case-option input[type="radio"] {
-            margin-right: 5px;
-            vertical-align: middle;
-        }
-        .input-group, .result-group {
-            margin-bottom: 20px;
-        }
-        label {
-            display: block;
-            margin-bottom: 8px;
-            color: #555;
-            font-weight: 500;
-        }
-        textarea {
-            width: 100%;
-            padding: 12px 15px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 16px;
-            resize: vertical;
-            outline: none;
-            min-height: 100px;
-        }
-        textarea:focus {
-            border-color: #409eff;
-            box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
-        }
-        .btn-group {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-        button {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        #copyBtn {
-            background-color: #67c23a;
-            color: white;
-            flex: 1;
-        }
-        #copyBtn:hover {
-            background-color: #85ce61;
-        }
-        #clearBtn {
-            background-color: #909399;
-            color: white;
-            flex: 1;
-        }
-        #clearBtn:hover {
-            background-color: #a6a9ad;
-        }
-        .tip {
-            color: #999;
-            font-size: 14px;
-            margin-top: 5px;
-        }
-        .success-tip {
-            color: #67c23a;
-            font-size: 14px;
-            margin-top: 10px;
-            display: none;
-        }
-        /* 只读文本域样式 */
-        #resultText {
-            background-color: #f8f9fa;
-            cursor: default;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="description" content="casefold — 把标识符拆成词，再拼成小驼峰、大驼峰、下划线、常量、短横线、点分六种命名法">
+<title>casefold · 命名法互转</title>
+<link rel="icon" href="/favicon.ico">
+<style>
+  :root {
+    --paper: #F1EFF5;
+    --panel: #FFFFFF;
+    --ink: #211C2B;
+    --ink-soft: #6B6379;
+    --line: #DED9E6;
+    --line-2: #C6BFD3;
+    --edge: #6B3FA0;      /* 词边界，本页唯一的强调色 */
+    --edge-tint: #EFE8F7;
+    --ok: #2E7D55;
+    --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;
+    --sans: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    margin: 0;
+    padding: 40px 20px;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .sheet {
+    width: 100%;
+    max-width: 760px;
+    background: var(--panel);
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
+    box-shadow: 0 20px 48px -30px rgba(33, 28, 43, .5);
+    overflow: hidden;
+  }
+
+  /* 顶栏 */
+  .head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 20px 22px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .mark { font-family: var(--mono); font-size: 22px; font-weight: 600; letter-spacing: -.5px; }
+  .mark i { font-style: normal; color: var(--edge); }
+  .tagline { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+  .tally { display: flex; gap: 20px; flex-shrink: 0; }
+  .tally div { text-align: right; }
+  .tally b { display: block; font-family: var(--mono); font-size: 19px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
+  .tally span { font-size: 11px; color: var(--ink-soft); }
+
+  /* 输入 */
+  .in { padding: 18px 22px 0; }
+  .cap { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 7px; font-size: 13px; color: var(--ink-soft); }
+  .cap button { border: 0; background: none; color: var(--edge); font: inherit; cursor: pointer; padding: 2px 3px; }
+  .cap button:hover { text-decoration: underline; }
+  textarea {
+    width: 100%;
+    font-family: var(--mono);
+    font-size: 15.5px;
+    line-height: 1.7;
+    color: var(--ink);
+    background: #FCFBFD;
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
+    padding: 12px 14px;
+    resize: vertical;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s, background .15s;
+  }
+  textarea:focus { background: #fff; border-color: var(--edge); box-shadow: 0 0 0 3px var(--edge-tint); }
+
+  /* 分词条：本页的主角 */
+  .split { margin: 16px 0 0; padding: 14px 22px; background: var(--edge-tint); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .split .cap { color: #5A4A70; margin-bottom: 9px; }
+  .words { display: flex; flex-wrap: wrap; align-items: center; gap: 0; font-family: var(--mono); font-size: 16px; }
+  .w { background: #fff; border: 1px solid #CDBEE4; border-radius: 3px; padding: 4px 9px; color: var(--ink); }
+  .cut { width: 13px; text-align: center; color: var(--edge); opacity: .55; font-size: 13px; }
+  .split .none { font-size: 13.5px; color: #6E5C86; font-family: var(--sans); }
+
+  /* 六种命名法 */
+  .forms { padding: 4px 0 0; }
+  .row {
+    display: grid;
+    grid-template-columns: 82px 1fr auto;
+    align-items: center;
+    gap: 14px;
+    padding: 11px 22px;
+    border-bottom: 1px solid #EEEBF2;
+  }
+  .row:last-child { border-bottom: 0; }
+  .row .name { font-size: 12.5px; color: var(--ink-soft); }
+  .row .val {
+    font-family: var(--mono);
+    font-size: 15.5px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-all;
+    min-height: 1.6em;
+    color: var(--ink);
+  }
+  .row .val em { font-style: normal; color: var(--edge); font-weight: 600; }
+  .row .val:empty::after { content: '—'; color: #C3BCD1; }
+  .copy {
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    background: #FAF9FC;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 5px 11px;
+    cursor: pointer;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .copy:hover { color: var(--edge); border-color: #C6AEE2; background: #fff; }
+  .copy.-done { color: var(--ok); border-color: #A9D3BC; background: #F0F8F3; }
+
+  .foot { padding: 13px 22px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-soft); background: #FAF9FC; }
+
+  :focus-visible { outline: 2px solid var(--edge); outline-offset: 2px; }
+
+  @media (max-width: 580px) {
+    body { padding: 16px 10px; }
+    .head { flex-direction: column; align-items: flex-start; gap: 12px; }
+    .tally div { text-align: left; }
+    .row { grid-template-columns: 1fr auto; gap: 4px 12px; padding: 12px 16px; }
+    .row .name { grid-column: 1 / -1; }
+    .split, .in { padding-left: 16px; padding-right: 16px; }
+    .head, .foot { padding-left: 16px; padding-right: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
 </head>
 <body>
-    <div class="container">
-        <h1>命名格式转换工具</h1>
-        
-        <!-- 转换类型切换标签 -->
-        <div class="tab-group">
-            <div class="tab active" data-type="underscore-to-camel">下划线 → 小驼峰</div>
-            <div class="tab" data-type="camel-to-underscore">小驼峰 → 下划线</div>
-        </div>
-
-        <!-- 大小写选择（仅驼峰转下划线显示） -->
-        <div class="case-option" id="caseOption">
-            <label>下划线结果格式：</label>
-            <label><input type="radio" name="caseType" value="upper" checked> 全大写（如 USER_NAME）</label>
-            <label><input type="radio" name="caseType" value="lower"> 全小写（如 user_name）</label>
-        </div>
-
-        <!-- 输入区域 -->
-        <div class="input-group">
-            <label for="inputText" id="inputLabel">请输入下划线命名的文本：</label>
-            <textarea id="inputText" placeholder="例如：
-user_name
-order_id
-goods_info_list"></textarea>
-            <div class="tip" id="inputTip">提示：支持多行输入，输入内容时自动转换，保留换行格式</div>
-        </div>
-
-        <!-- 按钮区域 -->
-        <div class="btn-group">
-            <button id="copyBtn">复制结果</button>
-            <button id="clearBtn">清空内容</button>
-        </div>
-
-        <!-- 结果区域 -->
-        <div class="result-group">
-            <label for="resultText" id="resultLabel">转换结果（小驼峰）：</label>
-            <textarea id="resultText" readonly></textarea>
-            <div class="success-tip" id="successTip">✓ 复制成功！</div>
-        </div>
+<main class="sheet">
+  <div class="head">
+    <div>
+      <div class="mark">case<i>fold</i></div>
+      <div class="tagline">拆出词，再按六种命名法拼回去</div>
     </div>
+    <div class="tally">
+      <div><b id="nLines">0</b><span>行</span></div>
+      <div><b id="nWords">0</b><span>词</span></div>
+    </div>
+  </div>
 
-    <script>
-        // 获取DOM元素
-        const tabs = document.querySelectorAll('.tab');
-        const caseOption = document.getElementById('caseOption');
-        const inputLabel = document.getElementById('inputLabel');
-        const inputTip = document.getElementById('inputTip');
-        const resultLabel = document.getElementById('resultLabel');
-        const inputText = document.getElementById('inputText');
-        const resultText = document.getElementById('resultText');
-        const copyBtn = document.getElementById('copyBtn');
-        const clearBtn = document.getElementById('clearBtn');
-        const successTip = document.getElementById('successTip');
-        const caseRadios = document.querySelectorAll('input[name="caseType"]');
-        
-        // 当前激活的转换类型（默认：下划线转小驼峰）
-        let activeType = 'underscore-to-camel';
+  <div class="in">
+    <div class="cap">
+      <span>标识符，一行一个</span>
+      <span>
+        <button id="btnSample">填示例</button>
+        <button id="btnClear">清空</button>
+      </span>
+    </div>
+    <textarea id="src" rows="5" spellcheck="false" autocapitalize="off" autocorrect="off"
+      placeholder="goodsInfoList&#10;user_name&#10;HTTPResponseCode"></textarea>
+  </div>
 
-        // ========== 核心转换函数 ==========
-        // 1. 下划线转小驼峰
-        function underscoreToCamelCase(str) {
-            if (!str || str.trim() === '') return '';
-            let lowerStr = str.trim().toLowerCase();
-            let camelStr = lowerStr.replace(/_([a-zA-Z])/g, (match, letter) => {
-                return letter.toUpperCase();
-            });
-            return camelStr.charAt(0).toLowerCase() + camelStr.slice(1);
-        }
+  <div class="split">
+    <div class="cap"><span id="splitCap">第 1 行拆成</span></div>
+    <div class="words" id="words"></div>
+  </div>
 
-        // 2. 小驼峰转下划线（支持大小写选择）
-        function camelToUnderscore(str, caseType = 'upper') {
-            if (!str || str.trim() === '') return '';
-            // 匹配大写字母，在前面加下划线
-            let underscoreStr = str.trim().replace(/([A-Z])/g, '_$1');
-            // 去除开头可能的下划线（如 UserName → _user_name → user_name）
-            underscoreStr = underscoreStr.replace(/^_/, '');
-            // 根据选择返回全大写/全小写
-            return caseType === 'upper' ? underscoreStr.toUpperCase() : underscoreStr.toLowerCase();
-        }
+  <div class="forms" id="forms"></div>
 
-        // ========== 通用处理函数 ==========
-        // 处理多行转换
-        function handleMultiLineConvert(input, convertFn, ...args) {
-            const lines = input.split('\n');
-            const resultLines = lines.map(line => convertFn(line, ...args));
-            return resultLines.join('\n');
-        }
+  <div class="foot">全部在浏览器里算，内容不外传。识别 <code>_</code> <code>-</code> <code>.</code> 空格和大小写变化作为词边界，<code>HTTPResponse</code> 这类连续大写也能拆开。</div>
+</main>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const src = $('src'), wordsEl = $('words'), formsEl = $('forms');
 
-        // 实时转换主函数
-        function realtimeConvert() {
-            const input = inputText.value;
-            let result = '';
-            
-            // 根据当前转换类型执行对应逻辑
-            if (activeType === 'underscore-to-camel') {
-                result = handleMultiLineConvert(input, underscoreToCamelCase);
-            } else {
-                // 获取选中的大小写类型
-                const selectedCase = document.querySelector('input[name="caseType"]:checked').value;
-                result = handleMultiLineConvert(input, camelToUnderscore, selectedCase);
-            }
-            
-            resultText.value = result;
-            successTip.style.display = 'none';
-        }
+  const SAMPLE = 'goodsInfoList\nuser_name\nHTTPResponseCode\norder-detail.page';
 
-        // ========== 交互逻辑 ==========
-        // 切换转换类型标签
-        tabs.forEach(tab => {
-            tab.addEventListener('click', () => {
-                // 移除所有标签的激活状态
-                tabs.forEach(t => t.classList.remove('active'));
-                // 激活当前标签
-                tab.classList.add('active');
-                // 更新当前转换类型
-                activeType = tab.dataset.type;
+  // ---------- 拆词：命名法的差别只在词边界怎么表示 ----------
+  // 非拉丁字符（中文等）原样留在词里，不会被丢掉
+  function tokenize(line) {
+    const s = line.trim();
+    if (!s) return [];
+    return s
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')        // userName → user Name
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')     // HTTPResponse → HTTP Response
+      .split(/[\s_\-./\\:+,;|]+/)
+      .filter(Boolean)
+      .map((w) => w.toLowerCase());
+  }
 
-                // 根据类型切换界面文案和显示状态
-                if (activeType === 'underscore-to-camel') {
-                    // 下划线转小驼峰
-                    caseOption.classList.remove('show');
-                    inputLabel.textContent = '请输入下划线命名的文本：';
-                    inputTip.textContent = '提示：支持多行输入，输入内容时自动转换，保留换行格式';
-                    resultLabel.textContent = '转换结果（小驼峰）：';
-                    inputText.placeholder = '例如：\nuser_name\norder_id\ngoods_info_list';
-                } else {
-                    // 小驼峰转下划线
-                    caseOption.classList.add('show');
-                    inputLabel.textContent = '请输入小驼峰命名的文本：';
-                    inputTip.textContent = '提示：支持多行输入，输入内容时自动转换，保留换行格式';
-                    resultLabel.textContent = '转换结果（下划线）：';
-                    inputText.placeholder = '例如：\nuserName\norderId\ngoodsInfoList';
-                }
+  // ---------- 六种命名法：各自返回「片段」，标了边界的片段会上色 ----------
+  const camel = (upperFirst) => (tk) => {
+    const out = [];
+    tk.forEach((w, i) => {
+      const head = w.charAt(0), rest = w.slice(1);
+      if (i > 0 || upperFirst) out.push({ t: head.toUpperCase(), edge: true });
+      else out.push({ t: head });
+      if (rest) out.push({ t: rest });
+    });
+    return out;
+  };
+  const glued = (ch, upper) => (tk) => {
+    const out = [];
+    tk.forEach((w, i) => {
+      if (i > 0) out.push({ t: ch, edge: true });
+      out.push({ t: upper ? w.toUpperCase() : w });
+    });
+    return out;
+  };
 
-                // 重新触发转换
-                realtimeConvert();
-            });
-        });
+  const FORMS = [
+    { name: '小驼峰', hint: 'goodsInfoList', build: camel(false) },
+    { name: '大驼峰', hint: 'GoodsInfoList', build: camel(true) },
+    { name: '下划线', hint: 'goods_info_list', build: glued('_', false) },
+    { name: '常量', hint: 'GOODS_INFO_LIST', build: glued('_', true) },
+    { name: '短横线', hint: 'goods-info-list', build: glued('-', false) },
+    { name: '点分', hint: 'goods.info.list', build: glued('.', false) },
+  ];
 
-        // 绑定实时转换事件
-        inputText.addEventListener('input', realtimeConvert);
-        inputText.addEventListener('paste', realtimeConvert);
-        inputText.addEventListener('change', realtimeConvert);
-        // 大小写切换时也触发转换
-        caseRadios.forEach(radio => {
-            radio.addEventListener('change', realtimeConvert);
-        });
+  // ---------- 建表 ----------
+  const rows = FORMS.map((form) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = form.name;
+    const val = document.createElement('div');
+    val.className = 'val';
+    val.title = form.hint;
+    const btn = document.createElement('button');
+    btn.className = 'copy';
+    btn.type = 'button';
+    btn.textContent = '复制';
+    btn.addEventListener('click', () => copy(btn, val.dataset.plain || ''));
+    row.append(name, val, btn);
+    formsEl.appendChild(row);
+    return { form, val, btn };
+  });
 
-        // 复制按钮（支持复制多行文本）
-        copyBtn.addEventListener('click', () => {
-            if (!resultText.value) {
-                alert('暂无转换结果可复制！');
-                return;
-            }
-            resultText.select();
-            navigator.clipboard.writeText(resultText.value).then(() => {
-                successTip.style.display = 'block';
-                setTimeout(() => {
-                    successTip.style.display = 'none';
-                }, 3000);
-            }).catch(() => {
-                document.execCommand('copy');
-                successTip.style.display = 'block';
-                setTimeout(() => {
-                    successTip.style.display = 'none';
-                }, 3000);
-            });
-        });
+  function paint(el, segs) {
+    el.textContent = '';
+    for (const s of segs) {
+      if (s.edge) {
+        const em = document.createElement('em');
+        em.textContent = s.t;
+        el.appendChild(em);
+      } else {
+        el.appendChild(document.createTextNode(s.t));
+      }
+    }
+    el.dataset.plain = segs.map((s) => s.t).join('');
+  }
 
-        // 清空按钮
-        clearBtn.addEventListener('click', () => {
-            inputText.value = '';
-            resultText.value = '';
-            successTip.style.display = 'none';
-        });
+  function copy(btn, text) {
+    if (!text) return;
+    const done = () => {
+      btn.textContent = '已复制';
+      btn.classList.add('-done');
+      clearTimeout(btn._t);
+      btn._t = setTimeout(() => {
+        btn.textContent = '复制';
+        btn.classList.remove('-done');
+      }, 1600);
+    };
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, done);
+    else done();
+  }
 
-        // 快捷键触发
-        inputText.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key === 'Enter') {
-                realtimeConvert();
-            }
-        });
-    </script>
+  // ---------- 刷新 ----------
+  function refresh() {
+    const lines = src.value.split('\n');
+    const perLine = lines.map(tokenize);
+
+    // 六行结果：按原样保留空行，方便整段拷回去
+    for (const { form, val, btn } of rows) {
+      const segs = [];
+      perLine.forEach((tk, i) => {
+        if (i > 0) segs.push({ t: '\n' });
+        if (tk.length) segs.push(...form.build(tk));
+      });
+      paint(val, segs);
+      btn.disabled = !val.dataset.plain.trim();
+      btn.style.opacity = btn.disabled ? '.45' : '';
+    }
+
+    const filled = perLine.filter((tk) => tk.length);
+    $('nLines').textContent = filled.length;
+    $('nWords').textContent = perLine.reduce((n, tk) => n + tk.length, 0);
+
+    // 分词条跟着光标所在行走，光标那行是空的就退回第一行有内容的
+    let idx = src.value.slice(0, src.selectionStart).split('\n').length - 1;
+    if (!perLine[idx] || !perLine[idx].length) idx = perLine.findIndex((tk) => tk.length);
+    showWords(idx, idx >= 0 ? perLine[idx] : []);
+  }
+
+  function showWords(idx, tk) {
+    $('splitCap').textContent = tk.length ? '第 ' + (idx + 1) + ' 行拆成 ' + tk.length + ' 个词' : '拆词结果';
+    wordsEl.textContent = '';
+    if (!tk.length) {
+      const p = document.createElement('span');
+      p.className = 'none';
+      p.textContent = '上面输入一个标识符，这里显示它被拆成了哪几个词';
+      wordsEl.appendChild(p);
+      return;
+    }
+    tk.forEach((w, i) => {
+      if (i > 0) {
+        const cut = document.createElement('span');
+        cut.className = 'cut';
+        cut.textContent = '·';
+        wordsEl.appendChild(cut);
+      }
+      const chip = document.createElement('span');
+      chip.className = 'w';
+      chip.textContent = w;
+      wordsEl.appendChild(chip);
+    });
+  }
+
+  // ---------- 事件 ----------
+  ['input', 'click', 'keyup', 'focus'].forEach((ev) => src.addEventListener(ev, refresh));
+  $('btnSample').addEventListener('click', () => { src.value = SAMPLE; src.focus(); refresh(); });
+  $('btnClear').addEventListener('click', () => { src.value = ''; src.focus(); refresh(); });
+
+  src.value = SAMPLE;
+  src.setSelectionRange(0, 0); // 刚打开时分词条停在第一行，别跳到末行
+  refresh();
+})();
+</script>
 </body>
 </html>
