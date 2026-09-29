@@ -61,7 +61,9 @@ var Scene3D = (function () {
       Y_AXIS = new THREE.Vector3(0, 1, 0),
       nodeAxis = new THREE.Vector3(1, 0, 0),   // 交点线方向，由 nodeAngle 导出
       tmpV = new THREE.Vector3(),
-      dirV = new THREE.Vector3();
+      dirV = new THREE.Vector3(),
+      _pV = new THREE.Vector3(), _pL = new THREE.Vector3(),
+      _pUp = new THREE.Vector3(), _pRight = new THREE.Vector3();
 
   /** 由交点角算出交点线方向（黄道面内，与 +X 即日地连线成 nodeAngle 角） */
   function syncNodeAxis() {
@@ -659,12 +661,46 @@ var Scene3D = (function () {
     setDefault(false);
   }
 
+  /**
+   * 从观察者视角推算 2D 该画成什么样。返回 {illum, psi}。
+   *
+   * illum(照亮比例) 由日-月-地几何定，与观察者站哪儿无关 —— 这是对的：地球相对
+   * 地月距离就是个点，各地看到的"亮多少"几乎一样。设视线 V(地心→月)、月指向太阳 L：
+   *   照亮比例 = (1 − L·V) / 2   （满月 L≈−V → 1，新月 L≈V → 0）
+   *
+   * psi(亮限方位角) 才依赖观察者：把观察者天顶投到与视线垂直的像平面当"上"，
+   * 右 = V×上，构成他仰望这轮月亮时的画面坐标；再看太阳方向 L 投影到这张画面里指向哪，
+   * 就是被照亮那半边的朝向。观察者挪到南半球，天顶反向 → 上/右都翻号 → psi 转 180°，
+   * 月相随之上下左右颠倒，正如南北半球看月亮的差别。
+   */
+  function observerPhase() {
+    _pV.copy(moonHolder.position).normalize();               // 地心 → 月
+    // 太阳按平行光处理(与 3D 的 DirectionalLight 一致)：月指向太阳恒为 −X。
+    // 这样上下弦恰好半亮、名称与画面一致，不受"太阳其实离得不够远"这个场景压缩的影响。
+    _pL.set(-1, 0, 0);
+
+    var illum = (1 - _pL.dot(_pV)) / 2;
+
+    // 观察者天顶投到像平面(去掉沿视线的分量)作为"上"
+    _pUp.copy(observerDir).addScaledVector(_pV, -observerDir.dot(_pV));
+    if (_pUp.lengthSq() < 1e-6) {                            // 月在天顶，退化
+      _pUp.set(0, 0, 1).addScaledVector(_pV, -_pV.z);
+      if (_pUp.lengthSq() < 1e-6) _pUp.set(0, 1, 0);
+    }
+    _pUp.normalize();
+    _pRight.crossVectors(_pV, _pUp).normalize();             // 观察者仰望时的画面向右
+
+    var psi = Math.atan2(_pL.dot(_pUp), _pL.dot(_pRight));
+    return { illum: illum, psi: psi };
+  }
+
   return {
     init: init,
     setPhase: setPhase,
     render: render,
     resetTopView: resetTopView,
     focusOn: focusOn,
+    observerPhase: observerPhase,
     setViewMode: setViewMode,
     onViewChange: function (cb) { viewChangeCb = cb; },
     onModeChange: function (cb) { modeCb = cb; },

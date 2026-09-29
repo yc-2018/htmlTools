@@ -9,7 +9,8 @@
       playing = true,
       speed = parseFloat($('speed').value),
       lastDrawn = -1,
-      lastEclState = '';
+      lastEclState = '',
+      lastPsi = 999;
 
   var g2 = $('canvas2d').getContext('2d');
 
@@ -27,16 +28,19 @@
     var p = phase();
     Scene3D.setPhase(p);
 
-    var ecl = Scene3D.eclipse();
-    // 相位没动但食状态变了（比如拖了交点角滑块）也要重画
-    if (Math.abs(p - lastDrawn) > 1e-4 || ecl.state !== lastEclState) {
+    var ecl = Scene3D.eclipse(),
+        view = Scene3D.observerPhase();       // 从观察者视线推出的照亮比例与朝向
+    // 相位、食状态、或观察者朝向任一变化都要重画
+    if (Math.abs(p - lastDrawn) > 1e-4 || ecl.state !== lastEclState ||
+        Math.abs(view.psi - lastPsi) > 1e-3) {
       lastDrawn = p;
       lastEclState = ecl.state;
-      Phase2D.draw(g2, p, ecl);
+      lastPsi = view.psi;
+      Phase2D.draw(g2, view, ecl);
 
       var name = Phase2D.phaseName(p);
       $('phaseName').textContent = name;
-      $('mIllum').textContent = Math.round(Phase2D.illumination(p) * 100) + '%';
+      $('mIllum').textContent = Math.round(view.illum * 100) + '%';
       $('mAngle').textContent = (p * 360).toFixed(1) + '°';
       $('mAge').textContent = age.toFixed(2) + ' 天';
       $('ageOut').textContent = age.toFixed(2) + ' 天';

@@ -96,31 +96,39 @@ var Phase2D = (function () {
   }
 
   /**
-   * 亮区边界路径：一侧是月面外缘的半圆，另一侧是终结线（明暗分界）。
+   * 亮区边界路径 —— 观察者视角版。
    *
-   * 对每个 y，圆的半宽 xw = √(r²-y²)。上半月亮面在右（sign=+1），下半月在左（sign=-1）；
-   * 亮区从外缘 sign·xw 横跨到终结线 sign·cos(2πp)·xw ——
-   *   p=0    cos=1  两条边重合在右缘，全暗（新月）
-   *   p=0.25 cos=0  终结线退到中线，右半亮（上弦）
-   *   p=0.5  cos=-1 终结线抵达左缘，全亮（满月）
-   *   p=0.75 cos=0  镜像回来，左半亮（下弦）
-   * 终结线必须同乘 sign，否则下半月的亮面会算反。
+   * 在一个随观察者转动的局部坐标里作图：a 轴指向"亮限方向"(bright limb，被照亮那侧
+   * 边缘的方位角 psi，由 3D 几何给出)，b 轴与之垂直。对每个 b，月盘半宽 h=√(r²−b²)：
+   *   亮限一侧在 a = +h（月盘边缘）
+   *   终结线在   a = t·h，其中 t = 1 − 2·照亮比例：
+   *     新月 t=+1（终结线贴亮限，无亮区）、上下弦 t=0（半亮）、满月 t=−1（终结线到对侧，全亮）
+   * 于是终结线是一条半椭圆。整套 (a,b) 再按 psi 旋进画布坐标，
+   * 亮面朝向、终结线倾角就随观察者纬度和月亮在其天空中的位置一起变——
+   * 换到南半球时 psi 翻 180°，月相自然左右上下颠倒。
    */
-  function litPath(g, cx, cy, r, phase) {
-    var c = Math.cos(Math.PI * 2 * phase),
-        sign = phase < 0.5 ? 1 : -1,   // 上半月亮面在右（北半球所见）
-        N = 180, i, y, xw;
+  function litPath(g, cx, cy, r, illum, psi) {
+    var t = 1 - 2 * illum,
+        ca = Math.cos(psi), sa = Math.sin(psi),
+        N = 180, i, b, h;
+
+    // 局部 (a,b) → 画布：a 沿亮限方向，b 垂直；画布 y 向下，故用 cy − imgy
+    function line(a, b, first) {
+      var x = cx + (a * ca - b * sa),
+          y = cy - (a * sa + b * ca);
+      if (first) g.moveTo(x, y); else g.lineTo(x, y);
+    }
 
     g.beginPath();
-    for (i = 0; i <= N; i++) {
-      y = -r + 2 * r * i / N;
-      xw = Math.sqrt(Math.max(0, r * r - y * y));
-      g.lineTo(cx + sign * xw, cy + y);
+    for (i = 0; i <= N; i++) {                 // 亮限半圆 a=+h
+      b = -r + 2 * r * i / N;
+      h = Math.sqrt(Math.max(0, r * r - b * b));
+      line(h, b, i === 0);
     }
-    for (i = N; i >= 0; i--) {
-      y = -r + 2 * r * i / N;
-      xw = Math.sqrt(Math.max(0, r * r - y * y));
-      g.lineTo(cx + sign * c * xw, cy + y);
+    for (i = N; i >= 0; i--) {                  // 终结线 a=t·h
+      b = -r + 2 * r * i / N;
+      h = Math.sqrt(Math.max(0, r * r - b * b));
+      line(t * h, b, false);
     }
     g.closePath();
   }
@@ -145,18 +153,18 @@ var Phase2D = (function () {
   }
 
   /**
-   * 把月相画到 2D 画布上。
+   * 把月相画到 2D 画布上 —— 现在是从观察者的实际视线推出来的。
    * @param {CanvasRenderingContext2D} g
-   * @param {number} phase 0~1，与 3D 场景共用同一个相位量
-   * @param {{state:string, sep:number, ru:number}} [ecl]
-   *        月食几何（单位：月球半径）。sep 是月心离地影轴的距离，ru 是本影半径
+   * @param {{illum:number, psi:number}} view
+   *        illum 照亮比例(由日-月-地几何算)，psi 亮限在观察者天空里的方位角
+   * @param {{state:string, sep:number, ru:number}} [ecl] 月食几何（单位：月球半径）
    */
-  function draw(g, phase, ecl) {
+  function draw(g, view, ecl) {
     var W = g.canvas.width, H = g.canvas.height,
         cx = W / 2, cy = H / 2,
         r = Math.min(W, H) * 0.39,
         src = getDisk(),
-        lit = illumination(phase);
+        lit = view.illum;
 
     g.clearRect(0, 0, W, H);
 
@@ -184,7 +192,7 @@ var Phase2D = (function () {
     //    终结线保持锐利 —— 月球没有大气，明暗分界本来就是一条硬边。
     if (lit > 0.001) {
       g.save();
-      litPath(g, cx, cy, r, phase);
+      litPath(g, cx, cy, r, view.illum, view.psi);
       g.clip();
       g.drawImage(src, dx, dy, dw, dw);
       g.restore();
