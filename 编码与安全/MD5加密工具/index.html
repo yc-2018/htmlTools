@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="description" content="MD5 摘要工具 — 实时算 32/16 位摘要，支持 HMAC-MD5 加密钥，可与手上的哈希逐位对照">
+<meta name="description" content="MD5 摘要工具 — 支持文本和文件，实时算 32/16 位摘要，支持 HMAC-MD5 加密钥，可与手上的哈希逐位对照">
 <title>md5 · 摘要与对照</title>
 <link rel="icon" href="/favicon.ico">
 <script src="./md5.min.js"></script>
@@ -82,6 +82,22 @@
   textarea::placeholder, input::placeholder { color: #4D6B75; }
   textarea:focus, input[type=text]:focus { border-color: var(--brass); box-shadow: 0 0 0 3px rgba(224,166,60,.14); }
 
+  .source-switch { display: inline-flex; gap: 2px; margin-bottom: 12px; padding: 2px; background: #0E2028; border: 1px solid var(--line-2); border-radius: 4px; }
+  .source-switch button { border: 0; background: none; font: inherit; font-size: 12.5px; color: var(--soft); padding: 5px 13px; border-radius: 3px; cursor: pointer; }
+  .source-switch button[aria-pressed=true] { background: var(--line); color: var(--text); }
+  .source-panel[hidden] { display: none; }
+  .file-drop { display: flex; align-items: center; justify-content: center; min-height: 106px; padding: 16px; color: var(--soft); text-align: center; background: #0E2028; border: 1px dashed var(--line-2); border-radius: 4px; cursor: pointer; transition: border-color .15s, background .15s; }
+  .file-drop:hover, .file-drop.-over { border-color: var(--brass); background: rgba(224,166,60,.07); }
+  .file-drop input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .file-drop strong { display: block; color: var(--text); font-weight: 500; }
+  .file-drop span { display: block; margin-top: 3px; font-size: 12px; }
+  .file-meta { display: flex; align-items: center; gap: 9px; margin-top: 10px; min-width: 0; font-size: 13px; color: var(--soft); }
+  .file-meta[hidden] { display: none; }
+  .file-meta strong { overflow: hidden; color: var(--text); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+  .file-meta span { flex-shrink: 0; font-family: var(--mono); font-size: 12px; color: var(--dim); }
+  .file-remove { margin-left: auto; border: 0; background: none; color: var(--brass); font: inherit; font-size: 12px; cursor: pointer; }
+  .file-remove:hover { text-decoration: underline; }
+
   /* 密钥开关 */
   .hmac { margin-top: 13px; }
   .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--soft); cursor: pointer; user-select: none; }
@@ -146,11 +162,11 @@
   <div class="head">
     <div>
       <div class="mark">MD5</div>
-      <div class="tagline">边输边算，可与手上的哈希逐位对照</div>
+      <div class="tagline">文本或文件都能算，可与手上的哈希逐位对照</div>
     </div>
     <div class="gauge">
-      <div><b id="nChars">0</b><span>字符</span></div>
-      <div><b id="nBytes">0</b><span>UTF-8 字节</span></div>
+      <div><b id="nChars">0</b><span id="charLabel">字符</span></div>
+      <div><b id="nBytes">0</b><span id="byteLabel">UTF-8 字节</span></div>
     </div>
   </div>
 
@@ -159,8 +175,24 @@
       <span>要算摘要的内容</span>
       <span><button id="btnClear">清空</button></span>
     </div>
-    <textarea id="src" rows="3" spellcheck="false" autocapitalize="off" autocorrect="off"
-      placeholder="输入任意文本，下面立刻出摘要"></textarea>
+    <div class="source-switch" role="group" aria-label="输入类型">
+      <button id="sourceText" aria-pressed="true">文本</button>
+      <button id="sourceFile" aria-pressed="false">文件</button>
+    </div>
+    <div class="source-panel" id="textPanel">
+      <textarea id="src" rows="3" spellcheck="false" autocapitalize="off" autocorrect="off"
+        placeholder="输入任意文本，下面立刻出摘要"></textarea>
+    </div>
+    <div class="source-panel" id="filePanel" hidden>
+      <label class="file-drop" id="fileDrop" tabindex="0">
+        <input type="file" id="fileInput">
+        <span><strong>选择文件或拖放到这里</strong>按文件原始字节计算，不会把二进制内容转成文本</span>
+      </label>
+      <div class="file-meta" id="fileMeta" hidden>
+        <strong id="fileName"></strong><span id="fileSize"></span>
+        <button class="file-remove" id="fileRemove" type="button">移除文件</button>
+      </div>
+    </div>
 
     <div class="hmac">
       <label class="switch">
@@ -206,13 +238,148 @@
   const $ = (id) => document.getElementById(id);
   const src = $('src'), keyEl = $('key'), useKey = $('useKey'), target = $('target');
   const hex = $('hex'), verdict = $('verdict'), verdictText = $('verdictText');
+  const fileInput = $('fileInput'), fileDrop = $('fileDrop'), fileMeta = $('fileMeta');
 
   let len = 32;        // 显示 32 位还是 16 位
   let upper = false;   // 大写还是小写
+  let sourceMode = 'text';
+  let selectedFile = null;
+  let fileDigest = null;
+  let fileDigestPending = false;
+  let fileDigestError = '';
+  let digestRequestId = 0;
+
+  // ---------- 文件字节摘要 ----------
+  // 页面顶部的 md5.min.js 兼容文本输入；文件则走这里，避免二进制字节被 UTF-8 转码。
+  const md5Shifts = [
+    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+    5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+    4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+    6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21
+  ];
+  const md5Constants = Array.from({ length: 64 }, (_, i) => Math.floor(Math.abs(Math.sin(i + 1)) * 0x100000000));
+
+  function rotateLeft(value, amount) {
+    return (value << amount) | (value >>> (32 - amount));
+  }
+
+  function concatBytes(left, right) {
+    const result = new Uint8Array(left.length + right.length);
+    result.set(left);
+    result.set(right, left.length);
+    return result;
+  }
+
+  function md5DigestBytes(input) {
+    const data = input instanceof Uint8Array ? input : new Uint8Array(input);
+    const paddedLength = ((data.length + 9 + 63) >>> 6) << 6;
+    const padded = new Uint8Array(paddedLength);
+    padded.set(data);
+    padded[data.length] = 0x80;
+
+    // MD5 以小端序写入 64 位 bit 长度，文件大小超过 512 MiB 时也能正确处理。
+    const bitLengthLow = data.length * 8;
+    const bitLengthHigh = Math.floor(data.length / 0x20000000);
+    padded[paddedLength - 8] = bitLengthLow & 0xff;
+    padded[paddedLength - 7] = (bitLengthLow >>> 8) & 0xff;
+    padded[paddedLength - 6] = (bitLengthLow >>> 16) & 0xff;
+    padded[paddedLength - 5] = (bitLengthLow >>> 24) & 0xff;
+    padded[paddedLength - 4] = bitLengthHigh & 0xff;
+    padded[paddedLength - 3] = (bitLengthHigh >>> 8) & 0xff;
+    padded[paddedLength - 2] = (bitLengthHigh >>> 16) & 0xff;
+    padded[paddedLength - 1] = (bitLengthHigh >>> 24) & 0xff;
+
+    let a0 = 0x67452301;
+    let b0 = 0xefcdab89;
+    let c0 = 0x98badcfe;
+    let d0 = 0x10325476;
+
+    for (let offset = 0; offset < padded.length; offset += 64) {
+      const words = new Uint32Array(16);
+      for (let i = 0; i < 16; i++) {
+        const p = offset + i * 4;
+        words[i] = padded[p] | (padded[p + 1] << 8) | (padded[p + 2] << 16) | (padded[p + 3] << 24);
+      }
+
+      let a = a0;
+      let b = b0;
+      let c = c0;
+      let d = d0;
+      for (let i = 0; i < 64; i++) {
+        let f;
+        let g;
+        if (i < 16) {
+          f = (b & c) | (~b & d);
+          g = i;
+        } else if (i < 32) {
+          f = (d & b) | (~d & c);
+          g = (5 * i + 1) % 16;
+        } else if (i < 48) {
+          f = b ^ c ^ d;
+          g = (3 * i + 5) % 16;
+        } else {
+          f = c ^ (b | ~d);
+          g = (7 * i) % 16;
+        }
+        const next = d;
+        const sum = (a + f + md5Constants[i] + words[g]) | 0;
+        d = c;
+        c = b;
+        b = (b + rotateLeft(sum, md5Shifts[i])) | 0;
+        a = next;
+      }
+      a0 = (a0 + a) | 0;
+      b0 = (b0 + b) | 0;
+      c0 = (c0 + c) | 0;
+      d0 = (d0 + d) | 0;
+    }
+
+    const digest = new Uint8Array(16);
+    const words = [a0, b0, c0, d0];
+    for (let i = 0; i < words.length; i++) {
+      digest[i * 4] = words[i] & 0xff;
+      digest[i * 4 + 1] = (words[i] >>> 8) & 0xff;
+      digest[i * 4 + 2] = (words[i] >>> 16) & 0xff;
+      digest[i * 4 + 3] = (words[i] >>> 24) & 0xff;
+    }
+    return digest;
+  }
+
+  function bytesToHex(bytes) {
+    let result = '';
+    for (const byte of bytes) result += byte.toString(16).padStart(2, '0');
+    return result;
+  }
+
+  function md5Bytes(input) {
+    return bytesToHex(md5DigestBytes(input));
+  }
+
+  function hmacMd5Bytes(input, key) {
+    let keyBytes = new TextEncoder().encode(key);
+    if (keyBytes.length > 64) keyBytes = md5DigestBytes(keyBytes);
+    const innerPad = new Uint8Array(64);
+    const outerPad = new Uint8Array(64);
+    innerPad.fill(0x36);
+    outerPad.fill(0x5c);
+    for (let i = 0; i < keyBytes.length; i++) {
+      innerPad[i] ^= keyBytes[i];
+      outerPad[i] ^= keyBytes[i];
+    }
+    const inner = md5DigestBytes(concatBytes(innerPad, input));
+    return bytesToHex(md5DigestBytes(concatBytes(outerPad, inner)));
+  }
 
   // ---------- 算摘要 ----------
   // md5(值) 出 32 位十六进制；md5(值, 密钥) 出 HMAC-MD5
   function digests() {
+    if (sourceMode === 'file') {
+      if (!selectedFile || fileDigestPending || fileDigestError || !fileDigest) return null;
+      const d32 = useKey.checked && keyEl.value
+        ? hmacMd5Bytes(fileDigest.bytes, keyEl.value)
+        : fileDigest.md5;
+      return { 32: d32, 16: d32.substring(8, 24) };
+    }
     const text = src.value;
     if (!text) return null;
     const k = useKey.checked ? keyEl.value : '';
@@ -255,15 +422,32 @@
 
   // ---------- 主刷新 ----------
   function refresh() {
-    $('nChars').textContent = Array.from(src.value).length;
-    $('nBytes').textContent = new TextEncoder().encode(src.value).length;
+    if (sourceMode === 'file') {
+      $('charLabel').textContent = '字符';
+      $('byteLabel').textContent = '文件字节';
+      $('nChars').textContent = selectedFile ? '—' : '0';
+      $('nBytes').textContent = selectedFile ? selectedFile.size.toLocaleString('zh-CN') : '0';
+    } else {
+      $('charLabel').textContent = '字符';
+      $('byteLabel').textContent = 'UTF-8 字节';
+      $('nChars').textContent = Array.from(src.value).length;
+      $('nBytes').textContent = new TextEncoder().encode(src.value).length;
+    }
 
     const d = digests();
     const t = norm(target.value);
 
     if (!d) {
-      idle(useKey.checked && keyEl.value ? '上面输入内容后，用这个密钥算 HMAC-MD5' : '上面输入内容后，摘要显示在这里');
-      say(t ? '先在上面输入要算摘要的内容' : '');
+      if (sourceMode === 'file' && fileDigestPending) {
+        idle('正在读取文件并计算摘要…');
+      } else if (sourceMode === 'file' && fileDigestError) {
+        idle('文件读取失败，请重新选择');
+      } else if (sourceMode === 'file') {
+        idle('选择文件后，摘要显示在这里');
+      } else {
+        idle(useKey.checked && keyEl.value ? '上面输入内容后，用这个密钥算 HMAC-MD5' : '上面输入内容后，摘要显示在这里');
+      }
+      say(t ? (sourceMode === 'file' ? '先选择要算摘要的文件' : '先在上面输入要算摘要的内容') : '');
       return;
     }
 
@@ -308,6 +492,82 @@
     refresh();
   }
 
+  function setSource(next) {
+    sourceMode = next;
+    const isFile = next === 'file';
+    $('sourceText').setAttribute('aria-pressed', String(!isFile));
+    $('sourceFile').setAttribute('aria-pressed', String(isFile));
+    $('textPanel').hidden = isFile;
+    $('filePanel').hidden = !isFile;
+    refresh();
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    return (bytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+  }
+
+  function showFile(file) {
+    if (!file) return;
+    const requestId = ++digestRequestId;
+    selectedFile = file;
+    fileDigest = null;
+    fileDigestError = '';
+    fileDigestPending = true;
+    $('fileName').textContent = file.name;
+    $('fileSize').textContent = formatFileSize(file.size);
+    fileMeta.hidden = false;
+    setSource('file');
+    refresh();
+
+    file.arrayBuffer().then((buffer) => {
+      if (requestId !== digestRequestId) return;
+      const bytes = new Uint8Array(buffer);
+      fileDigest = { bytes, md5: md5Bytes(bytes) };
+      fileDigestPending = false;
+      refresh();
+    }).catch(() => {
+      if (requestId !== digestRequestId) return;
+      fileDigestPending = false;
+      fileDigestError = 'read';
+      refresh();
+    });
+  }
+
+  function removeFile() {
+    digestRequestId++;
+    selectedFile = null;
+    fileDigest = null;
+    fileDigestPending = false;
+    fileDigestError = '';
+    fileInput.value = '';
+    fileMeta.hidden = true;
+    refresh();
+  }
+
+  $('sourceText').addEventListener('click', () => setSource('text'));
+  $('sourceFile').addEventListener('click', () => setSource('file'));
+  fileInput.addEventListener('change', () => showFile(fileInput.files[0]));
+  fileDrop.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    fileDrop.classList.add('-over');
+  });
+  fileDrop.addEventListener('dragleave', () => fileDrop.classList.remove('-over'));
+  fileDrop.addEventListener('drop', (event) => {
+    event.preventDefault();
+    fileDrop.classList.remove('-over');
+    showFile(event.dataTransfer.files[0]);
+  });
+  fileDrop.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      fileInput.click();
+    }
+  });
+  $('fileRemove').addEventListener('click', removeFile);
+
   $('len32').addEventListener('click', () => setLen(32));
   $('len16').addEventListener('click', () => setLen(16));
   $('caseLower').addEventListener('click', () => setCase(false));
@@ -332,12 +592,18 @@
 
   $('btnClear').addEventListener('click', () => {
     src.value = ''; target.value = '';
-    refresh(); src.focus();
+    removeFile();
+    refresh();
+    if (sourceMode === 'text') src.focus();
   });
 
   $('btnCopy').addEventListener('click', () => {
     const d = digests();
-    if (!d) { src.focus(); return; }
+    if (!d) {
+      if (sourceMode === 'text') src.focus();
+      else fileDrop.focus();
+      return;
+    }
     const text = upper ? d[len].toUpperCase() : d[len];
     const btn = $('btnCopy');
     const done = () => {
