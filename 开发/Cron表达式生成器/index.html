@@ -1,0 +1,2080 @@
+<title>Cron表达式生成器</title>
+<style>
+/* Layout concept: a sticky "readout" (crontab-style ruler with live expression, plain-language summary, next runs) sits in the right column;
+   format picker, clickable examples, visual builder, usage snippets and cheat sheets stack in the left column.
+   On phones everything stacks readout-first, with a docked copy bar when the readout is off-screen. */
+:root {
+  --bg: #EDF1F4;
+  --surface: #FFFFFF;
+  --surface-2: #F3F6F8;
+  --fg: #0F1B25;
+  --muted: #53636F;
+  --line: #D6DEE4;
+  --line-strong: #B6C3CD;
+  --accent: #0C7A71;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #D9F0ED;
+  --warn: #8F5200;
+  --warn-soft: #FFF0D1;
+  --warn-line: #E8C27A;
+  --err: #B3261E;
+  --err-soft: #FDE8E6;
+  --err-line: #F0A9A3;
+  --info: #2F5D8A;
+  --info-soft: #E3EEF8;
+  --info-line: #A9C5E0;
+  --shadow: 0 1px 2px rgba(15, 27, 37, .05), 0 12px 30px -18px rgba(15, 27, 37, .35);
+  --font-ui: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Mono", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0B1116;
+    --surface: #131B22;
+    --surface-2: #19232C;
+    --fg: #E4EBF0;
+    --muted: #93A4B1;
+    --line: #25323D;
+    --line-strong: #36495A;
+    --accent: #3CC6B8;
+    --accent-ink: #052420;
+    --accent-soft: #123330;
+    --warn: #F2B34B;
+    --warn-soft: #34270E;
+    --warn-line: #6B4E16;
+    --err: #FF8F86;
+    --err-soft: #3A1B19;
+    --err-line: #7A3530;
+    --info: #8DB8E6;
+    --info-soft: #172635;
+    --info-line: #31506E;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 14px 32px -18px rgba(0, 0, 0, .8);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0B1116;
+  --surface: #131B22;
+  --surface-2: #19232C;
+  --fg: #E4EBF0;
+  --muted: #93A4B1;
+  --line: #25323D;
+  --line-strong: #36495A;
+  --accent: #3CC6B8;
+  --accent-ink: #052420;
+  --accent-soft: #123330;
+  --warn: #F2B34B;
+  --warn-soft: #34270E;
+  --warn-line: #6B4E16;
+  --err: #FF8F86;
+  --err-soft: #3A1B19;
+  --err-line: #7A3530;
+  --info: #8DB8E6;
+  --info-soft: #172635;
+  --info-line: #31506E;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 14px 32px -18px rgba(0, 0, 0, .8);
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.65 var(--font-ui);
+  padding-inline: 16px;
+  padding-block: 22px 56px;
+  -webkit-text-size-adjust: 100%;
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button { font: inherit; color: inherit; }
+code, pre, .mono { font-family: var(--font-mono); }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+.wrap { max-width: 1200px; margin-inline: auto; }
+.top { margin-bottom: 22px; display: grid; gap: 6px; }
+.top h1 { font-size: clamp(26px, 4.4vw, 34px); font-weight: 750; letter-spacing: -.01em; line-height: 1.2; }
+.top p { color: var(--muted); max-width: 62ch; }
+
+/* layout */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 430px; gap: 24px; align-items: start; }
+.main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.aside {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  padding: 2px;
+  scrollbar-width: thin;
+}
+#readout { order: 1; } #formats { order: 2; } #examples { order: 3; } #builder { order: 4; } #runs { order: 5; } #usage { order: 6; } #reference { order: 7; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-bottom: 14px; }
+.panel-head h2 { font-size: 18px; font-weight: 700; }
+.panel-head .sub { color: var(--muted); font-size: 13.5px; }
+.lead { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+
+/* buttons */
+.btn { padding: 9px 15px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; font-size: 14px; line-height: 1.2; white-space: nowrap; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn.primary:hover { filter: brightness(.93); }
+.btn.small { padding: 5px 10px; font-size: 12.5px; }
+.link { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font-size: inherit; }
+
+/* readout */
+.readout { box-shadow: var(--shadow); border-color: var(--line-strong); padding: 16px; }
+.ro-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.ro-head h2 { font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: .08em; }
+.fmt-pill { font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); border: 1px solid transparent; cursor: pointer; }
+.fmt-pill:hover { border-color: var(--accent); }
+.cells { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; background: var(--surface-2); }
+.cell { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 7px 3px 8px; border: 0; border-left: 1px solid var(--line); background: transparent; cursor: pointer; min-width: 0; text-align: center; }
+.cell:first-child { border-left: 0; }
+.cell:hover { background: var(--surface); }
+.cell-name { font-size: 12px; color: var(--muted); letter-spacing: .06em; }
+.cell-val { font-family: var(--font-mono); font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; line-height: 1.25; }
+.cell-val.long { font-size: 12px; }
+.cell.on { background: var(--accent-soft); box-shadow: inset 0 -2px 0 var(--accent); }
+.cell.on .cell-name { color: var(--accent); }
+.cell.bad { background: var(--err-soft); }
+.cell.bad .cell-val { color: var(--err); }
+.exprline { display: flex; gap: 8px; margin-top: 12px; }
+.expr { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 17px; font-weight: 650; padding: 10px 12px; border: 1.5px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--fg); letter-spacing: .01em; }
+.expr:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.expr.bad { border-color: var(--err); box-shadow: 0 0 0 3px var(--err-soft); }
+.summary { margin-top: 12px; font-size: 16.5px; font-weight: 650; line-height: 1.5; }
+.summary.empty { color: var(--muted); font-weight: 500; font-size: 14px; }
+.issues { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 7px; }
+.issues li { display: flex; gap: 8px; align-items: baseline; font-size: 13.5px; line-height: 1.55; }
+.issues li > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.pill { flex: none; font-size: 11.5px; font-weight: 650; padding: 1px 8px; border-radius: 999px; letter-spacing: .04em; border: 1px solid transparent; }
+.pill.err { background: var(--err-soft); color: var(--err); border-color: var(--err-line); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-line); }
+.pill.info { background: var(--info-soft); color: var(--info); border-color: var(--info-line); }
+.issue-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+/* next runs */
+.runs-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; color: var(--muted); }
+.field-in { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); color: var(--fg); min-width: 0; }
+.runs { list-style: none; margin: 0; padding: 0; }
+.runs li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 5px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.runs li:first-child { border-top: 0; }
+.runs .idx { color: var(--muted); font-family: var(--font-mono); font-size: 12px; }
+.runs .dt { font-family: var(--font-mono); font-size: 14px; }
+.runs .dt b { font-weight: 650; }
+.runs .rel { color: var(--muted); font-size: 12.5px; text-align: right; }
+.runs .empty { display: block; color: var(--muted); font-size: 14px; padding: 8px 0; }
+.tz { margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+details.more { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+details.more > summary { cursor: pointer; font-size: 13.5px; color: var(--muted); font-weight: 600; }
+.breakdown { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13.5px; }
+.breakdown td { padding: 5px 6px 5px 0; border-top: 1px solid var(--line); vertical-align: baseline; }
+.breakdown td:first-child { color: var(--muted); width: 2.2em; white-space: nowrap; }
+.breakdown td:nth-child(2) { font-family: var(--font-mono); white-space: nowrap; padding-right: 12px; }
+.breakdown td:nth-child(3) { min-width: 0; overflow-wrap: anywhere; }
+
+/* formats */
+.fmt-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.fmt { position: relative; display: block; min-width: 0; }
+.fmt input { position: absolute; opacity: 0; inset: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.fmt-body { display: grid; gap: 3px; height: 100%; padding: 12px 13px 13px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); }
+.fmt input:hover + .fmt-body { background: var(--surface-2); }
+.fmt input:checked + .fmt-body { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.fmt input:focus-visible + .fmt-body { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fmt-len { font-family: var(--font-mono); font-size: 30px; font-weight: 750; line-height: 1; }
+.fmt-len small { font-family: var(--font-ui); font-size: 13px; font-weight: 600; margin-left: 3px; color: var(--muted); }
+.fmt-name { font-weight: 650; font-size: 14.5px; margin-top: 4px; }
+.fmt-seq { font-family: var(--font-mono); font-size: 12px; color: var(--muted); letter-spacing: .02em; }
+.fmt-where { font-size: 12.5px; color: var(--muted); line-height: 1.45; margin-top: 4px; }
+.fmt-detail { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 12px; }
+.fmt-detail h3 { font-size: 16px; font-weight: 700; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag { font-size: 13px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface-2); }
+.facts { margin: 0; display: grid; gap: 0; }
+.facts > div { display: grid; grid-template-columns: 7.5em minmax(0, 1fr); gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.facts > div:first-child { border-top: 0; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.facts code, .note code, .lead code { background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: .92em; }
+.tip { font-size: 13.5px; padding: 9px 12px; border-radius: 8px; background: var(--info-soft); color: var(--fg); border: 1px solid var(--info-line); }
+details.guide { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
+details.guide > summary { cursor: pointer; font-weight: 650; font-size: 15px; }
+.scn-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; margin-top: 12px; }
+.scn { display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-size: 13.5px; line-height: 1.45; min-width: 0; }
+.scn:hover { border-color: var(--accent); }
+.scn.on { background: var(--accent-soft); border-color: var(--accent); }
+.scn .t { min-width: 0; }
+.scn .f { flex: none; font-size: 12px; font-weight: 650; color: var(--accent); white-space: nowrap; }
+
+/* examples */
+.seg { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.seg button { font-size: 13.5px; padding: 6px 13px; border-radius: 999px; border: 1px solid var(--line-strong); background: transparent; color: var(--muted); cursor: pointer; }
+.seg button:hover { color: var(--fg); background: var(--surface-2); }
+.seg button[aria-selected="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.ex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 10px; }
+.ex { display: grid; align-content: start; gap: 5px; text-align: left; padding: 11px 12px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); cursor: pointer; min-width: 0; }
+.ex:hover { border-color: var(--accent); background: var(--surface-2); }
+.ex.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.ex.alt { border-style: dashed; }
+.ex-title { font-weight: 650; font-size: 14.5px; line-height: 1.35; }
+.ex-expr { font-size: 13px; padding: 3px 7px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--line); overflow-wrap: anywhere; width: fit-content; max-width: 100%; }
+.ex.on .ex-expr { background: var(--surface); }
+.ex-use { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.ex-badge { font-size: 12px; font-weight: 650; color: var(--warn); }
+
+/* builder */
+.tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; margin-bottom: 14px; scrollbar-width: thin; }
+.tab { flex: none; display: grid; justify-items: center; gap: 1px; min-width: 62px; padding: 7px 10px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; }
+.tab:hover { background: var(--surface-2); }
+.tab-name { font-weight: 650; font-size: 14px; }
+.tab-val { font-family: var(--font-mono); font-size: 12px; color: var(--muted); max-width: 9ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab[aria-selected="true"] { background: var(--accent-soft); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.tab[aria-selected="true"] .tab-val { color: var(--accent); }
+.tab.bad { border-color: var(--err); }
+.pane-head { margin-bottom: 10px; }
+.pane-head h3 { font-size: 16px; font-weight: 700; }
+.pane-head p { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+.opts { display: grid; gap: 8px; }
+.opt { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 4px 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.opt:hover { border-color: var(--line-strong); }
+.opt.on { border-color: var(--accent); background: var(--accent-soft); }
+.opt input[type="radio"] { margin: 4px 0 0; accent-color: var(--accent); width: 16px; height: 16px; }
+.opt-body { min-width: 0; line-height: 2.1; font-size: 14.5px; }
+.opt-body .num { width: 4.6em; }
+.opt-tok { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); padding-top: 4px; max-width: 14ch; overflow-wrap: anywhere; text-align: right; }
+.opt.on .opt-tok { color: var(--accent); font-weight: 650; }
+.num, .sel, .txt { font: inherit; font-family: var(--font-mono); font-size: 14px; padding: 3px 7px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); color: var(--fg); min-width: 0; margin-inline: 3px; }
+.sel { font-family: var(--font-ui); }
+.txt { width: min(100%, 18em); margin-inline: 0; }
+.chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 6px; margin-top: 6px; line-height: 1.2; }
+.chips.wide { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); }
+.chip { font-family: var(--font-mono); font-size: 13px; padding: 6px 0; border-radius: 6px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; text-align: center; font-variant-numeric: tabular-nums; }
+.chip:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 650; }
+.note { margin-top: 12px; font-size: 13.5px; color: var(--muted); }
+
+/* usage */
+.snips { display: grid; gap: 14px; }
+.snip { margin: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.snip figcaption { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 8px 7px 12px; background: var(--surface-2); border-bottom: 1px solid var(--line); font-size: 13.5px; font-weight: 650; }
+.snip pre { margin: 0; padding: 12px; overflow-x: auto; font-size: 13px; line-height: 1.6; }
+.snip-note { padding: 0 12px 10px; font-size: 13px; color: var(--muted); }
+
+/* reference */
+.ref-block + .ref-block { margin-top: 22px; }
+.ref-block h3 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+.tbl { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 520px; }
+.tbl th, .tbl td { padding: 8px 12px; text-align: left; border-top: 1px solid var(--line); vertical-align: top; }
+.tbl thead th { background: var(--surface-2); border-top: 0; font-weight: 650; white-space: nowrap; }
+.tbl tbody th { font-weight: 600; white-space: nowrap; color: var(--muted); }
+.tbl code { font-size: .95em; }
+.yes { color: var(--accent); font-weight: 700; }
+.no { color: var(--muted); }
+
+/* dock + toast */
+.dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: none; align-items: center; gap: 10px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--surface); border-top: 1px solid var(--line-strong); box-shadow: 0 -10px 24px -16px rgba(0, 0, 0, .4); }
+.dock.show { display: flex; }
+.dock-expr { flex: 1; min-width: 0; text-align: left; background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 8px; padding: 9px 12px; font-family: var(--font-mono); font-size: 14.5px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 30; max-width: calc(100% - 32px); transform: translate(-50%, 8px); background: var(--fg); color: var(--bg); padding: 9px 16px; border-radius: 999px; font-size: 13.5px; line-height: 1.4; opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease; text-align: center; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (max-width: 959px) {
+  .layout { display: flex; flex-direction: column; align-items: stretch; gap: 16px; padding-bottom: 72px; }
+  .main, .aside { display: contents; }
+  .panel { padding: 16px; }
+  .readout { padding: 14px; }
+  .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (min-width: 960px) {
+  .dock { display: none !important; }
+}
+@media (max-width: 520px) {
+  .facts > div { grid-template-columns: 1fr; gap: 2px; }
+  .opt { grid-template-columns: 20px minmax(0, 1fr); }
+  .opt-tok { grid-column: 2; text-align: left; padding-top: 0; max-width: none; }
+  .expr { font-size: 16px; }
+  .exprline .btn { padding-inline: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast { transition: none; }
+}
+
+.sub-label { color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+.fmt-detail h3 .seq { font-family: var(--font-mono); font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 10px; }
+.mname { display: inline-block; margin-right: 10px; font-weight: 650; }
+
+</style>
+<div class="wrap">
+  <header class="top">
+    <h1>Cron表达式生成器</h1>
+    <p>5 位、6 位、7 位写法都能生成。先选格式，再点选或直接输入，右侧会实时给出中文解释和接下来的执行时间；也可以直接点下面的示例。</p>
+  </header>
+
+  <div class="layout">
+    <div class="main">
+
+      <section id="formats" class="panel" aria-labelledby="formatsTitle">
+        <div class="panel-head">
+          <h2 id="formatsTitle">1. 选择格式</h2>
+          <span class="sub">不同软件的 Cron 长度不一样，位数写错会直接报错</span>
+        </div>
+        <div class="fmt-grid" id="fmtGrid" role="radiogroup" aria-label="Cron 格式"></div>
+        <div class="fmt-detail" id="fmtDetail" aria-live="polite"></div>
+        <details class="guide" id="guide" open>
+          <summary>我该选哪种？按使用场景快速选择</summary>
+          <div class="scn-list" id="scnList"></div>
+        </details>
+      </section>
+
+      <section id="examples" class="panel" aria-labelledby="examplesTitle">
+        <div class="panel-head">
+          <h2 id="examplesTitle">2. 点一下示例，直接得到完整表达式</h2>
+          <span class="sub" id="exSub"></span>
+        </div>
+        <div class="seg" id="exTabs" role="tablist" aria-label="示例分类"></div>
+        <div class="ex-grid" id="exGrid"></div>
+      </section>
+
+      <section id="builder" class="panel" aria-labelledby="builderTitle">
+        <div class="panel-head">
+          <h2 id="builderTitle">3. 可视化选择每个字段</h2>
+          <span class="sub">点选后表达式会实时更新</span>
+        </div>
+        <div class="tabs" id="fieldTabs" role="tablist" aria-label="字段"></div>
+        <div id="fieldPane" role="tabpanel"></div>
+      </section>
+
+      <section id="usage" class="panel" aria-labelledby="usageTitle">
+        <div class="panel-head">
+          <h2 id="usageTitle">在哪里用</h2>
+          <span class="sub" id="usageSub"></span>
+        </div>
+        <div class="snips" id="snips"></div>
+      </section>
+
+      <section id="reference" class="panel" aria-labelledby="refTitle">
+        <div class="panel-head">
+          <h2 id="refTitle">速查表</h2>
+          <span class="sub">符号、星期数字、四种格式的差别</span>
+        </div>
+
+        <div class="ref-block">
+          <h3>特殊符号</h3>
+          <div class="table-wrap">
+            <table class="tbl">
+              <thead><tr><th>符号</th><th>含义</th><th>例子</th><th>5 位</th><th>Spring</th><th>Quartz</th></tr></thead>
+              <tbody>
+                <tr><th><code>*</code></th><td>任意值，每一个</td><td><code>*/5</code> 每 5 个单位</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+                <tr><th><code>,</code></th><td>列出多个值</td><td><code>1,15</code> 1 号和 15 号</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+                <tr><th><code>-</code></th><td>范围（含两端）</td><td><code>9-17</code> 9 点到 17 点</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+                <tr><th><code>/</code></th><td>步长，从起点每隔 n 个</td><td><code>0/15</code> 从 0 起每 15 个</td><td class="no">建议写 <code>*/n</code></td><td class="yes">✓</td><td class="yes">✓</td></tr>
+                <tr><th><code>?</code></th><td>不指定，只用于「日」和「周」</td><td><code>0 0 12 ? * MON</code></td><td class="no">✗</td><td class="yes">✓ 等同 *</td><td class="yes">✓ 必须二选一</td></tr>
+                <tr><th><code>L</code></th><td>最后：日里是月末，周里是「数字+L」</td><td><code>L</code> 月末　<code>6L</code> 最后一个周五（Quartz）</td><td class="no">✗</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+                <tr><th><code>W</code></th><td>离某天最近的工作日</td><td><code>15W</code>　<code>LW</code> 月末最后一个工作日</td><td class="no">✗</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+                <tr><th><code>#</code></th><td>本月第几个星期几</td><td><code>2#1</code> 第 1 个周一（Quartz）</td><td class="no">✗</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="ref-block">
+          <h3>星期的数字，Quartz 和 Linux 不一样</h3>
+          <div class="table-wrap">
+            <table class="tbl">
+              <thead><tr><th>星期</th><th>5 位 / Spring 数字</th><th>Quartz 数字</th><th>英文缩写（都能用）</th></tr></thead>
+              <tbody>
+                <tr><th>周一</th><td><code>1</code></td><td><code>2</code></td><td><code>MON</code></td></tr>
+                <tr><th>周二</th><td><code>2</code></td><td><code>3</code></td><td><code>TUE</code></td></tr>
+                <tr><th>周三</th><td><code>3</code></td><td><code>4</code></td><td><code>WED</code></td></tr>
+                <tr><th>周四</th><td><code>4</code></td><td><code>5</code></td><td><code>THU</code></td></tr>
+                <tr><th>周五</th><td><code>5</code></td><td><code>6</code></td><td><code>FRI</code></td></tr>
+                <tr><th>周六</th><td><code>6</code></td><td><code>7</code></td><td><code>SAT</code></td></tr>
+                <tr><th>周日</th><td><code>0</code> 或 <code>7</code></td><td><code>1</code></td><td><code>SUN</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="ref-block">
+          <h3>四种格式对比</h3>
+          <div class="table-wrap">
+            <table class="tbl">
+              <thead><tr><th></th><th>5 位 · 标准</th><th>6 位 · Spring</th><th>6 位 · Quartz</th><th>7 位 · Quartz</th></tr></thead>
+              <tbody>
+                <tr><th>字段顺序</th><td>分 时 日 月 周</td><td>秒 分 时 日 月 周</td><td>秒 分 时 日 月 周</td><td>秒 分 时 日 月 周 年</td></tr>
+                <tr><th>最小精度</th><td>分钟</td><td>秒</td><td>秒</td><td>秒</td></tr>
+                <tr><th>星期取值</th><td>0–7，0 和 7 是周日</td><td>0–7，0 和 7 是周日</td><td>1–7，1 是周日</td><td>1–7，1 是周日</td></tr>
+                <tr><th>日 与 周 同时写</th><td>「或」</td><td>「且」</td><td>必须有一个是 <code>?</code></td><td>必须有一个是 <code>?</code></td></tr>
+                <tr><th>L / W / #</th><td class="no">不支持</td><td class="yes">支持</td><td class="yes">支持</td><td class="yes">支持</td></tr>
+                <tr><th>年</th><td class="no">无</td><td class="no">无</td><td>省略（等同每年）</td><td>可写 1970–2099</td></tr>
+                <tr><th>常见场景</th><td>crontab、Kubernetes、GitHub Actions</td><td>Spring <code>@Scheduled</code></td><td>Quartz、XXL-JOB 等</td><td>要限定年份的 Quartz 任务</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <div class="aside">
+      <section id="readout" class="panel readout" aria-label="当前表达式">
+        <div class="ro-head">
+          <h2>当前表达式</h2>
+          <button type="button" class="fmt-pill" id="fmtPill" title="点击回到格式选择"></button>
+        </div>
+        <div class="cells" id="cells"></div>
+        <div class="exprline">
+          <input id="exprInput" class="expr" type="text" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" aria-label="Cron 表达式，可以直接粘贴或手写">
+          <button type="button" class="btn primary" id="copyBtn">复制</button>
+        </div>
+        <p class="summary" id="summary" aria-live="polite"></p>
+        <ul class="issues" id="issues"></ul>
+      </section>
+
+      <section id="runs" class="panel" aria-labelledby="runsTitle">
+        <div class="panel-head" style="margin-bottom:8px">
+          <h2 id="runsTitle">接下来 10 次执行</h2>
+        </div>
+        <div class="runs-tools">
+          <label for="fromInput">从</label>
+          <input type="datetime-local" id="fromInput" class="field-in" aria-label="起算时间">
+          <button type="button" class="btn small" id="nowBtn">现在</button>
+          <span>开始算</span>
+        </div>
+        <ol class="runs" id="runList"></ol>
+        <p class="tz" id="tzNote"></p>
+        <details class="more">
+          <summary>逐项解读每个字段</summary>
+          <table class="breakdown" id="breakdown"></table>
+        </details>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="dock" id="dock">
+  <button type="button" class="dock-expr" id="dockExpr" title="回到顶部查看详情"></button>
+  <button type="button" class="btn primary" id="dockCopy">复制</button>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* Cron engine: parse / validate / describe / next runs / builder-state conversion.
+   Pure functions, no DOM. Works in browsers (window.CronEngine) and Node (module.exports). */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.CronEngine = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  /* ---------- formats & field metadata ---------- */
+  const FORMATS = {
+    unix: { id: 'unix', fields: ['minute', 'hour', 'dom', 'month', 'dow'] },
+    spring: { id: 'spring', fields: ['second', 'minute', 'hour', 'dom', 'month', 'dow'] },
+    quartz6: { id: 'quartz6', fields: ['second', 'minute', 'hour', 'dom', 'month', 'dow'] },
+    quartz7: { id: 'quartz7', fields: ['second', 'minute', 'hour', 'dom', 'month', 'dow', 'year'] },
+  };
+  const FORMAT_ORDER = ['unix', 'spring', 'quartz6', 'quartz7'];
+  const isQuartz = (f) => f === 'quartz6' || f === 'quartz7';
+
+  const FIELD_META = {
+    second: { name: '秒', min: 0, max: 59 },
+    minute: { name: '分', min: 0, max: 59 },
+    hour: { name: '时', min: 0, max: 23 },
+    dom: { name: '日', min: 1, max: 31 },
+    month: { name: '月', min: 1, max: 12 },
+    dow: { name: '周', min: 0, max: 7 },
+    year: { name: '年', min: 1970, max: 2099 },
+  };
+  const MONTH_ABBR = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+  const DOW_ABBR = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  const DOW_CN = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+  const MACROS = {
+    unix: { '@yearly': '0 0 1 1 *', '@annually': '0 0 1 1 *', '@monthly': '0 0 1 * *', '@weekly': '0 0 * * 0', '@daily': '0 0 * * *', '@midnight': '0 0 * * *', '@hourly': '0 * * * *' },
+    spring: { '@yearly': '0 0 0 1 1 *', '@annually': '0 0 0 1 1 *', '@monthly': '0 0 0 1 * *', '@weekly': '0 0 0 * * 0', '@daily': '0 0 0 * * *', '@midnight': '0 0 0 * * *', '@hourly': '0 0 * * * *' },
+  };
+
+  const SPECIAL_T = ['last', 'lastOff', 'lastW', 'nearW', 'nth', 'lastDow'];
+  const mf = (js) => (js + 6) % 7; // Monday-first index of a JS weekday
+  const pad = (n) => String(n).padStart(2, '0');
+  const uniqSorted = (arr) => Array.from(new Set(arr)).sort((a, b) => a - b);
+
+  function fieldRange(key, fmt) {
+    if (key === 'dow') return isQuartz(fmt) ? { min: 1, max: 7 } : { min: 0, max: 7 };
+    return { min: FIELD_META[key].min, max: FIELD_META[key].max };
+  }
+  function dowToJs(v, fmt) {
+    return isQuartz(fmt) ? v - 1 : v % 7;
+  }
+
+  /* ---------- parsing ---------- */
+  function atomValue(tok, key, fmt) {
+    if (/^\d+$/.test(tok)) return parseInt(tok, 10);
+    const up = tok.toUpperCase();
+    if (key === 'month') {
+      const i = MONTH_ABBR.indexOf(up);
+      if (i >= 0) return i + 1;
+    }
+    if (key === 'dow') {
+      const i = DOW_ABBR.indexOf(up);
+      if (i >= 0) return isQuartz(fmt) ? i + 1 : i === 0 ? 7 : i;
+    }
+    return NaN;
+  }
+
+  const err = (msg) => ({ error: msg });
+
+  function parsePart(tok, key, fmt) {
+    const R = fieldRange(key, fmt);
+    const label = FIELD_META[key].name;
+    if (tok === '') return err('出现了空的取值（是不是多写了逗号？）');
+    if (tok === '*') return { part: { t: 'any' } };
+    if (tok === '?') {
+      if (fmt === 'unix') return err('标准 5 位 Cron 不支持「?」，请改用「*」，或切换到 6 位 Spring / Quartz');
+      if (key !== 'dom' && key !== 'dow') return err('「?」只能用在「日」和「周」字段');
+      return { part: { t: 'none' } };
+    }
+
+    if (key === 'dom') {
+      let m;
+      if (/^L$/i.test(tok) || /^LW$/i.test(tok) || /^L-\d+$/i.test(tok) || /^\d+W$/i.test(tok)) {
+        if (fmt === 'unix') return err('标准 5 位 Cron 不支持「' + tok + '」（L / W 只能用在 Spring、Quartz）');
+        if (/^L$/i.test(tok)) return { part: { t: 'last' } };
+        if (/^LW$/i.test(tok)) return { part: { t: 'lastW' } };
+        if ((m = /^L-(\d+)$/i.exec(tok))) {
+          const n = +m[1];
+          if (n < 1 || n > 30) return err('「L-n」里的 n 需要在 1–30 之间');
+          return { part: { t: 'lastOff', n } };
+        }
+        m = /^(\d+)W$/i.exec(tok);
+        const n = +m[1];
+        if (n < 1 || n > 31) return err('「nW」里的日期需要在 1–31 之间');
+        return { part: { t: 'nearW', n } };
+      }
+    }
+    if (key === 'dow') {
+      let m;
+      if (/^L$/i.test(tok)) return err('「周」里单独写 L 含义不清，请写成「5L」或「FRIL」这样（本月最后一个周五）');
+      if ((m = /^([0-7]|[A-Za-z]{3})L$/i.exec(tok))) {
+        if (fmt === 'unix') return err('标准 5 位 Cron 不支持「' + tok + '」（L 只能用在 Spring、Quartz）');
+        const v = atomValue(m[1], 'dow', fmt);
+        if (isNaN(v) || v < R.min || v > R.max) return err('无法识别「' + tok + '」里的星期');
+        return { part: { t: 'lastDow', d: dowToJs(v, fmt) } };
+      }
+      if ((m = /^([0-7]|[A-Za-z]{3})#(\d+)$/i.exec(tok))) {
+        if (fmt === 'unix') return err('标准 5 位 Cron 不支持「' + tok + '」（# 只能用在 Spring、Quartz）');
+        const v = atomValue(m[1], 'dow', fmt);
+        const n = +m[2];
+        if (isNaN(v) || v < R.min || v > R.max) return err('无法识别「' + tok + '」里的星期');
+        if (n < 1 || n > 5) return err('「d#n」里的 n 需要在 1–5 之间');
+        return { part: { t: 'nth', d: dowToJs(v, fmt), n } };
+      }
+    }
+
+    let base = tok;
+    let step = null;
+    if (tok.indexOf('/') >= 0) {
+      const idx = tok.indexOf('/');
+      base = tok.slice(0, idx);
+      const s = tok.slice(idx + 1);
+      if (!/^\d+$/.test(s)) return err('步长「' + s + '」必须是正整数');
+      step = parseInt(s, 10);
+      if (step < 1) return err('步长必须大于 0');
+    }
+    let a, b;
+    let star = false;
+    let hasRange = false;
+    if (base === '*') {
+      star = true;
+      a = R.min;
+      b = R.max;
+    } else if (base.indexOf('-') >= 0) {
+      const bits = base.split('-');
+      if (bits.length !== 2 || !bits[0] || !bits[1]) return err('范围「' + base + '」写法不对，应为「起点-终点」');
+      a = atomValue(bits[0], key, fmt);
+      b = atomValue(bits[1], key, fmt);
+      if (isNaN(a) || isNaN(b)) return err('「' + base + '」里有无法识别的值');
+      hasRange = true;
+    } else {
+      a = atomValue(base, key, fmt);
+      if (isNaN(a)) return err('无法识别「' + base + '」');
+      b = step ? R.max : a;
+    }
+    if (a < R.min || a > R.max || b < R.min || b > R.max) {
+      let hint = '';
+      if (key === 'dow') hint = isQuartz(fmt) ? '（Quartz 里 1=周日 … 7=周六）' : '（0 和 7 都是周日，1=周一）';
+      return err(label + '的取值范围是 ' + R.min + '–' + R.max + hint + '，你写的是「' + tok + '」');
+    }
+    let wrapped = false;
+    if (b < a) {
+      if (isQuartz(fmt) && key !== 'year') wrapped = true;
+      else return err('范围「' + base + '」的起点不能大于终点');
+    }
+    const size = R.max - R.min + 1;
+    const end = wrapped ? b + size : b;
+    const st = step || 1;
+    const vals = [];
+    for (let v = a; v <= end; v += st) vals.push(((v - R.min) % size) + R.min);
+    const values = uniqSorted(vals);
+    const usedName = /[A-Za-z]/.test(base);
+    const part = { values, usedName, wrapped };
+    if (key === 'dow') part.js = uniqSorted(values.map((v) => dowToJs(v, fmt)));
+    if (step) return { part: Object.assign(part, { t: 'step', a, b, n: step, star, explicit: !star && !hasRange }) };
+    if (hasRange) return { part: Object.assign(part, { t: 'range', a, b }) };
+    return { part: Object.assign(part, { t: 'single', v: a }) };
+  }
+
+  function fullRange(key, fmt) {
+    const R = fieldRange(key, fmt);
+    const out = [];
+    for (let v = R.min; v <= R.max; v++) out.push(v);
+    return key === 'dow' ? uniqSorted(out.map((v) => dowToJs(v, fmt))) : out;
+  }
+
+  function parseField(raw, key, fmt) {
+    const res = { key, raw, parts: [], errors: [], star: raw.charAt(0) === '*' };
+    const toks = raw.split(',');
+    for (const tok of toks) {
+      const r = parsePart(tok, key, fmt);
+      if (r.error) res.errors.push(r.error);
+      else res.parts.push(r.part);
+    }
+    if (res.errors.length) return res;
+    if (res.parts.length > 1) {
+      if (res.parts.some((p) => p.t === 'any' || p.t === 'none')) res.errors.push('「*」「?」不能和其他值写在同一个逗号列表里');
+      if (isQuartz(fmt) && res.parts.some((p) => SPECIAL_T.indexOf(p.t) >= 0)) res.errors.push('Quartz 里 L、W、# 不能和其他值写在同一个逗号列表里');
+    }
+    const plain = res.parts.filter((p) => p.t === 'single' || p.t === 'range' || p.t === 'step');
+    if (res.parts.length === 1 && (res.parts[0].t === 'any' || res.parts[0].t === 'none')) {
+      res.values = key === 'year' ? null : key === 'dow' ? fullRange('dow', fmt) : fullRange(key, fmt);
+    } else {
+      res.values = uniqSorted([].concat.apply([], plain.map((p) => (key === 'dow' ? p.js : p.values))));
+    }
+    return res;
+  }
+
+  function suggestFormats(count) {
+    if (count === 5) return ['unix'];
+    if (count === 6) return ['spring', 'quartz6'];
+    if (count === 7) return ['quartz7'];
+    return [];
+  }
+
+  function parse(text, fmt) {
+    const out = { fmt, ok: false, errors: [], warnings: [], fields: [], macro: null, expanded: null, tokens: [], suggest: [] };
+    let src = String(text || '').trim().replace(/\s+/g, ' ');
+    if (!src) {
+      out.errors.push({ field: null, msg: '请输入或选择一个表达式' });
+      return out;
+    }
+    if (src.charAt(0) === '@') {
+      const table = MACROS[fmt];
+      if (!table) {
+        out.errors.push({ field: null, msg: 'Quartz 不支持 @daily 这类简写，请直接写完整的字段' });
+        return out;
+      }
+      const hit = table[src.toLowerCase()];
+      if (!hit) {
+        out.errors.push({ field: null, msg: '无法识别「' + src + '」，可用的简写：@yearly @monthly @weekly @daily @hourly' });
+        return out;
+      }
+      out.macro = src;
+      out.expanded = hit;
+      src = hit;
+    }
+    let tokens = src.split(' ');
+    const keys = FORMATS[fmt].fields;
+    if (fmt === 'quartz7' && tokens.length === 6) {
+      tokens = tokens.concat('*');
+      out.warnings.push({ level: 'info', text: '只写了 6 段：Quartz 允许省略「年」，这里按「*」（每年）处理。' });
+    }
+    out.tokens = tokens;
+    if (tokens.length !== keys.length) {
+      out.suggest = suggestFormats(tokens.length);
+      out.errors.push({ field: null, msg: '当前是 ' + keys.length + ' 位格式，但表达式有 ' + tokens.length + ' 段。' });
+      return out;
+    }
+    keys.forEach((key, i) => {
+      const f = parseField(tokens[i], key, fmt);
+      out.fields.push(f);
+      f.errors.forEach((m) => out.errors.push({ field: key, msg: m }));
+    });
+    if (!out.errors.length) {
+      const dom = out.fields.find((f) => f.key === 'dom');
+      const dow = out.fields.find((f) => f.key === 'dow');
+      if (isQuartz(fmt)) {
+        const dn = dom.parts[0].t === 'none';
+        const wn = dow.parts[0].t === 'none';
+        if (dn && wn) {
+          out.errors.push({ field: 'dom', msg: '「日」和「周」不能同时写成 ?，其中一个要写具体的值或 *' });
+        } else if (!dn && !wn) {
+          out.errors.push({ field: 'dow', msg: 'Quartz 要求「日」和「周」二选一：不用的那个必须写成 ?（例如 0 0 12 * * ? 或 0 0 12 ? * MON）' });
+        }
+      }
+    }
+    out.ok = out.errors.length === 0;
+    return out;
+  }
+
+  /* ---------- field helpers ---------- */
+  const byKey = (parsed) => {
+    const o = {};
+    parsed.fields.forEach((f) => (o[f.key] = f));
+    return o;
+  };
+  function kindOf(f) {
+    const p = f.parts;
+    if (p.length === 1 && p[0].t === 'any') return 'any';
+    if (p.length === 1 && p[0].t === 'none') return 'none';
+    if (p.every((x) => x.t === 'single')) return 'fixed';
+    if (p.length === 1 && p[0].t === 'step') return 'step';
+    if (p.length === 1 && p[0].t === 'range') return 'range';
+    if (p.every((x) => x.t === 'single' || x.t === 'range' || x.t === 'step')) return 'set';
+    return 'special';
+  }
+  const isRestricted = (f) => {
+    const k = kindOf(f);
+    return k !== 'any' && k !== 'none';
+  };
+
+  /* ---------- next run times ---------- */
+  function lastWeekday(y, mo, dim) {
+    const w = new Date(y, mo - 1, dim).getDay();
+    return w === 6 ? dim - 1 : w === 0 ? dim - 2 : dim;
+  }
+  function nearestWeekday(y, mo, n, dim) {
+    if (n > dim) return -1;
+    const w = new Date(y, mo - 1, n).getDay();
+    if (w === 6) return n - 1 >= 1 ? n - 1 : n + 2;
+    if (w === 0) return n + 1 <= dim ? n + 1 : n - 2;
+    return n;
+  }
+  function domOk(F, y, mo, d, dim) {
+    for (const p of F.parts) {
+      switch (p.t) {
+        case 'any':
+        case 'none':
+          return true;
+        case 'single':
+        case 'range':
+        case 'step':
+          if (p.values.indexOf(d) >= 0) return true;
+          break;
+        case 'last':
+          if (d === dim) return true;
+          break;
+        case 'lastOff':
+          if (d === dim - p.n) return true;
+          break;
+        case 'lastW':
+          if (d === lastWeekday(y, mo, dim)) return true;
+          break;
+        case 'nearW':
+          if (d === nearestWeekday(y, mo, p.n, dim)) return true;
+          break;
+        default:
+      }
+    }
+    return false;
+  }
+  function dowOk(F, d, dim, wd) {
+    for (const p of F.parts) {
+      switch (p.t) {
+        case 'any':
+        case 'none':
+          return true;
+        case 'single':
+        case 'range':
+        case 'step':
+          if (p.js.indexOf(wd) >= 0) return true;
+          break;
+        case 'lastDow':
+          if (wd === p.d && d + 7 > dim) return true;
+          break;
+        case 'nth':
+          if (wd === p.d && Math.ceil(d / 7) === p.n) return true;
+          break;
+        default:
+      }
+    }
+    return false;
+  }
+
+  function makeMatcher(parsed) {
+    const f = byKey(parsed);
+    const fmt = parsed.fmt;
+    const secs = f.second ? f.second.values : [0];
+    const years = f.year && f.year.values ? new Set(f.year.values) : null;
+    const months = new Set(f.month.values);
+    return {
+      secs,
+      mins: f.minute.values,
+      hours: f.hour.values,
+      months,
+      years,
+      dayOk(y, mo, d) {
+        const dim = new Date(y, mo, 0).getDate();
+        const wd = new Date(y, mo - 1, d).getDay();
+        const dm = domOk(f.dom, y, mo, d, dim);
+        const wm = dowOk(f.dow, d, dim, wd);
+        if (fmt === 'unix') return f.dom.star || f.dow.star ? dm && wm : dm || wm;
+        return dm && wm;
+      },
+    };
+  }
+
+  function nextRuns(parsed, from, count) {
+    count = count || 10;
+    if (!parsed.ok) return [];
+    const m = makeMatcher(parsed);
+    const start = new Date(from.getTime());
+    start.setMilliseconds(0);
+    start.setSeconds(start.getSeconds() + 1);
+    const out = [];
+    const y0 = start.getFullYear();
+    const maxYear = m.years ? Math.max.apply(null, Array.from(m.years)) : y0 + 12;
+    const limit = (maxYear - y0 + 1) * 366;
+    for (let i = 0; i < limit && out.length < count; i++) {
+      const day = new Date(y0, start.getMonth(), start.getDate() + i);
+      const y = day.getFullYear();
+      if (y > maxYear) break;
+      if (m.years && !m.years.has(y)) continue;
+      const mo = day.getMonth() + 1;
+      if (!m.months.has(mo)) continue;
+      const d = day.getDate();
+      if (!m.dayOk(y, mo, d)) continue;
+      for (let hi = 0; hi < m.hours.length && out.length < count; hi++) {
+        for (let mi = 0; mi < m.mins.length && out.length < count; mi++) {
+          for (let si = 0; si < m.secs.length && out.length < count; si++) {
+            const t = new Date(y, mo - 1, d, m.hours[hi], m.mins[mi], m.secs[si]);
+            if (t >= start) out.push(t);
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  /* ---------- plain-language description ---------- */
+  function runsOf(sorted) {
+    const runs = [];
+    for (const v of sorted) {
+      const last = runs[runs.length - 1];
+      if (last && v === last[1] + 1) last[1] = v;
+      else runs.push([v, v]);
+    }
+    return runs;
+  }
+  function joinRuns(sorted, one, minRun) {
+    minRun = minRun || 3;
+    const parts = [];
+    for (const r of runsOf(sorted)) {
+      if (r[1] - r[0] + 1 >= minRun) {
+        const hi = String(one(r[1]));
+        parts.push(one(r[0]) + '至' + (/^\d/.test(hi) ? ' ' : '') + hi);
+      }
+      else for (let v = r[0]; v <= r[1]; v++) parts.push(one(v));
+    }
+    return parts.join('、');
+  }
+  function joinDows(jsList) {
+    const idx = uniqSorted(jsList.map(mf));
+    return joinRuns(idx, (i) => DOW_CN[(i + 1) % 7]);
+  }
+
+  const UNIT = {
+    second: { every: (n) => '每 ' + n + ' 秒', fmt: (v) => v + ' 秒', each: '每秒' },
+    minute: { every: (n) => '每 ' + n + ' 分钟', fmt: (v) => v + ' 分', each: '每分钟' },
+    hour: { every: (n) => '每 ' + n + ' 小时', fmt: (v) => v + ' 点', each: '每小时' },
+    dom: { every: (n) => '每 ' + n + ' 天', fmt: (v) => v + ' 日', each: '每天' },
+    month: { every: (n) => '每 ' + n + ' 个月', fmt: (v) => v + ' 月', each: '每月' },
+    year: { every: (n) => '每 ' + n + ' 年', fmt: (v) => v + ' 年', each: '每年' },
+  };
+
+  function stepText(p, key) {
+    const R = fieldRange(key);
+    const u = UNIT[key];
+    const fromMin = p.star || p.a === R.min;
+    if (p.n === 1 && fromMin && p.b === R.max) return u.each;
+    if (fromMin && p.b === R.max) return u.every(p.n);
+    if (p.b === R.max) return '从 ' + u.fmt(p.a) + '起，' + u.every(p.n);
+    return u.fmt(p.a) + '至 ' + u.fmt(p.b) + '，' + u.every(p.n);
+  }
+
+  function partText(p, key) {
+    const u = UNIT[key];
+    switch (p.t) {
+      case 'single':
+        return u.fmt(p.v);
+      case 'range':
+        return u.fmt(p.a) + '至 ' + u.fmt(p.b);
+      case 'step':
+        return stepText(p, key);
+      default:
+        return '';
+    }
+  }
+
+  function dowText(F) {
+    const bits = [];
+    const plain = F.parts.filter((p) => p.t === 'single' || p.t === 'range' || p.t === 'step');
+    if (plain.length) bits.push(joinDows([].concat.apply([], plain.map((p) => p.js))));
+    for (const p of F.parts) {
+      if (p.t === 'nth') bits.push('第 ' + p.n + ' 个' + DOW_CN[p.d]);
+      if (p.t === 'lastDow') bits.push('最后一个' + DOW_CN[p.d]);
+    }
+    return bits.join('、');
+  }
+  function domText(F) {
+    const bits = [];
+    const plain = F.parts.filter((p) => p.t === 'single' || p.t === 'range' || p.t === 'step');
+    if (plain.length === 1 && plain[0].t === 'step') bits.push(stepText(plain[0], 'dom'));
+    else if (plain.length) bits.push(joinRuns(uniqSorted([].concat.apply([], plain.map((p) => p.values))), (v) => v + ' 日'));
+    for (const p of F.parts) {
+      if (p.t === 'last') bits.push('最后一天');
+      if (p.t === 'lastOff') bits.push('倒数第 ' + (p.n + 1) + ' 天');
+      if (p.t === 'lastW') bits.push('最后一个工作日');
+      if (p.t === 'nearW') bits.push(p.n + ' 日最近的工作日');
+    }
+    return bits.join('、');
+  }
+
+  function fieldBreakdown(F, fmt) {
+    const key = F.key;
+    const k = kindOf(F);
+    if (k === 'any') return key === 'dow' ? '不限星期' : UNIT[key] ? UNIT[key].each : '任意';
+    if (k === 'none') return '不指定（由另一个字段决定）';
+    if (key === 'dow') return dowText(F);
+    if (key === 'dom') return domText(F);
+    const plain = F.parts.filter((p) => p.t === 'single' || p.t === 'range' || p.t === 'step');
+    if (F.parts.length === 1) return partText(F.parts[0], key);
+    return joinRuns(uniqSorted([].concat.apply([], plain.map((p) => p.values))), UNIT[key].fmt);
+  }
+
+  function timePhrase(fs, hasSec) {
+    const S = hasSec ? fs.second : null;
+    const M = fs.minute;
+    const H = fs.hour;
+    const sk = S ? kindOf(S) : 'fixed';
+    const mk = kindOf(M);
+    const hk = kindOf(H);
+    const sv = S ? S.values : [0];
+    const mv = M.values;
+    const hv = H.values;
+    const sec0 = sk === 'fixed' && sv.length === 1 && sv[0] === 0;
+
+    if (sk === 'fixed' && mk === 'fixed' && hk === 'fixed' && sv.length * mv.length * hv.length <= 6) {
+      const showSec = hasSec && sv.some((v) => v !== 0);
+      const times = [];
+      hv.forEach((h) => mv.forEach((m) => sv.forEach((s) => times.push(pad(h) + ':' + pad(m) + (showSec ? ':' + pad(s) : '')))));
+      return { kind: 'times', text: times.join('、') };
+    }
+
+    const hourScope = () => {
+      if (hk === 'any') return null;
+      const runs = runsOf(hv);
+      if (runs.length > 4) return '在 ' + hv.length + ' 个指定的小时内';
+      return '在 ' + runs.map((r) => pad(r[0]) + ':00–' + pad(r[1]) + ':59').join('、') + ' 期间';
+    };
+
+    let text;
+    if (sk === 'fixed' && mk === 'fixed' && hk === 'any' && !sec0) {
+      text = '每小时的第 ' + joinRuns(mv, (v) => v) + ' 分 ' + joinRuns(sv, (v) => v) + ' 秒';
+    } else if (!sec0) {
+      let sTxt;
+      if (sk === 'any') sTxt = '每秒';
+      else if (sk === 'step') sTxt = stepText(S.parts[0], 'second');
+      else sTxt = '每分钟的第 ' + joinRuns(sv, (v) => v) + ' 秒';
+      const scopes = [];
+      const hs = hourScope();
+      if (hs) scopes.push(hs);
+      if (mk !== 'any') scopes.push('在每小时第 ' + joinRuns(mv, (v) => v) + ' 分钟内');
+      text = scopes.concat(sTxt).join('，');
+    } else if (!(mk === 'fixed' && mv.length === 1)) {
+      let mTxt;
+      if (mk === 'any') mTxt = '每分钟';
+      else if (mk === 'step') mTxt = stepText(M.parts[0], 'minute');
+      else mTxt = '每小时的第 ' + joinRuns(mv, (v) => v) + ' 分钟';
+      text = [hourScope(), mTxt].filter(Boolean).join('，');
+    } else {
+      const m = mv[0];
+      const tail = m === 0 ? '整点' : '的第 ' + m + ' 分钟';
+      if (hk === 'any') text = m === 0 ? '每小时整点' : '每小时的第 ' + m + ' 分钟';
+      else if (hk === 'step') text = stepText(H.parts[0], 'hour') + tail;
+      else {
+        const hasRun = runsOf(hv).some((r) => r[1] - r[0] + 1 >= 3);
+        if (!hasRun && hv.length <= 12) text = hv.map((h) => pad(h) + ':' + pad(m)).join('、');
+        else text = '在 ' + joinRuns(hv, (v) => v + ' 点') + '之间，每小时' + tail;
+        if (!hasRun && hv.length <= 12) return { kind: 'times', text };
+      }
+    }
+    return { kind: 'freq', text };
+  }
+
+  function joinSp(parts) {
+    let out = '';
+    parts.filter(Boolean).forEach((t, i) => {
+      out += (i && /^\d/.test(t) ? ' ' : '') + t;
+    });
+    return out;
+  }
+
+  function yearText(F) {
+    const p = F.parts[0];
+    if (F.parts.length === 1 && p.t === 'step' && p.b === 2099) return p.n === 1 ? p.a + ' 年起' : p.a + ' 年起每 ' + p.n + ' 年';
+    return joinRuns(F.values, UNIT.year.fmt);
+  }
+
+  function datePhrase(fs, hasYear, fmt) {
+    const year = hasYear && kindOf(fs.year) !== 'any' ? yearText(fs.year) : '';
+    const multiYear = year && fs.year.values.length > 1;
+    const month0 = kindOf(fs.month) === 'any' ? '' : joinRuns(fs.month.values, UNIT.month.fmt);
+    const domK = kindOf(fs.dom);
+    const dowK = kindOf(fs.dow);
+    const dom = domK === 'any' || domK === 'none' ? '' : domText(fs.dom);
+    const dow = dowK === 'any' || dowK === 'none' ? '' : dowText(fs.dow);
+    const dowIsMonthly = fs.dow.parts.some((p) => p.t === 'nth' || p.t === 'lastDow');
+    // a month list reads better as "1 月、4 月的 1 日"
+    const monthOf = month0 && /[、至]/.test(month0) ? month0 + '的' : month0;
+    const lead = month0 ? (year ? (multiYear ? '每年' : '') : '每年') : '';
+    const monthlyDom = /^每/.test(dom) ? dom : joinSp(['每月', dom]);
+    if (!dom && !dow) {
+      return year || month0 ? joinSp([year, lead, month0 ? month0 + '的每一天' : '的每一天']).replace(/^的每一天$/, '每天') : '每天';
+    }
+    if (dom && !dow) return joinSp([year, month0 ? joinSp([lead, monthOf, dom]) : monthlyDom]);
+    if (!dom && dow) return joinSp([year, month0 ? joinSp([lead, month0 + '的' + dow]) : dowIsMonthly ? '每月' + dow : '每' + dow]);
+    if (fmt === 'unix') return joinSp([year, month0 ? joinSp([lead, month0 + '的']) : '', (month0 ? dom : monthlyDom) + '，或' + (dowIsMonthly ? '每月' : '每') + dow]);
+    return joinSp([year, joinSp([month0 ? joinSp([lead, monthOf]) : '每月', dom]) + '且为' + dow]);
+  }
+
+  function describe(parsed) {
+    if (!parsed.ok) return null;
+    const fs = byKey(parsed);
+    const fmt = parsed.fmt;
+    const hasSec = !!fs.second;
+    const hasYear = !!fs.year;
+    const time = timePhrase(fs, hasSec);
+    const date = datePhrase(fs, hasYear, fmt);
+    let summary;
+    if (time.kind === 'times') summary = date + ' ' + time.text + (time.text.indexOf('、') >= 0 ? ' 各执行一次' : ' 执行');
+    else if (date === '每天') summary = (/^在/.test(time.text) ? '每天' : '') + time.text + ' 执行一次';
+    else summary = date + '，' + time.text + ' 执行一次';
+    summary = summary.replace(/\s+执行/, ' 执行').replace(/ 执行一次$/, '执行一次');
+    const items = parsed.fields.map((F) => ({ key: F.key, name: FIELD_META[F.key].name, token: F.raw, text: fieldBreakdown(F, fmt) }));
+    return { summary, items };
+  }
+
+  /* ---------- warnings / hints ---------- */
+  function analyze(parsed) {
+    const out = [];
+    if (!parsed.ok) return out;
+    const f = byKey(parsed);
+    const fmt = parsed.fmt;
+    if (parsed.macro) out.push({ level: 'info', text: '「' + parsed.macro + '」等价于 ' + parsed.expanded });
+    parsed.warnings.forEach((w) => out.push(w));
+
+    const domR = isRestricted(f.dom);
+    const dowR = isRestricted(f.dow);
+    if (fmt === 'unix' && domR && dowR && !f.dom.star && !f.dow.star) {
+      out.push({ level: 'warn', text: '「日」和「周」都写了具体值：标准 Cron 里两者是「或」关系，满足其中一个就会执行（例如 0 0 1 * 1 表示每月 1 号，以及每个周一）。' });
+    }
+    if (fmt === 'spring' && domR && dowR) {
+      out.push({ level: 'warn', text: 'Spring 里「日」和「周」同时指定时必须同时满足（「且」关系），例如日为 1 号时还必须恰好是周一才会执行。' });
+    }
+    ['second', 'minute', 'hour'].forEach((key) => {
+      const F = f[key];
+      if (!F) return;
+      F.parts.forEach((p) => {
+        if (p.t !== 'step') return;
+        const R = fieldRange(key);
+        const size = R.max - R.min + 1;
+        const fromMin = p.star || p.a === R.min;
+        if (p.n > p.b - p.a && p.n > 1) {
+          out.push({ level: 'warn', text: FIELD_META[key].name + '字段的步长 ' + p.n + ' 超出了范围，只会在 ' + p.a + ' 执行一次。' });
+        } else if (fromMin && p.b === R.max && p.n > 1 && size % p.n !== 0 && p.values.length <= 12) {
+          out.push({ level: 'warn', text: FIELD_META[key].name + '字段的步长 ' + p.n + ' 不能整除 ' + size + '：实际取值是 ' + p.values.join('、') + '，到头后会从 ' + R.min + ' 重新开始，所以最后一个间隔会比 ' + p.n + ' 短。' });
+        }
+      });
+    });
+    if (kindOf(f.month) === 'any' && f.dom.parts.every((p) => p.t === 'single' || p.t === 'range' || p.t === 'step' || p.t === 'any' || p.t === 'none')) {
+      const vals = kindOf(f.dom) === 'any' || kindOf(f.dom) === 'none' ? [] : f.dom.values;
+      const hi = vals.filter((v) => v >= 29);
+      if (hi.length && vals.length) {
+        const only = vals.every((v) => v >= 29);
+        const what = hi.indexOf(31) >= 0 ? '31 号只有 7 个月才有' : hi.indexOf(30) >= 0 ? '30 号在 2 月不存在' : '29 号在平年的 2 月不存在';
+        if (only) {
+          out.push({ level: 'warn', text: what + '，没有这一天的月份会被跳过。' + (fmt === 'unix' ? '标准 Cron 没有 L，要表示「月末」可以每天执行，在脚本里判断明天是不是 1 号。' : '想表示「每月最后一天」请用 L。') });
+        }
+      }
+    }
+    if (f.second && kindOf(f.second) === 'any') {
+      out.push({ level: 'warn', text: '「秒」是 *，表示每秒执行一次，频率很高，请确认这是你想要的。' });
+    } else if ((!f.second || (kindOf(f.second) === 'fixed' && f.second.values.length === 1)) && kindOf(f.minute) === 'any' && kindOf(f.hour) === 'any') {
+      out.push({ level: 'info', text: '最短间隔是 1 分钟：请确认任务的执行耗时小于间隔，避免任务叠加。' });
+    }
+    if (isQuartz(fmt) && /[1-7]/.test(f.dow.raw) && !/[A-Za-z]/.test(f.dow.raw)) {
+      out.push({ level: 'info', text: 'Quartz 里星期数字 1=周日、2=周一 … 7=周六，和 Linux（0/7=周日、1=周一）不一样。用 MON、FRI 这样的英文缩写更不容易写错。' });
+    }
+    if (fmt === 'unix') {
+      let nameInList = false;
+      let explicitStep = false;
+      parsed.fields.forEach((F) => {
+        F.parts.forEach((p) => {
+          if (p.usedName && (F.parts.length > 1 || p.t === 'range')) nameInList = true;
+          if (p.t === 'step' && p.explicit) explicitStep = true;
+        });
+      });
+      if (nameInList) out.push({ level: 'warn', text: '部分 cron 实现不允许在范围或列表里使用英文缩写（如 MON-FRI），改用数字更通用。' });
+      if (explicitStep) out.push({ level: 'warn', text: '「起点/步长」（如 5/15）不是所有 cron 都支持，更通用的写法是「起点-结束/步长」，例如 5-59/15。' });
+    }
+    if (f.year && f.year.values && Math.max.apply(null, f.year.values) < new Date().getFullYear()) {
+      out.push({ level: 'warn', text: '年份已经过去，这个表达式不会再触发。' });
+    }
+    return out;
+  }
+
+  /* ---------- builder state ---------- */
+  const DEFAULT_STEP = { second: 5, minute: 5, hour: 2, dom: 2, month: 3, year: 1 };
+
+  function newFieldState(key) {
+    const R = fieldRange(key, 'spring');
+    const yr = new Date().getFullYear();
+    const st = {
+      mode: 'every',
+      step: { start: key === 'year' ? yr : R.min, n: DEFAULT_STEP[key] || 1 },
+      range: { a: R.min, b: Math.min(R.max, R.min + 4) },
+      list: [R.min],
+      lastOff: 1,
+      nearW: 15,
+      nth: { d: 1, n: 1 },
+      lastDow: 5,
+      text: '',
+      keep: null,
+    };
+    if (key === 'hour') { st.range = { a: 9, b: 17 }; st.list = [9]; }
+    if (key === 'second' || key === 'minute') { st.range = { a: 0, b: 30 }; }
+    if (key === 'dom') { st.range = { a: 1, b: 15 }; st.list = [1]; }
+    if (key === 'month') { st.range = { a: 1, b: 6 }; st.list = [1]; }
+    if (key === 'dow') { st.range = { a: 1, b: 5 }; st.list = [1]; }
+    if (key === 'year') { st.range = { a: yr, b: yr + 2 }; st.list = [yr]; }
+    return st;
+  }
+  function newStates() {
+    const s = {};
+    Object.keys(FIELD_META).forEach((k) => (s[k] = newFieldState(k)));
+    s.second.mode = 'list';
+    return s;
+  }
+
+  function dowSpecial(d, fmt) {
+    return isQuartz(fmt) ? String(d + 1) : DOW_ABBR[d];
+  }
+  function listRaw(key, list, fmt) {
+    if (key === 'dow') {
+      if (fmt === 'unix') return uniqSorted(list).join(',');
+      return list.slice().sort((x, y) => mf(x) - mf(y)).map((d) => DOW_ABBR[d]).join(',');
+    }
+    return uniqSorted(list).join(',');
+  }
+  function dowRangeRaw(a, b, fmt) {
+    if (a === b) return listRaw('dow', [a], fmt);
+    if (fmt === 'unix') return a + '-' + (b === 0 ? 7 : b);
+    if (fmt === 'spring') return DOW_ABBR[a] + '-' + DOW_ABBR[b];
+    if (b === 0) return a === 6 ? 'SAT,SUN' : DOW_ABBR[a] + '-SAT,SUN';
+    return DOW_ABBR[a] + '-' + DOW_ABBR[b];
+  }
+
+  function stateToRaw(key, st, fmt) {
+    if (st.keep) return st.keep;
+    switch (st.mode) {
+      case 'every':
+        return '*';
+      case 'none':
+        return '?';
+      case 'step': {
+        const R = fieldRange(key, fmt);
+        if (fmt === 'unix') return st.step.start === R.min ? '*/' + st.step.n : st.step.start + '-' + R.max + '/' + st.step.n;
+        return st.step.start + '/' + st.step.n;
+      }
+      case 'range':
+        return key === 'dow' ? dowRangeRaw(st.range.a, st.range.b, fmt) : st.range.a + '-' + st.range.b;
+      case 'list':
+        return st.list.length ? listRaw(key, st.list, fmt) : '*';
+      case 'last':
+        return 'L';
+      case 'lastOff':
+        return 'L-' + st.lastOff;
+      case 'lastW':
+        return 'LW';
+      case 'nearW':
+        return st.nearW + 'W';
+      case 'nth':
+        return dowSpecial(st.nth.d, fmt) + '#' + st.nth.n;
+      case 'lastDow':
+        return dowSpecial(st.lastDow, fmt) + 'L';
+      case 'custom':
+        return (st.text || '').trim() || '*';
+      default:
+        return '*';
+    }
+  }
+
+  /* Turn one parsed field into builder state (keeps the exact original text in `keep`). */
+  function detectState(F, fmt) {
+    const key = F.key;
+    const st = newFieldState(key);
+    const R = fieldRange(key, fmt);
+    const P = F.parts;
+    const done = (patch) => Object.assign(st, patch, { keep: F.raw });
+    if (P.length === 1) {
+      const p = P[0];
+      switch (p.t) {
+        case 'any':
+          return done({ mode: 'every' });
+        case 'none':
+          return done({ mode: 'none' });
+        case 'step':
+          if (key !== 'dow' && p.b === R.max) return done({ mode: 'step', step: { start: p.star ? R.min : p.a, n: p.n } });
+          break;
+        case 'range':
+          if (key === 'dow') {
+            const a = dowToJs(p.a, fmt);
+            const b = dowToJs(p.b, fmt);
+            if (!p.wrapped && mf(a) < mf(b)) return done({ mode: 'range', range: { a, b } });
+            if (!p.wrapped && mf(a) === mf(b)) return done({ mode: 'list', list: [a] });
+          } else if (!p.wrapped) return done({ mode: 'range', range: { a: p.a, b: p.b } });
+          break;
+        case 'single':
+          return done({ mode: 'list', list: [key === 'dow' ? dowToJs(p.v, fmt) : p.v] });
+        case 'last':
+          return done({ mode: 'last' });
+        case 'lastOff':
+          return done({ mode: 'lastOff', lastOff: p.n });
+        case 'lastW':
+          return done({ mode: 'lastW' });
+        case 'nearW':
+          return done({ mode: 'nearW', nearW: p.n });
+        case 'nth':
+          return done({ mode: 'nth', nth: { d: p.d, n: p.n } });
+        case 'lastDow':
+          return done({ mode: 'lastDow', lastDow: p.d });
+        default:
+      }
+    } else if (P.every((p) => p.t === 'single' || (p.t === 'range' && !p.wrapped))) {
+      return done({ mode: 'list', list: F.values.slice() });
+    }
+    return done({ mode: 'custom', text: F.raw });
+  }
+
+  function statesFromParsed(parsed, states) {
+    const s = states || newStates();
+    parsed.fields.forEach((F) => (s[F.key] = detectState(F, parsed.fmt)));
+    return s;
+  }
+
+  /* Quartz needs exactly one of dom/dow to be "?". Fix the other field after `changedKey` changed. */
+  function applyQuartzRule(s, changedKey) {
+    const dn = s.dom.mode === 'none';
+    const wn = s.dow.mode === 'none';
+    if (dn !== wn) return;
+    const reset = (k) => {
+      s[k].keep = null;
+    };
+    if (dn && wn) {
+      const other = changedKey === 'dom' ? 'dow' : 'dom';
+      s[other].mode = 'every';
+      reset(other);
+      return;
+    }
+    if (changedKey) {
+      const other = changedKey === 'dom' ? 'dow' : 'dom';
+      if (s[changedKey].mode === 'every') {
+        s[changedKey].mode = 'none';
+        reset(changedKey);
+      } else {
+        s[other].mode = 'none';
+        reset(other);
+      }
+      return;
+    }
+    if (s.dow.mode === 'every') {
+      s.dow.mode = 'none';
+      reset('dow');
+    } else {
+      s.dom.mode = 'none';
+      reset('dom');
+    }
+  }
+
+  /* Move the builder state from one format to another. */
+  function convertStates(states, from, to) {
+    const s = JSON.parse(JSON.stringify(states));
+    const notes = [];
+    Object.keys(s).forEach((k) => {
+      if (s[k].mode !== 'custom') s[k].keep = null;
+    });
+    if (to === 'unix') {
+      if (s.second.mode !== 'list' || s.second.list.length !== 1 || s.second.list[0] !== 0) {
+        if (from !== 'unix') notes.push('5 位格式不支持秒，已忽略「秒」的设置');
+      }
+      if (from === 'quartz7' && s.year.mode !== 'every') notes.push('5 位格式没有「年」，已忽略');
+      ['dom', 'dow'].forEach((k) => {
+        const m = s[k].mode;
+        if (m === 'none') s[k].mode = 'every';
+        else if (['last', 'lastOff', 'lastW', 'nearW', 'nth', 'lastDow'].indexOf(m) >= 0) {
+          s[k].mode = 'every';
+          notes.push('标准 Cron 不支持 L / W / #，「' + FIELD_META[k].name + '」已重置为每' + (k === 'dom' ? '天' : '周'));
+        }
+      });
+    } else {
+      if (to === 'spring') {
+        ['dom', 'dow'].forEach((k) => {
+          if (s[k].mode === 'none') s[k].mode = 'every';
+        });
+      }
+      if (isQuartz(to)) {
+        const bothRestricted = s.dom.mode !== 'every' && s.dom.mode !== 'none' && s.dow.mode !== 'every' && s.dow.mode !== 'none';
+        applyQuartzRule(s, null);
+        if (bothRestricted) notes.push('Quartz 的「日」和「周」只能指定一个，已保留「周」，把「日」设为 ?');
+      }
+    }
+    return { states: s, notes: notes.filter(Boolean) };
+  }
+
+  function buildExpression(states, fmt) {
+    return FORMATS[fmt].fields.map((k) => stateToRaw(k, states[k], fmt)).join(' ');
+  }
+
+  return {
+    FORMATS, FORMAT_ORDER, FIELD_META, MONTH_ABBR, DOW_ABBR, DOW_CN,
+    isQuartz, fieldRange, dowToJs, mf, parse, nextRuns, describe, analyze, kindOf,
+    newStates, newFieldState, stateToRaw, detectState, statesFromParsed, applyQuartzRule, convertStates, buildExpression,
+  };
+});
+
+</script>
+<script>
+/* Clickable examples. x = the same schedule written for each format (null = that format cannot express it). */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.CronExamples = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  const CATS = [
+    { id: 'interval', name: '间隔执行' },
+    { id: 'daily', name: '每天' },
+    { id: 'weekly', name: '每周' },
+    { id: 'monthly', name: '每月 · 每年' },
+    { id: 'year', name: '指定年份' },
+  ];
+
+  const E = (cat, title, use, unix, spring, quartz6, quartz7) => ({ cat, title, use, x: { unix, spring, quartz6, quartz7 } });
+
+  const LIST = [
+    // 间隔执行
+    E('interval', '每分钟', '心跳检测、队列轮询', '* * * * *', '0 * * * * *', '0 * * * * ?', '0 * * * * ? *'),
+    E('interval', '每 5 分钟', '数据同步、健康检查', '*/5 * * * *', '0 */5 * * * *', '0 0/5 * * * ?', '0 0/5 * * * ? *'),
+    E('interval', '每 30 分钟', '缓存刷新、报表汇总', '*/30 * * * *', '0 */30 * * * *', '0 0/30 * * * ?', '0 0/30 * * * ? *'),
+    E('interval', '每 10 秒', '高频采集（5 位不支持秒）', null, '*/10 * * * * *', '0/10 * * * * ?', '0/10 * * * * ? *'),
+    E('interval', '每小时整点', '整点统计、日志切割', '0 * * * *', '0 0 * * * *', '0 0 * * * ?', '0 0 * * * ? *'),
+    E('interval', '每 2 小时', '增量备份、Token 刷新', '0 */2 * * *', '0 0 */2 * * *', '0 0 0/2 * * ?', '0 0 0/2 * * ? *'),
+    // 每天
+    E('daily', '每天 0 点', '日结、清理临时数据', '0 0 * * *', '0 0 0 * * *', '0 0 0 * * ?', '0 0 0 * * ? *'),
+    E('daily', '每天 12:00', '午间提醒、定时推送', '0 12 * * *', '0 0 12 * * *', '0 0 12 * * ?', '0 0 12 * * ? *'),
+    E('daily', '每天凌晨 2:30', '数据库备份、低峰期任务', '30 2 * * *', '0 30 2 * * *', '0 30 2 * * ?', '0 30 2 * * ? *'),
+    E('daily', '每天 9:00 和 18:00', '上下班打卡提醒', '0 9,18 * * *', '0 0 9,18 * * *', '0 0 9,18 * * ?', '0 0 9,18 * * ? *'),
+    E('daily', '每天 8–20 点每 30 分钟', '白天时段内轮询', '*/30 8-20 * * *', '0 */30 8-20 * * *', '0 0/30 8-20 * * ?', '0 0/30 8-20 * * ? *'),
+    E('daily', '夜间 22–5 点每 30 分钟', '夜间巡检（跨零点的小时列表）', '*/30 22-23,0-5 * * *', '0 */30 22-23,0-5 * * *', '0 0/30 22-23,0-5 * * ?', '0 0/30 22-23,0-5 * * ? *'),
+    // 每周
+    E('weekly', '工作日 9:00', '上班日提醒、日报', '0 9 * * 1-5', '0 0 9 * * MON-FRI', '0 0 9 ? * MON-FRI', '0 0 9 ? * MON-FRI *'),
+    E('weekly', '工作日 9–18 点每 15 分钟', '工作时间内的监控', '*/15 9-18 * * 1-5', '0 */15 9-18 * * MON-FRI', '0 0/15 9-18 ? * MON-FRI', '0 0/15 9-18 ? * MON-FRI *'),
+    E('weekly', '每周一 8:30', '周报、周会提醒', '30 8 * * 1', '0 30 8 * * MON', '0 30 8 ? * MON', '0 30 8 ? * MON *'),
+    E('weekly', '每周五 17:00', '周五收尾提醒', '0 17 * * 5', '0 0 17 * * FRI', '0 0 17 ? * FRI', '0 0 17 ? * FRI *'),
+    E('weekly', '周六、周日 10:00', '周末任务', '0 10 * * 0,6', '0 0 10 * * SAT,SUN', '0 0 10 ? * SAT,SUN', '0 0 10 ? * SAT,SUN *'),
+    E('weekly', '周一、三、五 20:00', '隔天执行的任务', '0 20 * * 1,3,5', '0 0 20 * * MON,WED,FRI', '0 0 20 ? * MON,WED,FRI', '0 0 20 ? * MON,WED,FRI *'),
+    // 每月 · 每年
+    E('monthly', '每月 1 号 0 点', '月初账单、月度清零', '0 0 1 * *', '0 0 0 1 * *', '0 0 0 1 * ?', '0 0 0 1 * ? *'),
+    E('monthly', '每月 1 号和 15 号 10:00', '半月结算', '0 10 1,15 * *', '0 0 10 1,15 * *', '0 0 10 1,15 * ?', '0 0 10 1,15 * ? *'),
+    E('monthly', '每月最后一天 23:59', '月末结账（需要 L）', null, '0 59 23 L * *', '0 59 23 L * ?', '0 59 23 L * ? *'),
+    E('monthly', '每月最后一个工作日 18:00', '月末报表（需要 LW）', null, '0 0 18 LW * *', '0 0 18 LW * ?', '0 0 18 LW * ? *'),
+    E('monthly', '15 号最近的工作日 9:00', '发薪日，遇周末自动提前或顺延（需要 W）', null, '0 0 9 15W * *', '0 0 9 15W * ?', '0 0 9 15W * ? *'),
+    E('monthly', '每月第 1 个周一 9:00', '月度例会（需要 #）', null, '0 0 9 * * MON#1', '0 0 9 ? * 2#1', '0 0 9 ? * 2#1 *'),
+    E('monthly', '每月最后一个周五 17:00', '月度复盘（需要 L）', null, '0 0 17 * * FRIL', '0 0 17 ? * 6L', '0 0 17 ? * 6L *'),
+    E('monthly', '每季度第一天 0 点', '季度报表', '0 0 1 1,4,7,10 *', '0 0 0 1 1,4,7,10 *', '0 0 0 1 1,4,7,10 ?', '0 0 0 1 1,4,7,10 ? *'),
+    E('monthly', '每年 1 月 1 日 0 点', '年度任务、新年祝福', '0 0 1 1 *', '0 0 0 1 1 *', '0 0 0 1 1 ?', '0 0 0 1 1 ? *'),
+    // 指定年份（只有 Quartz 7 位）
+    E('year', '只在 2027-03-08 10:00 执行一次', '一次性任务（需要「年」）', null, null, null, '0 0 10 8 3 ? 2027'),
+    E('year', '2027–2029 年每年 6 月 1 日 9:00', '限定年份范围', null, null, null, '0 0 9 1 6 ? 2027-2029'),
+    E('year', '2028 年起每个工作日 9:00', '从某一年开始生效', null, null, null, '0 0 9 ? * MON-FRI 2028/1'),
+  ];
+
+  return { CATS, LIST };
+});
+
+</script>
+<script>
+(function () {
+  'use strict';
+  const E = window.CronEngine;
+  const X = window.CronExamples;
+  const $ = (s, root) => (root || document).querySelector(s);
+  const $$ = (s, root) => Array.from((root || document).querySelectorAll(s));
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const pad = (n) => String(n).padStart(2, '0');
+  const reduceMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const scrollTo = (node, block) => node.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: block || 'start' });
+
+  try {
+    const l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400..700&display=swap';
+    document.head.appendChild(l);
+  } catch (e) { /* font is optional */ }
+
+  /* ---------- static content ---------- */
+  const FMT = {
+    unix: {
+      len: 5, name: '标准 Cron', short: '5 位 · 标准', seq: '分 时 日 月 周',
+      where: 'crontab · Kubernetes · GitHub Actions',
+      tags: ['Linux / Unix crontab', 'Kubernetes CronJob', 'GitHub Actions（按 UTC）', 'Jenkins', 'Airflow'],
+      facts: [
+        ['最小精度', '分钟，不能精确到秒'],
+        ['星期取值', '0–7，0 和 7 都是周日，1 是周一；也可以写 <code>SUN</code>–<code>SAT</code>'],
+        ['可用符号', '<code>*</code> <code>,</code> <code>-</code> <code>/</code>（没有 <code>?</code> <code>L</code> <code>W</code> <code>#</code>）'],
+        ['日与周同时写', '「或」关系：日或周满足其中一个就会执行'],
+        ['时区', '跟随系统时区。GitHub Actions 固定为 UTC；Kubernetes 可以用 <code>spec.timeZone</code> 指定'],
+      ],
+      tip: '需要精确到秒，或者要写「每月最后一天」「第 N 个周几」，请改用 6 位格式。Jenkins 另有 <code>H</code> 写法，这里不生成。',
+    },
+    spring: {
+      len: 6, name: 'Spring', short: '6 位 · Spring', seq: '秒 分 时 日 月 周',
+      where: 'Spring @Scheduled · Spring Boot',
+      tags: ['Spring / Spring Boot 的 @Scheduled', 'Spring Task', 'Spring 的 CronExpression 工具类'],
+      facts: [
+        ['最小精度', '秒'],
+        ['星期取值', '0–7，0 和 7 都是周日，1 是周一（和 Linux 相同，和 Quartz 不同）；也可以写 <code>MON</code>–<code>SUN</code>'],
+        ['可用符号', '<code>*</code> <code>,</code> <code>-</code> <code>/</code> <code>?</code> <code>L</code> <code>W</code> <code>#</code>，其中 <code>?</code> 等同于 <code>*</code>'],
+        ['日与周同时写', '「且」关系：两个都满足才执行'],
+        ['没有年', '只有 6 段，没有「年」这一项'],
+        ['时区', '默认用服务器时区，可以用 <code>@Scheduled(zone = "Asia/Shanghai")</code> 指定'],
+      ],
+      tip: '从 Quartz 表达式搬过来要小心：Quartz 的星期数字（1=周日）和 Spring（1=周一）不一样，用 MON、FRI 这样的英文缩写最稳。',
+    },
+    quartz6: {
+      len: 6, name: 'Quartz', short: '6 位 · Quartz', seq: '秒 分 时 日 月 周',
+      where: 'Quartz · XXL-JOB 等调度平台',
+      tags: ['Quartz Scheduler', 'XXL-JOB、Elastic-Job 等 Java 调度平台（Quartz 风格，以平台文档为准）'],
+      facts: [
+        ['最小精度', '秒'],
+        ['星期取值', '1–7，<b>1 是周日</b>、2 是周一 … 7 是周六；也可以写 <code>SUN</code>–<code>SAT</code>'],
+        ['可用符号', '<code>*</code> <code>,</code> <code>-</code> <code>/</code> <code>?</code> <code>L</code> <code>W</code> <code>#</code>'],
+        ['日与周同时写', '不允许：「日」和「周」必须有一个写成 <code>?</code>'],
+        ['年', '这是省略「年」的写法，等同于每年'],
+      ],
+      tip: '最常见的错误：写成 <code>0 0 12 * * *</code>。Quartz 要求日和周里有一个是 <code>?</code>，应写成 <code>0 0 12 * * ?</code>。',
+    },
+    quartz7: {
+      len: 7, name: 'Quartz 含年', short: '7 位 · Quartz', seq: '秒 分 时 日 月 周 年',
+      where: '需要限定年份的 Quartz 任务',
+      tags: ['Quartz 完整格式（年可以省略）', '一次性任务：只在某年某月某日执行', '限定年份范围的任务'],
+      facts: [
+        ['最小精度', '秒'],
+        ['星期取值', '1–7，<b>1 是周日</b>、2 是周一 … 7 是周六；也可以写 <code>SUN</code>–<code>SAT</code>'],
+        ['可用符号', '同 6 位 Quartz'],
+        ['日与周同时写', '不允许：必须有一个写成 <code>?</code>'],
+        ['年', '可以写 1970–2099，例如 <code>2027</code>、<code>2027-2029</code>、<code>2028/1</code>（2028 年起每年）'],
+      ],
+      tip: '不需要限定年份时，6 位和 7 位在 Quartz 里效果一样；7 位末尾写 <code>*</code> 就是每年。',
+    },
+  };
+
+  const SCENARIOS = [
+    ['在 Linux / Unix 服务器上用 <code>crontab -e</code> 配定时任务', ['unix'], '5 位 · 标准'],
+    ['Kubernetes CronJob、GitHub Actions、Jenkins、Airflow', ['unix'], '5 位 · 标准'],
+    ['Spring / Spring Boot 里的 <code>@Scheduled(cron = "...")</code>', ['spring'], '6 位 · Spring'],
+    ['Quartz，或 XXL-JOB 这类 Quartz 风格的调度平台', ['quartz6'], '6 位 · Quartz'],
+    ['需要精确到「秒」', ['spring', 'quartz6', 'quartz7'], '6 位或 7 位'],
+    ['要写「每月最后一天」「第 N 个周几」「最近的工作日」', ['spring', 'quartz6', 'quartz7'], '6 位或 7 位'],
+    ['只想在某一年、或某段年份内执行（含一次性任务）', ['quartz7'], '7 位 · Quartz'],
+  ];
+
+  const TITLES = {
+    second: '秒（0–59）', minute: '分钟（0–59）', hour: '小时（0–23）', dom: '日（每月的第几天，1–31）',
+    month: '月（1–12）', dow: '周（星期几）', year: '年（1970–2099）',
+  };
+  const MODE_NAME = { every: '每个', none: '不指定（?）', step: '周期', range: '范围', list: '指定具体值', last: '月末', lastOff: '倒数', lastW: '月末工作日', nearW: '最近工作日', nth: '第几个', lastDow: '最后一个', custom: '自定义' };
+  const EVERY_TXT = { second: '每秒', minute: '每分钟', hour: '每小时', dom: '每天（不限日期）', month: '每月', dow: '不限星期', year: '每年' };
+  const STEP_TXT = {
+    second: ['从第 ', ' 秒开始，每隔 ', ' 秒执行一次'],
+    minute: ['从第 ', ' 分钟开始，每隔 ', ' 分钟执行一次'],
+    hour: ['从 ', ' 点开始，每隔 ', ' 小时执行一次'],
+    dom: ['从 ', ' 日开始，每隔 ', ' 天执行一次'],
+    month: ['从 ', ' 月开始，每隔 ', ' 个月执行一次'],
+    year: ['从 ', ' 年开始，每隔 ', ' 年执行一次'],
+  };
+  const RANGE_TXT = {
+    second: ['第 ', ' 到 ', ' 秒，每秒都执行'],
+    minute: ['每小时的第 ', ' 到 ', ' 分钟，每分钟都执行'],
+    hour: ['每天 ', ' 点到 ', ' 点，每小时执行'],
+    dom: ['每月 ', ' 日到 ', ' 日，每天执行'],
+    month: ['', ' 月到 ', ' 月'],
+    year: ['', ' 年到 ', ' 年'],
+  };
+  const DOW_OPTS = [1, 2, 3, 4, 5, 6, 0];
+
+  const USAGE = {
+    unix: (x) => [
+      { title: 'Linux crontab（crontab -e）', code: x + ' /path/to/job.sh >> /var/log/job.log 2>&1', note: '先用 <code>crontab -l</code> 确认已保存；脚本要写绝对路径。' },
+      { title: 'Kubernetes CronJob', code: 'apiVersion: batch/v1\nkind: CronJob\nmetadata:\n  name: my-job\nspec:\n  schedule: "' + x + '"\n  timeZone: "Asia/Shanghai"   # 不写则按控制器所在时区\n  jobTemplate:\n    # ...' },
+      { title: 'GitHub Actions', code: 'on:\n  schedule:\n    - cron: "' + x + '"   # 按 UTC 时间运行，北京时间要减 8 小时' },
+    ],
+    spring: (x) => [
+      { title: 'Spring @Scheduled', code: '@Scheduled(cron = "' + x + '", zone = "Asia/Shanghai")\npublic void run() {\n    // ...\n}', note: '配置类上需要加 <code>@EnableScheduling</code>。' },
+      { title: '放到配置文件里', code: '# application.properties\njob.cron=' + x + '\n\n// Java\n@Scheduled(cron = "${job.cron}")', note: '以后改频率不用重新打包。' },
+    ],
+    quartz: (x) => [
+      { title: 'Quartz（Java）', code: 'Trigger trigger = TriggerBuilder.newTrigger()\n    .withSchedule(CronScheduleBuilder.cronSchedule("' + x + '"))\n    .build();' },
+      { title: 'XXL-JOB 等调度平台', code: x, note: '在任务配置的 Cron 一栏直接粘贴；各平台支持的写法以它自己的文档为准。' },
+    ],
+  };
+
+  /* ---------- state ---------- */
+  const S = { fmt: 'unix', states: E.newStates(), active: 'minute', cat: 'interval', baseMode: 'now', parsed: null, snippets: [], roVisible: true };
+  const el = {};
+  ['fmtGrid', 'fmtDetail', 'scnList', 'exTabs', 'exGrid', 'exSub', 'fieldTabs', 'fieldPane', 'snips', 'usageSub', 'cells', 'summary', 'issues', 'runList', 'fromInput', 'nowBtn', 'tzNote', 'breakdown', 'dock', 'dockExpr', 'dockCopy', 'toast', 'fmtPill', 'readout', 'copyBtn'].forEach((id) => (el[id] = document.getElementById(id)));
+  el.input = document.getElementById('exprInput');
+
+  const cleanText = () => el.input.value.trim().replace(/\s+/g, ' ');
+  const fieldKeys = () => E.FORMATS[S.fmt].fields;
+
+  /* ---------- toast & copy ---------- */
+  let toastTimer;
+  function toast(msg) {
+    el.toast.textContent = msg;
+    el.toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.toast.classList.remove('show'), 2600);
+  }
+  async function copyText(text, okMsg) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast(okMsg || '已复制：' + text);
+      return;
+    } catch (e) { /* fall through */ }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (ok) { toast(okMsg || '已复制：' + text); return; }
+    } catch (e) { /* fall through */ }
+    if (text === cleanText()) { el.input.focus(); el.input.select(); }
+    toast('浏览器不允许自动复制，已选中，请按 Ctrl/⌘ + C');
+  }
+  function copyExpr() {
+    if (!S.parsed || !S.parsed.ok) { toast('表达式还有错误，修正后再复制'); return; }
+    copyText(cleanText());
+  }
+
+  /* ---------- formats ---------- */
+  function buildFormats() {
+    el.fmtGrid.innerHTML = E.FORMAT_ORDER.map((id) => {
+      const f = FMT[id];
+      return '<label class="fmt"><input type="radio" name="fmt" id="fmt-' + id + '" value="' + id + '"><span class="fmt-body">' +
+        '<span class="fmt-len">' + f.len + '<small>位</small></span><span class="fmt-name">' + f.name + '</span>' +
+        '<span class="fmt-seq">' + f.seq + '</span><span class="fmt-where">' + f.where + '</span></span></label>';
+    }).join('');
+    el.fmtGrid.addEventListener('change', (e) => { if (e.target.name === 'fmt') setFormat(e.target.value); });
+    el.scnList.innerHTML = SCENARIOS.map((s, i) => '<button type="button" class="scn" data-i="' + i + '"><span class="t">' + s[0] + '</span><span class="f">' + s[2] + '</span></button>').join('');
+    el.scnList.addEventListener('click', (e) => {
+      const b = e.target.closest('.scn');
+      if (!b) return;
+      const s = SCENARIOS[+b.dataset.i];
+      if (s[1].indexOf(S.fmt) >= 0) { toast('当前已经是「' + FMT[S.fmt].short + '」'); return; }
+      setFormat(s[1][0]);
+    });
+  }
+  function renderFormats() {
+    const f = FMT[S.fmt];
+    $$('input[name="fmt"]', el.fmtGrid).forEach((r) => (r.checked = r.value === S.fmt));
+    el.fmtDetail.innerHTML =
+      '<h3>' + f.short + '<span class="seq">' + f.seq + '</span></h3>' +
+      '<div><div class="sub-label">用在这些地方</div><div class="tags">' + f.tags.map((t) => '<span class="tag">' + t + '</span>').join('') + '</div></div>' +
+      '<dl class="facts">' + f.facts.map((r) => '<div><dt>' + r[0] + '</dt><dd>' + r[1] + '</dd></div>').join('') + '</dl>' +
+      '<p class="tip">' + f.tip + '</p>';
+    $$('.scn', el.scnList).forEach((b) => b.classList.toggle('on', SCENARIOS[+b.dataset.i][1].indexOf(S.fmt) >= 0));
+    el.fmtPill.textContent = f.short;
+  }
+
+  function setFormat(id, opt) {
+    opt = opt || {};
+    if (id === S.fmt && opt.text === undefined) return;
+    let notes = [];
+    if (opt.text === undefined) {
+      const c = E.convertStates(S.states, S.fmt, id);
+      S.states = c.states;
+      notes = c.notes;
+    }
+    S.fmt = id;
+    if (fieldKeys().indexOf(S.active) < 0) S.active = fieldKeys()[0];
+    renderFormats();
+    renderExamples();
+    if (opt.text !== undefined) {
+      el.input.value = opt.text;
+      analyze(opt.text, true);
+    } else {
+      refreshFromStates();
+      renderPane();
+    }
+    if (!opt.quiet) toast(notes.length ? notes.join('；') : '已切换到「' + FMT[id].short + '」，原来的设置已转换');
+  }
+
+  function autoDetect() {
+    const text = el.input.value;
+    const p = E.parse(text, S.fmt);
+    if (p.ok || !p.suggest || !p.suggest.length) return;
+    const target = p.suggest.length > 1 ? (/\?/.test(text) ? 'quartz6' : 'spring') : p.suggest[0];
+    setFormat(target, { text, quiet: true });
+    toast('检测到 ' + p.tokens.length + ' 段，已切换为「' + FMT[target].short + '」');
+  }
+
+  /* ---------- examples ---------- */
+  const FALLBACK_ORDER = ['spring', 'quartz6', 'quartz7', 'unix'];
+  function needText(ex) {
+    const have = E.FORMAT_ORDER.filter((f) => ex.x[f]);
+    if (have.length === 3 && !ex.x.unix) return '需要 6 位或 7 位格式';
+    return '需要 ' + have.map((f) => FMT[f].short).join(' / ');
+  }
+  function buildExampleTabs() {
+    el.exTabs.innerHTML = X.CATS.map((c) => '<button type="button" role="tab" id="excat-' + c.id + '" data-cat="' + c.id + '" aria-selected="' + (c.id === S.cat) + '">' + c.name + '</button>').join('');
+    el.exTabs.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-cat]');
+      if (!b) return;
+      S.cat = b.dataset.cat;
+      $$('[data-cat]', el.exTabs).forEach((x) => x.setAttribute('aria-selected', String(x.dataset.cat === S.cat)));
+      renderExamples();
+    });
+    el.exGrid.addEventListener('click', (e) => {
+      const b = e.target.closest('.ex');
+      if (b) useExample(X.LIST[+b.dataset.i]);
+    });
+  }
+  function renderExamples() {
+    el.exSub.textContent = '当前格式：' + FMT[S.fmt].short + '（点击后直接填入上方的表达式）';
+    el.exGrid.innerHTML = X.LIST.map((ex, i) => ({ ex, i })).filter((o) => o.ex.cat === S.cat).map((o) => {
+      const ex = o.ex;
+      const alt = !ex.x[S.fmt];
+      const fmt = alt ? FALLBACK_ORDER.find((f) => ex.x[f]) : S.fmt;
+      return '<button type="button" class="ex' + (alt ? ' alt' : '') + '" data-i="' + o.i + '" data-expr="' + esc(ex.x[S.fmt] || '') + '">' +
+        '<span class="ex-title">' + esc(ex.title) + '</span><code class="ex-expr">' + esc(ex.x[fmt]) + '</code>' +
+        '<span class="ex-use">' + esc(ex.use) + '</span>' + (alt ? '<span class="ex-badge">' + needText(ex) + '，点击会自动切换</span>' : '') + '</button>';
+    }).join('');
+    markExamples();
+  }
+  function markExamples() {
+    const cur = S.parsed && S.parsed.ok ? cleanText() : null;
+    $$('.ex', el.exGrid).forEach((b) => b.classList.toggle('on', !!cur && b.dataset.expr === cur));
+  }
+  function useExample(ex) {
+    const fmt = ex.x[S.fmt] ? S.fmt : FALLBACK_ORDER.find((f) => ex.x[f]);
+    const text = ex.x[fmt];
+    if (fmt !== S.fmt) {
+      setFormat(fmt, { text, quiet: true });
+      toast('这个示例需要「' + FMT[fmt].short + '」，已自动切换：' + text);
+    } else {
+      el.input.value = text;
+      analyze(text, true);
+      toast('已载入：' + text);
+    }
+  }
+
+  /* ---------- readout ---------- */
+  function refreshFromStates() {
+    const text = E.buildExpression(S.states, S.fmt);
+    el.input.value = text;
+    analyze(text, false);
+  }
+
+  function analyze(text, sync) {
+    const parsed = E.parse(text, S.fmt);
+    S.parsed = parsed;
+    if (parsed.ok && sync) E.statesFromParsed(parsed, S.states);
+    renderCells(parsed, text);
+    renderSummary(parsed);
+    renderRuns(parsed);
+    renderBreakdown(parsed);
+    renderTabs();
+    if (sync) renderPane(); else syncPane();
+    renderUsage(parsed);
+    markExamples();
+    el.dockExpr.textContent = cleanText() || '…';
+  }
+
+  function renderCells(parsed, text) {
+    const keys = fieldKeys();
+    let toks = null;
+    if (parsed.fields.length === keys.length) toks = parsed.fields.map((f) => f.raw);
+    else {
+      const t = text.trim().replace(/\s+/g, ' ').split(' ');
+      if (text.trim() && t.length === keys.length) toks = t;
+    }
+    const bad = new Set(parsed.errors.filter((e) => e.field).map((e) => e.field));
+    el.cells.innerHTML = keys.map((k, i) => {
+      const v = toks ? toks[i] : '–';
+      return '<button type="button" class="cell' + (k === S.active ? ' on' : '') + (bad.has(k) ? ' bad' : '') + '" data-key="' + k + '" title="点击编辑「' + E.FIELD_META[k].name + '」">' +
+        '<span class="cell-name">' + E.FIELD_META[k].name + '</span><span class="cell-val' + (v.length > 7 ? ' long' : '') + '">' + esc(v) + '</span></button>';
+    }).join('');
+    el.input.classList.toggle('bad', !parsed.ok);
+  }
+
+  function renderSummary(parsed) {
+    if (parsed.ok) {
+      el.summary.className = 'summary';
+      el.summary.textContent = E.describe(parsed).summary;
+    } else {
+      el.summary.className = 'summary empty';
+      el.summary.textContent = '表达式还有问题，修正后这里会显示中文解释';
+    }
+    const rows = [];
+    parsed.errors.forEach((e) => rows.push('<li><span class="pill err">错误</span><span>' + (e.field ? '「' + E.FIELD_META[e.field].name + '」：' : '') + esc(e.msg) + '</span></li>'));
+    if (parsed.suggest && parsed.suggest.length) {
+      rows.push('<li><span class="pill info">试试</span><span class="issue-actions">' +
+        parsed.suggest.map((f) => '<button type="button" class="btn small" data-switch="' + f + '">按「' + FMT[f].short + '」解析</button>').join('') + '</span></li>');
+    }
+    const lvl = { warn: '注意', info: '提示' };
+    E.analyze(parsed).forEach((w) => rows.push('<li><span class="pill ' + w.level + '">' + lvl[w.level] + '</span><span>' + esc(w.text) + '</span></li>'));
+    el.issues.innerHTML = rows.join('');
+  }
+
+  function toLocalInput(d) {
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+  function getBase() {
+    if (S.baseMode === 'custom' && el.fromInput.value) {
+      const d = new Date(el.fromInput.value);
+      if (!isNaN(d.getTime())) return d;
+    }
+    const now = new Date();
+    if (document.activeElement !== el.fromInput) el.fromInput.value = toLocalInput(now);
+    return now;
+  }
+  function relText(d, base) {
+    const s = Math.round((d - base) / 1000);
+    if (s < 60) return s + ' 秒后';
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + ' 分钟后';
+    const h = Math.floor(m / 60);
+    if (h < 48) return h + ' 小时' + (m % 60 ? ' ' + (m % 60) + ' 分' : '') + '后';
+    const dd = Math.floor(h / 24);
+    return dd < 90 ? dd + ' 天后' : Math.round(dd / 30) + ' 个月后';
+  }
+  function renderRuns(parsed) {
+    const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone || '本地时区');
+    const off = -new Date().getTimezoneOffset();
+    el.tzNote.textContent = '时间按你浏览器的时区显示：' + tz + '（UTC' + (off >= 0 ? '+' : '-') + pad(Math.floor(Math.abs(off) / 60)) + ':' + pad(Math.abs(off) % 60) + '）。实际在哪个时区执行，取决于任务运行的环境。';
+    if (!parsed.ok) {
+      el.runList.innerHTML = '<li><span class="empty">表达式修正后，这里会列出接下来的执行时间。</span></li>';
+      return;
+    }
+    const base = getBase();
+    const runs = E.nextRuns(parsed, base, 10);
+    if (!runs.length) {
+      el.runList.innerHTML = '<li><span class="empty">从这个时间起 12 年内都没有匹配的执行时间，请检查日期和星期的组合。</span></li>';
+      return;
+    }
+    const secs = runs.some((d) => d.getSeconds() !== 0);
+    const wd = '日一二三四五六';
+    el.runList.innerHTML = runs.map((d, i) =>
+      '<li><span class="idx">' + (i + 1) + '</span><span class="dt"><b>' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + '</b> 周' + wd[d.getDay()] + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + (secs ? ':' + pad(d.getSeconds()) : '') + '</span><span class="rel">' + relText(d, base) + '</span></li>'
+    ).join('');
+  }
+
+  function renderBreakdown(parsed) {
+    if (!parsed.ok) { el.breakdown.innerHTML = '<tr><td colspan="3">表达式修正后显示。</td></tr>'; return; }
+    el.breakdown.innerHTML = E.describe(parsed).items.map((it) => '<tr><td>' + it.name + '</td><td>' + esc(it.token) + '</td><td>' + esc(it.text) + '</td></tr>').join('');
+  }
+
+  /* ---------- usage ---------- */
+  function renderUsage(parsed) {
+    el.usageSub.textContent = FMT[S.fmt].short + ' 的常见用法';
+    if (!parsed.ok) {
+      S.snippets = [];
+      el.snips.innerHTML = '<p class="lead">表达式修正后，这里会生成可以直接复制的配置。</p>';
+      return;
+    }
+    const blocks = USAGE[S.fmt === 'quartz6' || S.fmt === 'quartz7' ? 'quartz' : S.fmt](cleanText());
+    S.snippets = blocks.map((b) => b.code);
+    el.snips.innerHTML = blocks.map((b, i) =>
+      '<figure class="snip"><figcaption><span>' + b.title + '</span><button type="button" class="btn small" data-copy="' + i + '">复制</button></figcaption><pre><code>' + esc(b.code) + '</code></pre>' + (b.note ? '<p class="snip-note">' + b.note + '</p>' : '') + '</figure>'
+    ).join('');
+  }
+
+  /* ---------- builder ---------- */
+  function renderTabs() {
+    const bad = new Set(S.parsed ? S.parsed.errors.filter((e) => e.field).map((e) => e.field) : []);
+    el.fieldTabs.innerHTML = fieldKeys().map((k) =>
+      '<button type="button" role="tab" class="tab' + (bad.has(k) ? ' bad' : '') + '" id="tab-' + k + '" data-key="' + k + '" aria-selected="' + (k === S.active) + '">' +
+      '<span class="tab-name">' + E.FIELD_META[k].name + '</span><span class="tab-val">' + esc(E.stateToRaw(k, S.states[k], S.fmt)) + '</span></button>'
+    ).join('');
+    $$('.cell', el.cells).forEach((c) => c.classList.toggle('on', c.dataset.key === S.active));
+  }
+
+  function rowsFor(key) {
+    const nonUnix = S.fmt !== 'unix';
+    const rows = ['every'];
+    if ((key === 'dom' || key === 'dow') && nonUnix) rows.push('none');
+    if (key !== 'dow') rows.push('step');
+    rows.push('range');
+    if (key !== 'year') rows.push('list');
+    if (key === 'dom' && nonUnix) rows.push('last', 'lastOff', 'lastW', 'nearW');
+    if (key === 'dow' && nonUnix) rows.push('nth', 'lastDow');
+    rows.push('custom');
+    return rows;
+  }
+
+  function chipsHTML(key) {
+    let vals = [];
+    let label = (v) => String(v);
+    let cls = 'chips';
+    const seq = (a, b) => { const o = []; for (let v = a; v <= b; v++) o.push(v); return o; };
+    if (key === 'second' || key === 'minute') { vals = seq(0, 59); label = pad; }
+    else if (key === 'hour') { vals = seq(0, 23); label = pad; }
+    else if (key === 'dom') vals = seq(1, 31);
+    else if (key === 'month') { vals = seq(1, 12); label = (v) => v + ' 月'; cls += ' wide'; }
+    else if (key === 'dow') { vals = DOW_OPTS; label = (v) => E.DOW_CN[v]; cls += ' wide'; }
+    return '<div class="' + cls + '" role="group" aria-label="点选具体的值">' + vals.map((v) => '<button type="button" class="chip" data-v="' + v + '" aria-pressed="false">' + label(v) + '</button>').join('') + '</div>';
+  }
+
+  function rowBody(key, mode, st) {
+    const R = E.fieldRange(key, S.fmt);
+    const lo = key === 'dow' ? 0 : R.min;
+    const hi = key === 'dow' ? 6 : R.max;
+    const num = (path, val, min, max, forMode, label) =>
+      '<input class="num" type="number" inputmode="numeric" id="f-' + key + '-' + path.replace('.', '-') + '" data-p="' + path + '" data-for="' + forMode + '" min="' + min + '" max="' + max + '" value="' + val + '" aria-label="' + label + '">';
+    const sel = (path, val, forMode, label) =>
+      '<select class="sel" id="f-' + key + '-' + path.replace('.', '-') + '" data-p="' + path + '" data-for="' + forMode + '" aria-label="' + label + '">' +
+      DOW_OPTS.map((d) => '<option value="' + d + '"' + (d === val ? ' selected' : '') + '>' + E.DOW_CN[d] + '</option>').join('') + '</select>';
+    const nm = '<b class="mname">' + MODE_NAME[mode] + '</b>';
+    switch (mode) {
+      case 'every': return nm + EVERY_TXT[key];
+      case 'none': return nm + (key === 'dom' ? '日期交给「周」决定' : '星期交给「日」决定');
+      case 'step': {
+        const t = STEP_TXT[key];
+        return nm + t[0] + num('step.start', st.step.start, lo, hi, 'step', '起始值') + t[1] + num('step.n', st.step.n, 1, hi - lo + 1, 'step', '间隔') + t[2];
+      }
+      case 'range':
+        if (key === 'dow') return nm + '从 ' + sel('range.a', st.range.a, 'range', '起点星期') + ' 到 ' + sel('range.b', st.range.b, 'range', '终点星期');
+        return nm + RANGE_TXT[key][0] + num('range.a', st.range.a, lo, hi, 'range', '范围起点') + RANGE_TXT[key][1] + num('range.b', st.range.b, lo, hi, 'range', '范围终点') + RANGE_TXT[key][2];
+      case 'list': return nm + (key === 'dow' ? '选择星期（可多选）' : '点选具体的值（可多选）') + chipsHTML(key);
+      case 'last': return nm + '本月最后一天';
+      case 'lastOff': return nm + '倒数第 ' + num('lastOffK', st.lastOff + 1, 2, 31, 'lastOff', '倒数第几天') + ' 天';
+      case 'lastW': return nm + '本月最后一个工作日（周一到周五）';
+      case 'nearW': return nm + '离每月 ' + num('nearW', st.nearW, 1, 31, 'nearW', '日期') + ' 日最近的工作日（遇周末提前或顺延，不跨月）';
+      case 'nth': return nm + '每月第 ' + num('nth.n', st.nth.n, 1, 5, 'nth', '第几个') + ' 个 ' + sel('nth.d', st.nth.d, 'nth', '星期几');
+      case 'lastDow': return nm + '每月最后一个 ' + sel('lastDow', st.lastDow, 'lastDow', '星期几');
+      case 'custom': return nm + '<input class="txt" type="text" id="f-' + key + '-text" data-p="text" data-for="custom" value="' + esc(st.text) + '" placeholder="直接写这一段，例如 0-30/10" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="自定义这一段的写法">';
+      default: return '';
+    }
+  }
+
+  function paneNote(key) {
+    if (key !== 'dom' && key !== 'dow') return '';
+    if (S.fmt === 'unix') return '<p class="note">标准 Cron 里，「日」和「周」都写了具体值时是「或」关系（满足其中一个就执行）。通常只指定其中一个。</p>';
+    if (S.fmt === 'spring') return '<p class="note">Spring 里「日」和「周」是「且」关系，两个都满足才执行；通常只指定其中一个，另一个保持「每…」。</p>';
+    return '<p class="note">Quartz 规定「日」和「周」只能指定一个：选了其中一个的具体值，另一个会自动变成 <code>?</code>。</p>';
+  }
+  const PANE_HINT = {
+    second: '5 位格式没有这一项。',
+    minute: '',
+    hour: '24 小时制，0 点就是午夜 12 点。',
+    dom: '',
+    month: '',
+    dow: '',
+    year: '只有 7 位 Quartz 有这一项，不限制就选「每年」。',
+  };
+  function paneHint(key) {
+    if (key === 'dom') return S.fmt === 'unix' ? '取值 1–31。' : '取值 1–31，还可以用 L、W 表示月末和最近的工作日。';
+    if (key === 'month') return '取值 1–12。';
+    if (key === 'dow') return S.fmt === 'unix' || S.fmt === 'spring' ? '0 和 7 是周日，1 是周一。生成时会自动换算。' : 'Quartz 的数字是 1=周日、2=周一…。生成时会自动写成 MON、FRI 这样的缩写，不用自己算。';
+    return PANE_HINT[key];
+  }
+
+  function renderPane() {
+    const key = S.active;
+    const st = S.states[key];
+    const rows = rowsFor(key).map((mode) =>
+      '<div class="opt" data-mode="' + mode + '"><input type="radio" name="mode" id="m-' + key + '-' + mode + '" value="' + mode + '" aria-label="' + MODE_NAME[mode] + '"><div class="opt-body">' + rowBody(key, mode, st) + '</div><code class="opt-tok"></code></div>'
+    ).join('');
+    el.fieldPane.setAttribute('aria-labelledby', 'tab-' + key);
+    el.fieldPane.innerHTML = '<div class="pane-head"><h3>' + TITLES[key] + '</h3><p>' + paneHint(key) + '</p></div><div class="opts" role="radiogroup" aria-label="' + TITLES[key] + '的取值方式">' + rows + '</div>' + paneNote(key);
+    syncPane();
+  }
+
+  function previewToken(key, mode) {
+    const t = JSON.parse(JSON.stringify(S.states[key]));
+    t.mode = mode;
+    t.keep = null;
+    if (mode === 'custom') return t.text || '…';
+    return E.stateToRaw(key, t, S.fmt);
+  }
+  function getParam(st, path) {
+    if (path === 'lastOffK') return st.lastOff + 1;
+    if (path === 'text') return st.text;
+    if (path.indexOf('.') > 0) { const p = path.split('.'); return st[p[0]][p[1]]; }
+    return st[path];
+  }
+  function setParam(st, path, v) {
+    if (path === 'lastOffK') st.lastOff = v - 1;
+    else if (path === 'text') st.text = v;
+    else if (path.indexOf('.') > 0) { const p = path.split('.'); st[p[0]][p[1]] = v; }
+    else st[path] = v;
+  }
+
+  function syncPane() {
+    const key = S.active;
+    const st = S.states[key];
+    if (!st) return;
+    $$('.opt', el.fieldPane).forEach((opt) => {
+      const m = opt.dataset.mode;
+      const on = m === st.mode;
+      opt.classList.toggle('on', on);
+      $('input[type="radio"]', opt).checked = on;
+      $('.opt-tok', opt).textContent = previewToken(key, m);
+    });
+    $$('[data-p]', el.fieldPane).forEach((c) => {
+      if (c === document.activeElement) return;
+      const v = getParam(st, c.dataset.p);
+      if (v !== undefined && String(c.value) !== String(v)) c.value = v;
+    });
+    $$('.chip', el.fieldPane).forEach((c) => c.setAttribute('aria-pressed', String(st.list.indexOf(+c.dataset.v) >= 0)));
+  }
+
+  function commit(key) {
+    if (E.isQuartz(S.fmt) && (key === 'dom' || key === 'dow')) E.applyQuartzRule(S.states, key);
+    refreshFromStates();
+  }
+  function setMode(mode) {
+    const key = S.active;
+    const st = S.states[key];
+    if (st.mode === mode) return;
+    if (mode === 'custom') st.text = E.stateToRaw(key, st, S.fmt);
+    st.mode = mode;
+    st.keep = null;
+    commit(key);
+  }
+  function updateParam(t) {
+    const key = S.active;
+    const st = S.states[key];
+    const path = t.dataset.p;
+    let v;
+    if (path === 'text') v = t.value;
+    else {
+      if (t.value === '') return;
+      v = parseInt(t.value, 10);
+      if (isNaN(v)) return;
+      if (t.min !== '') v = Math.max(+t.min, v);
+      if (t.max !== '') v = Math.min(+t.max, v);
+    }
+    setParam(st, path, v);
+    if (key === 'dow' && path.indexOf('range.') === 0 && E.mf(st.range.a) > E.mf(st.range.b)) {
+      if (path === 'range.a') st.range.b = st.range.a; else st.range.a = st.range.b;
+    }
+    st.mode = t.dataset.for;
+    st.keep = null;
+    commit(key);
+  }
+  function toggleChip(chip) {
+    const key = S.active;
+    const st = S.states[key];
+    const v = +chip.dataset.v;
+    const i = st.list.indexOf(v);
+    if (st.mode !== 'list') {
+      st.mode = 'list';
+      if (i < 0) st.list.push(v);
+    } else if (i >= 0) {
+      if (st.list.length === 1) { toast('至少保留一个值'); return; }
+      st.list.splice(i, 1);
+    } else st.list.push(v);
+    st.keep = null;
+    commit(key);
+  }
+
+  function selectField(key, jump) {
+    S.active = key;
+    renderTabs();
+    renderPane();
+    if (jump) scrollTo($('#builder'), 'nearest');
+  }
+
+  /* ---------- events ---------- */
+  function wire() {
+    el.input.addEventListener('input', () => analyze(el.input.value, true));
+    el.input.addEventListener('paste', () => setTimeout(autoDetect, 0));
+    el.input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { autoDetect(); el.input.blur(); } });
+    el.copyBtn.addEventListener('click', copyExpr);
+    el.dockCopy.addEventListener('click', copyExpr);
+    el.dockExpr.addEventListener('click', () => scrollTo(el.readout, 'start'));
+    el.fmtPill.addEventListener('click', () => scrollTo($('#formats'), 'start'));
+    el.cells.addEventListener('click', (e) => { const c = e.target.closest('.cell'); if (c) selectField(c.dataset.key, true); });
+    el.fieldTabs.addEventListener('click', (e) => { const c = e.target.closest('.tab'); if (c) selectField(c.dataset.key, false); });
+    el.issues.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-switch]');
+      if (b) setFormat(b.dataset.switch, { text: el.input.value, quiet: true });
+    });
+    el.snips.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-copy]');
+      if (b) copyText(S.snippets[+b.dataset.copy], '已复制这段配置');
+    });
+    el.fieldPane.addEventListener('change', (e) => {
+      const t = e.target;
+      if (t.matches('input[name="mode"]')) setMode(t.value);
+      else if (t.matches('input[type="number"][data-p]')) {
+        const v = getParam(S.states[S.active], t.dataset.p);
+        if (v !== undefined) t.value = v;
+      }
+    });
+    el.fieldPane.addEventListener('input', (e) => { if (e.target.matches('[data-p]')) updateParam(e.target); });
+    el.fieldPane.addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (chip) { toggleChip(chip); return; }
+      if (e.target.closest('input, select, textarea, button')) return;
+      const opt = e.target.closest('.opt');
+      if (opt) setMode(opt.dataset.mode);
+    });
+    el.fromInput.addEventListener('input', () => { S.baseMode = 'custom'; if (S.parsed) renderRuns(S.parsed); });
+    el.nowBtn.addEventListener('click', () => { S.baseMode = 'now'; if (S.parsed) renderRuns(S.parsed); });
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver((entries) => {
+        S.roVisible = entries[0].isIntersecting;
+        el.dock.classList.toggle('show', !S.roVisible);
+      }, { threshold: 0 }).observe(el.readout);
+    }
+  }
+
+  /* ---------- start ---------- */
+  buildFormats();
+  buildExampleTabs();
+  wire();
+  const first = '0 9 * * 1-5';
+  el.input.value = first;
+  renderFormats();
+  renderExamples();
+  analyze(first, true);
+})();
+
+</script>
