@@ -279,3 +279,12 @@ img {
 .search-hidden {
   display: none !important;
 }
+
+/* 搜索命中的字符高亮（拼音命中也会定位回汉字） */
+.home-search-mark {
+  padding: 0 1px;
+  border-radius: 3px;
+  background: #ffe08a;
+  box-shadow: 0 0 0 1px rgba(224, 176, 32, 0.35) inset;
+  color: #333;
+}
