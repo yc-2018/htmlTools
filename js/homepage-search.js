@@ -1,8 +1,9 @@
 /**
  * 首页工具搜索（仅桌面端显示，见 homepage-earth.css 的媒体查询）
  * - 支持按名称、拼音全拼、拼音首字母搜索（依赖 js/vendor/pinyin-pro.min.js 的 pinyinPro 全局）
- * - 渲染 A-Z 字母 + 0-9 数字按钮：与搜索一致，名称里任意一字的首字母（或数字字符）命中即可
+ * - 渲染 A-Z 字母 + 0-9 数字按钮（键盘布局）：与搜索一致，名称里任意一字的首字母命中即可
  *   （点 D 会命中 3D机器手 / 大话骰 / 第一版 等），再次点击取消
+ * - 没有任何工具命中的按键置灰不可点
  * - 命中的字符会高亮：拼音/首字母命中也能定位回具体的汉字（搜 t 高亮「特」）
  * - 搜索/筛选时会强制展开所有 <details>，清空后恢复原始展开状态
  */
@@ -11,10 +12,8 @@
 
   var HIDDEN_CLASS = 'search-hidden';
   var MARK_CLASS = 'home-search-mark';
-  // A-Z 按拼音首字母筛选；0-9 按名称开头字符筛选
-  var LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-    .split('')
-    .concat('0123456789'.split(''));
+  // 按电脑键盘布局分行：数字行 + QWERTY 三行
+  var KEY_ROWS = ['1234567890', 'QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
 
   var hasPinyin = window.pinyinPro && typeof window.pinyinPro.pinyin === 'function';
   var charCache = {}; // 单字 -> { full, init }
@@ -101,12 +100,17 @@
     return marks;
   }
 
-  // 字母/数字筛选按钮命中的字符：与搜索一致，命中所有符合条件的字
+  // 单字首字母是否命中按键：zh/ch/sh 这类双字母声母按首字母归并（zh → z）
+  function initMatches(init, letter) {
+    return init === letter || (init.length === 2 && init.charAt(0) === letter);
+  }
+
+  // 筛选按钮命中的字符：与搜索一致，命中所有符合条件的字
   // （点 D 时「大话骰(第一版)」的大、第都会高亮）
   function collectLetterMarks(entry, letter) {
     var marks = {};
     for (var i = 0; i < entry.initPerChar.length; i++) {
-      if (entry.initPerChar[i] === letter) marks[i] = true;
+      if (initMatches(entry.initPerChar[i], letter)) marks[i] = true;
     }
     return marks;
   }
@@ -154,6 +158,17 @@
     var originalOpen = null; // 筛选前的展开状态
     var activeLetter = '';
 
+    // 统计工具名称里实际出现过的按键（没有命中的按键在渲染时置灰）
+    var available = {};
+    for (var ai = 0; ai < items.length; ai++) {
+      for (var aj = 0; aj < items[ai].entries.length; aj++) {
+        var inits = items[ai].entries[aj].initPerChar;
+        for (var ak = 0; ak < inits.length; ak++) {
+          available[inits[ak].charAt(0)] = true;
+        }
+      }
+    }
+
     function matchesQuery(entry, query) {
       return (
         entry.textKey.indexOf(query) !== -1 ||
@@ -166,7 +181,7 @@
       // 与搜索一致：名称里任意一个字的首字母/字符命中即可
       // 例如 D 命中 3D机器手（D）、大话骰（大）、第一版（第）；3 命中 3D、2048 里的 3
       for (var i = 0; i < entry.initPerChar.length; i++) {
-        if (entry.initPerChar[i] === letter) return true;
+        if (initMatches(entry.initPerChar[i], letter)) return true;
       }
       return false;
     }
@@ -234,27 +249,36 @@
       }
     }
 
-    // 渲染 A-Z 字母 + 0-9 数字按钮
-    LETTERS.forEach(function (letter) {
-      var btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'home-search-letter';
-      btn.textContent = letter;
-      var isDigit = letter >= '0' && letter <= '9';
-      btn.setAttribute('aria-label', (isDigit ? '筛选数字 ' : '筛选首字母 ') + letter);
-      btn.addEventListener('click', function () {
-        var lower = letter.toLowerCase();
-        activeLetter = activeLetter === lower ? '' : lower;
-        var buttons = letterBar.querySelectorAll('.home-search-letter');
-        for (var b = 0; b < buttons.length; b++) {
-          buttons[b].classList.toggle(
-            'active',
-            buttons[b].textContent.toLowerCase() === activeLetter
-          );
+    // 渲染键盘布局的数字 + 字母按钮，无命中的按键置灰
+    KEY_ROWS.forEach(function (row, rowIndex) {
+      row.split('').forEach(function (letter) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'home-search-letter';
+        btn.textContent = letter;
+        // 显式指定行号，避免 9 个字母的那行被自动换行挤进下一个字母
+        btn.style.gridRow = rowIndex + 1;
+        var isDigit = letter >= '0' && letter <= '9';
+        btn.setAttribute('aria-label', (isDigit ? '筛选数字 ' : '筛选首字母 ') + letter);
+        if (!available[letter.toLowerCase()]) {
+          btn.classList.add('is-disabled');
+          btn.disabled = true;
+          btn.title = '没有工具使用该按键';
         }
-        applyFilter();
+        btn.addEventListener('click', function () {
+          var lower = letter.toLowerCase();
+          activeLetter = activeLetter === lower ? '' : lower;
+          var buttons = letterBar.querySelectorAll('.home-search-letter');
+          for (var b = 0; b < buttons.length; b++) {
+            buttons[b].classList.toggle(
+              'active',
+              buttons[b].textContent.toLowerCase() === activeLetter
+            );
+          }
+          applyFilter();
+        });
+        letterBar.appendChild(btn);
       });
-      letterBar.appendChild(btn);
     });
 
     input.addEventListener('input', applyFilter);

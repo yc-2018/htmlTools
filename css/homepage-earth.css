@@ -235,30 +235,37 @@ img {
   white-space: nowrap;
 }
 
-/* 字母栏固定一行 9 个（9+9+8 共 3 行） */
+/* 字母栏按键盘布局排列：数字行 10 键 + QWERTY 三行（10/9/7） */
 .home-search-letters {
   display: grid;
-  grid-template-columns: repeat(9, 1fr);
+  grid-template-columns: repeat(10, 1fr);
   gap: 2px;
-  width: 290px;
+  width: 300px;
   margin-top: 6px;
   margin-left: auto;
 }
 
 .home-search-letter {
-  min-width: 22px;
-  padding: 2px 4px;
+  min-width: 0;
+  padding: 2px 0;
   border: 1px solid transparent;
   border-radius: 5px;
   background: transparent;
   color: #5f6669;
   font-size: 12px;
   line-height: 1.4;
+  text-align: center;
   cursor: pointer;
   transition: background-color 140ms ease, color 140ms ease;
 }
 
-.home-search-letter:hover {
+/* 没有任何工具命中的按键：置灰不可点 */
+.home-search-letter.is-disabled {
+  color: #c9cdcf;
+  cursor: default;
+}
+
+.home-search-letter:not(.is-disabled):hover {
   background: rgba(95, 102, 105, 0.12);
 }
 
