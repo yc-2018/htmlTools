@@ -39,6 +39,13 @@
       <a href="#公众号">公众号</a>
     </nav>
   </div>
+  <div class="home-search">
+    <div class="home-search-box">
+      <input id="home-search-input" type="search" placeholder="搜索工具，支持拼音" aria-label="搜索工具"/>
+      <span id="home-search-count" class="home-search-count" aria-live="polite"></span>
+    </div>
+    <div id="home-search-letters" class="home-search-letters"></div>
+  </div>
 </div>
 <hr/>
 <details class="home-section" open>
@@ -216,6 +223,8 @@
   </ol>
 </details>
 
+<script src="./js/vendor/pinyin-pro.min.js"></script>
+<script src="./js/homepage-search.js"></script>
 <script src="./js/vendor/three-r128.min.js"></script>
 <script src="./js/homepage-earth.js"></script>
 </body>
