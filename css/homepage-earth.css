@@ -189,3 +189,109 @@ img {
     font-size: 0.8em;
   }
 }
+
+/* 首页搜索：仅桌面端显示（搜索框 + 26 个首字母筛选按钮）
+   悬浮固定在顶部，下滑时保持可见；右侧留出 100px 避开阳光开关按钮 */
+.home-search {
+  position: fixed;
+  top: 8px;
+  right: 100px;
+  z-index: 3;
+  max-width: 420px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 4px 16px rgba(62, 69, 72, 0.12);
+  backdrop-filter: blur(8px);
+  text-align: right;
+}
+
+.home-search-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+#home-search-input {
+  width: 240px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid rgba(150, 156, 160, 0.55);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.75);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+#home-search-input:focus {
+  border-color: #4d5457;
+  box-shadow: 0 0 0 3px rgba(79, 139, 162, 0.18);
+}
+
+.home-search-count {
+  font-size: 12px;
+  color: #8a9094;
+  white-space: nowrap;
+}
+
+/* 字母栏按键盘布局排列：数字行 10 键 + QWERTY 三行（10/9/7） */
+.home-search-letters {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 2px;
+  width: 300px;
+  margin-top: 6px;
+  margin-left: auto;
+}
+
+.home-search-letter {
+  min-width: 0;
+  padding: 2px 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: #5f6669;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+/* 没有任何工具命中的按键：置灰不可点 */
+.home-search-letter.is-disabled {
+  color: #c9cdcf;
+  cursor: default;
+}
+
+.home-search-letter:not(.is-disabled):hover {
+  background: rgba(95, 102, 105, 0.12);
+}
+
+.home-search-letter.active {
+  border-color: #5f6669;
+  background: #5f6669;
+  color: #fff;
+}
+
+/* 手机版不显示搜索 */
+@media (max-width: 768px) {
+  .home-search {
+    display: none;
+  }
+}
+
+/* 搜索时被过滤掉的条目/分区 */
+.search-hidden {
+  display: none !important;
+}
+
+/* 搜索命中的字符高亮（拼音命中也会定位回汉字） */
+.home-search-mark {
+  padding: 0 1px;
+  border-radius: 3px;
+  background: #ffe08a;
+  box-shadow: 0 0 0 1px rgba(224, 176, 32, 0.35) inset;
+  color: #333;
+}
