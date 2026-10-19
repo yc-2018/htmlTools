@@ -496,6 +496,7 @@
     $('#hostOut').hidden = true; $('#joinOut').hidden = true;
     $('#btnGen').hidden = false; $('#btnGen').disabled = false; $('#btnJoin').disabled = false;
     setMsg(''); switchTab('host');
+    closeQr(); stopScan(true);
   }
   function openPair(peer) {
     resetPairUI();
@@ -509,7 +510,7 @@
       }
     }
   }
-  function closePair() { $('#pairMask').hidden = true; modalPeer = null; }
+  function closePair() { $('#pairMask').hidden = true; modalPeer = null; closeQr(); stopScan(true); }
   $('#pairClose').onclick = closePair;
   $('#tabHost').onclick = () => switchTab('host');
   $('#tabJoin').onclick = () => switchTab('join');
@@ -564,6 +565,176 @@
     } catch (e) { setMsg(e.message || String(e)); btn.disabled = false; }
   };
   $('#copyAnswer').onclick = async () => { toast(await copyText($('#answerCode').value, $('#answerCode')) ? '已复制回复码' : '请手动长按选择并复制'); };
+
+  /* ---------- 二维码配对 ---------- */
+  const qrCanvas = $('#qrCanvas');
+  let scanStream = null, scanRAF = 0, scanTarget = '', scanLast = 0, scanToken = 0;
+
+  function closeQr() { $('#qrMask').hidden = true; }
+
+  function showQr(text, title) {
+    text = (text || '').trim();
+    if (!text) { toast('先生成连接码'); return; }
+    if (typeof qrcode !== 'function') { toast('二维码组件没加载成功，请刷新页面'); return; }
+    try {
+      const qr = qrcode(0, 'L'); // 0 = 自动选择版本，L = 最低容错（容量最大）
+      qr.addData(text, 'Byte');
+      qr.make();
+      const n = qr.getModuleCount();
+      const quiet = 4;
+      const scale = Math.max(2, Math.floor(760 / (n + quiet * 2)));
+      const size = (n + quiet * 2) * scale;
+      qrCanvas.width = size;
+      qrCanvas.height = size;
+      const ctx = qrCanvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, size, size);
+      ctx.fillStyle = '#000';
+      for (let r = 0; r < n; r++) {
+        for (let c = 0; c < n; c++) {
+          if (qr.isDark(r, c)) ctx.fillRect((c + quiet) * scale, (r + quiet) * scale, scale, scale);
+        }
+      }
+      $('#qrTitle').textContent = title;
+      $('#qrMask').hidden = false;
+    } catch (e) {
+      toast('连接码太长，二维码放不下，请用复制粘贴');
+    }
+  }
+
+  function stopScan(close) {
+    scanToken++;
+    if (scanRAF) { cancelAnimationFrame(scanRAF); scanRAF = 0; }
+    if (scanStream) {
+      for (const t of scanStream.getTracks()) { try { t.stop(); } catch (e) {} }
+      scanStream = null;
+    }
+    const v = $('#scanVideo');
+    if (v) v.srcObject = null;
+    if (close) { $('#scanMask').hidden = true; scanTarget = ''; }
+  }
+
+  function acceptScan(text) {
+    text = String(text || '').trim();
+    if (!/^LT[01]\.[A-Za-z0-9_-]+$/.test(text)) {
+      $('#scanMsg').textContent = '识别到了内容，但不是本工具的连接码，请对准正确的二维码。';
+      return;
+    }
+    const target = scanTarget;
+    stopScan(true);
+    const ta = target ? $('#' + target) : null;
+    if (ta) {
+      ta.value = text;
+      try { ta.scrollIntoView({ block: 'center' }); } catch (e) {}
+    }
+    toast('已扫入连接码');
+  }
+
+  function scanLoop(ts) {
+    if ($('#scanMask').hidden) return;
+    const v = $('#scanVideo');
+    if (v && v.readyState >= 2 && v.videoWidth && (!scanLast || ts - scanLast > 250)) {
+      scanLast = ts;
+      const w = v.videoWidth, h = v.videoHeight;
+      const scale = Math.min(1, 800 / Math.max(w, h));
+      const c = $('#scanCanvas');
+      c.width = Math.max(1, Math.round(w * scale));
+      c.height = Math.max(1, Math.round(h * scale));
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(v, 0, 0, c.width, c.height);
+      const img = ctx.getImageData(0, 0, c.width, c.height);
+      const code = typeof window.jsQR === 'function' ? jsQR(img.data, c.width, c.height, { inversionAttempts: 'dontInvert' }) : null;
+      if (code && code.data) { acceptScan(code.data); return; }
+    }
+    scanRAF = requestAnimationFrame(scanLoop);
+  }
+
+  async function openScan(targetId) {
+    stopScan(false);
+    const token = ++scanToken;
+    $('#scanMask').hidden = false;
+    $('#scanFile').value = '';
+    $('#scanMsg').textContent = '正在打开摄像头…';
+    scanTarget = targetId;
+    if (typeof window.jsQR !== 'function') {
+      $('#scanMsg').textContent = '扫码组件没加载成功，请刷新页面后重试。';
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      $('#scanMsg').textContent = '当前页面不能调用摄像头（需要 HTTPS 或 localhost），可以点“从相册选择”。';
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+      if (token !== scanToken || $('#scanMask').hidden) {
+        for (const t of stream.getTracks()) { try { t.stop(); } catch (e) {} }
+        return;
+      }
+      scanStream = stream;
+      const v = $('#scanVideo');
+      v.srcObject = stream;
+      await v.play();
+      if (token !== scanToken) return;
+      $('#scanMsg').textContent = '把二维码放进框里，尽量让屏幕亮一些…';
+      scanLast = 0;
+      scanRAF = requestAnimationFrame(scanLoop);
+    } catch (e) {
+      if (token !== scanToken) return;
+      stopScan(false);
+      const why = e.name === 'NotAllowedError' ? '没有授权' : e.name === 'NotFoundError' ? '没有找到摄像头' : (e.message || e.name);
+      $('#scanMsg').textContent = '打不开摄像头（' + why + '），可以点“从相册选择”。';
+    }
+  }
+
+  $('#qrOffer').onclick = () => showQr($('#offerCode').value, '邀请码二维码');
+  $('#qrAnswer').onclick = () => showQr($('#answerCode').value, '回复码二维码');
+  $('#scanOffer').onclick = () => openScan('offerIn');
+  $('#scanAnswer').onclick = () => openScan('answerIn');
+  $('#qrClose').onclick = closeQr;
+  $('#scanClose').onclick = () => stopScan(true);
+  $('#qrMask').addEventListener('click', e => { if (e.target === $('#qrMask')) closeQr(); });
+  $('#scanMask').addEventListener('click', e => { if (e.target === $('#scanMask')) stopScan(true); });
+
+  $('#scanPick').onclick = () => { $('#scanFile').value = ''; $('#scanFile').click(); };
+  $('#scanFile').addEventListener('change', async () => {
+    const file = $('#scanFile').files && $('#scanFile').files[0];
+    if (!file) return;
+    if (typeof window.jsQR !== 'function') { $('#scanMsg').textContent = '扫码组件没加载成功，请刷新页面'; return; }
+    $('#scanMsg').textContent = '正在识别图片…';
+    let source;
+    try {
+      if (typeof createImageBitmap === 'function') {
+        source = await createImageBitmap(file);
+      } else {
+        const url = URL.createObjectURL(file);
+        const im = new Image();
+        await new Promise((res, rej) => { im.onload = res; im.onerror = rej; im.src = url; });
+        source = im;
+        URL.revokeObjectURL(url);
+      }
+    } catch (e) {
+      $('#scanMsg').textContent = '图片读取失败，换一张试试。';
+      return;
+    }
+    const iw = source.width || source.naturalWidth || 0;
+    const ih = source.height || source.naturalHeight || 0;
+    if (!iw || !ih) { $('#scanMsg').textContent = '图片读取失败，换一张试试。'; return; }
+    const scale = Math.min(1, 1200 / Math.max(iw, ih));
+    const c = $('#scanCanvas');
+    c.width = Math.max(1, Math.round(iw * scale));
+    c.height = Math.max(1, Math.round(ih * scale));
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(source, 0, 0, c.width, c.height);
+    if (typeof source.close === 'function') source.close();
+    const data = ctx.getImageData(0, 0, c.width, c.height);
+    const code = jsQR(data.data, c.width, c.height, { inversionAttempts: 'attemptBoth' });
+    if (code && code.data) acceptScan(code.data);
+    else $('#scanMsg').textContent = '没有识别到二维码，换一张更清晰、二维码更完整的图片试试。';
+  });
+  window.addEventListener('pagehide', () => stopScan(true));
 
   /* ---------- 自动发现与配对信令（MQTT over WebSocket） ---------- */
   /* 同时连接多个公共 MQTT 服务：只要两边有任意一个相同的服务可用，就能互相发现，

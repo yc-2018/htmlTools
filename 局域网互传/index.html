@@ -41,25 +41,26 @@
       <button id="tabHost" class="on">我来发起</button>
       <button id="tabJoin">我来加入</button>
     </div>
+    <p class="hint">可以用二维码代替复制粘贴：一边点“二维码”，另一边点“扫码”。</p>
     <div id="panelHost">
       <p class="hint">① 在这台设备生成邀请码，发给另一台设备（微信 / QQ 文件传输助手即可）。</p>
       <button class="btn primary" id="btnGen">生成邀请码</button>
       <div id="hostOut" hidden>
         <textarea id="offerCode" readonly rows="4"></textarea>
-        <div class="row"><button class="btn" id="copyOffer">复制邀请码</button></div>
-        <p class="hint">② 对方生成回复码后，粘贴到下面：</p>
+        <div class="row"><button class="btn" id="copyOffer">复制邀请码</button><button class="btn" id="qrOffer">二维码</button></div>
+        <p class="hint">② 对方生成回复码后，粘贴或扫描到下面：</p>
         <textarea id="answerIn" rows="4" placeholder="粘贴回复码"></textarea>
-        <div class="row"><button class="btn" id="pasteAnswer">粘贴</button><button class="btn primary" id="btnConnect">连接</button></div>
+        <div class="row"><button class="btn" id="pasteAnswer">粘贴</button><button class="btn" id="scanAnswer">扫码</button><button class="btn primary" id="btnConnect">连接</button></div>
       </div>
     </div>
     <div id="panelJoin" hidden>
-      <p class="hint">① 粘贴对方发来的邀请码：</p>
+      <p class="hint">① 粘贴或扫描对方发来的邀请码：</p>
       <textarea id="offerIn" rows="4" placeholder="粘贴邀请码"></textarea>
-      <div class="row"><button class="btn" id="pasteOffer">粘贴</button><button class="btn primary" id="btnJoin">生成回复码</button></div>
+      <div class="row"><button class="btn" id="pasteOffer">粘贴</button><button class="btn" id="scanOffer">扫码</button><button class="btn primary" id="btnJoin">生成回复码</button></div>
       <div id="joinOut" hidden>
         <p class="hint">② 把下面的回复码发回给对方，对方点“连接”即可：</p>
         <textarea id="answerCode" readonly rows="4"></textarea>
-        <div class="row"><button class="btn" id="copyAnswer">复制回复码</button></div>
+        <div class="row"><button class="btn" id="copyAnswer">复制回复码</button><button class="btn" id="qrAnswer">二维码</button></div>
       </div>
     </div>
     <p class="msg" id="pairMsg"></p>
@@ -73,6 +74,26 @@
         <li>仍然失败：在 Chrome 地址栏打开 chrome://flags/#enable-webrtc-hide-local-ips-with-mdns ，改为 Disabled 后重启浏览器，两边都改。</li>
       </ol>
     </details>
+  </div>
+</div>
+
+<div class="mask" id="qrMask" hidden>
+  <div class="sheet">
+    <div class="sheet-h"><b id="qrTitle">邀请码二维码</b><button class="x" id="qrClose">✕</button></div>
+    <div class="qr-wrap"><canvas id="qrCanvas"></canvas></div>
+    <p class="hint">让对方打开本页，在“手动添加设备”里点“扫码”对准这个二维码；屏幕调亮、保持 15–20 厘米。也可以继续复制连接码。</p>
+  </div>
+</div>
+
+<div class="mask" id="scanMask" hidden>
+  <div class="sheet">
+    <div class="sheet-h"><b>扫码填入</b><button class="x" id="scanClose">✕</button></div>
+    <div class="scan-wrap"><video id="scanVideo" playsinline muted autoplay></video></div>
+    <canvas id="scanCanvas" hidden></canvas>
+    <p class="msg" id="scanMsg">正在打开摄像头…</p>
+    <div class="row"><button class="btn" id="scanPick">从相册选择</button></div>
+    <p class="hint">摄像头需要 HTTPS 页面和授权；电脑或没有摄像头时，可以选一张二维码截图。</p>
+    <input type="file" id="scanFile" accept="image/*" hidden>
   </div>
 </div>
 
@@ -98,6 +119,8 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="vendor/qrcode.js" defer></script>
+<script src="vendor/jsQR.js" defer></script>
 <script src="app.js" defer></script>
 </body>
 </html>
