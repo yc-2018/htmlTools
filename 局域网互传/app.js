@@ -298,7 +298,28 @@
   }
 
   /* ---------- 传输记录 ---------- */
-  const logList = $('#logList'), emptyLog = $('#emptyLog');
+  const logList = $('#logList'), emptyLog = $('#emptyLog'), clearLogsBtn = $('#clearLogs');
+  const logItems = []; // 保留引用：清空时要逐个 revokeObjectURL 释放接收到的文件
+  function updateClearBtn() {
+    if (clearLogsBtn) clearLogsBtn.disabled = logItems.length === 0;
+  }
+  function clearLogs() {
+    if (!logItems.length) return;
+    const busy = logItems.some(it => it.status === 'sending' || it.status === 'receiving' || it.status === 'queued');
+    if (busy) { toast('还有传输没完成，完成后再清空'); return; }
+    if (!confirm('清空全部传输记录？未保存的接收文件将无法再下载。')) return;
+    for (const it of logItems) {
+      if (!it.url) continue;
+      try { URL.revokeObjectURL(it.url); } catch (e) {}
+      it.url = '';
+    }
+    logItems.length = 0;
+    logList.replaceChildren();
+    emptyLog.hidden = false;
+    updateClearBtn();
+    toast('已清空记录，接收文件占用的内存已释放');
+  }
+  clearLogsBtn.addEventListener('click', clearLogs);
   function addLog(o) {
     const it = Object.assign({ status: '', done: 0, size: 0, t0: 0, speed: 0, lastUI: 0 }, o);
     const d = {};
@@ -311,7 +332,9 @@
     it.dom = d;
     it.node = el('div', { class: 'log ' + o.dir }, d.icon, d.thumb, el('div', { class: 'info' }, d.nm, d.meta, d.barWrap), d.act);
     logList.prepend(it.node);
+    logItems.push(it);
     emptyLog.hidden = true;
+    updateClearBtn();
     refreshItem(it);
     return it;
   }

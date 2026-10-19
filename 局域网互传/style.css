@@ -11,6 +11,9 @@ h1{font-size:20px;margin:0}
 .me{font:inherit;font-size:13px;color:var(--sub);cursor:pointer;border:1px dashed var(--line);border-radius:999px;padding:4px 12px;background:none}
 .tip{color:var(--sub);font-size:13px;margin:8px 0 0}
 h2{font-size:13px;color:var(--sub);font-weight:600;letter-spacing:.04em;margin:26px 0 10px}
+.sec-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:26px 0 10px}
+.sec-head h2{margin:0}
+.btn.small{font-size:12px;padding:5px 10px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;transition:.15s}
 .card.drop{border-color:var(--accent);background:var(--accent-weak)}
