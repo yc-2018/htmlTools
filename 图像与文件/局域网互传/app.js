@@ -747,7 +747,7 @@
       'wss://broker.hivemq.com:8884/mqtt',
       'wss://test.mosquitto.org:8081/mqtt'
     ],
-    conns: [], state: 'idle', topic: '', room: 'lan', lastSay: 0
+    conns: [], state: 'idle', topic: '', room: 'lan', lastSay: 0, enabled: true
   };
   const disc = new Map(); // 附近设备：id -> {id,name,kind,last}
   const seenSig = new Set(); // 多通道去重：同一条配对消息只处理一次
@@ -807,7 +807,10 @@
     const ready = NET.conns.filter(c => c.ready).length;
     const connecting = NET.conns.some(c => !c.ready && c.ws && c.ws.readyState === 0);
     let kind = 'offline', text = '发现服务连不上（检查网络 / 代理），可继续用手动连接码';
-    if (ready) {
+    if (!NET.enabled) {
+      kind = 'off';
+      text = '自动发现已关闭，扫码 / 手动配对仍可用';
+    } else if (ready) {
       kind = 'online';
       text = '自动发现已开启' + (ready > 1 ? '（' + ready + ' 个通道）' : '');
     } else if (connecting) {
@@ -821,19 +824,23 @@
     const label = $('#discText');
     if (label) label.textContent = text;
     const room = $('#roomBtn');
-    if (room) room.textContent = '房间：' + NET.room;
+    if (room) {
+      room.textContent = '房间：' + NET.room;
+      room.hidden = !NET.enabled;
+    }
     const retry = $('#discRetry');
     if (retry) retry.hidden = kind !== 'offline';
     if (!changed) return;
     if (kind === 'online') {
       sendSig({ t: 'who', id: myId });
       sayHi(true);
-    } else if (disc.size) {
+    } else if (kind === 'off' || disc.size) {
       disc.clear();
       renderPeers();
     }
   }
   function connectConn(c) {
+    if (!NET.enabled) return;
     const token = ++c.token;
     clearTimeout(c.retryTimer);
     clearTimeout(c.connectTimer);
@@ -868,7 +875,7 @@
     ws.onerror = () => { if (token === c.token) connFail(c, token); };
   }
   function connFail(c, token) {
-    if (token !== c.token) return;
+    if (token !== c.token || !NET.enabled) return;
     c.token++;
     clearTimeout(c.connectTimer);
     clearInterval(c.pingTimer);
@@ -950,7 +957,7 @@
     sendSig({ t: 'hi', id: myId, name: myName, kind: myKind });
   }
   function heartbeat() {
-    if (NET.state !== 'online') return;
+    if (!NET.enabled || NET.state !== 'online') return;
     for (const c of NET.conns) {
       if (c.ready && Date.now() - c.lastRecv > 90000) connFail(c, c.token);
     }
@@ -963,6 +970,7 @@
     if (changed) renderPeers();
   }
   function restartNet() {
+    if (!NET.enabled) { netStatus(); return; }
     for (const c of NET.conns) {
       c.token++;
       clearTimeout(c.connectTimer);
@@ -978,6 +986,9 @@
     for (const c of NET.conns) connectConn(c);
   }
   function initNet() {
+    NET.enabled = store.get('lt_disc') !== '0';
+    const toggle = $('#discToggle');
+    if (toggle) toggle.checked = NET.enabled;
     NET.room = roomNow();
     NET.topic = 'lt/v1/' + NET.room;
     NET.conns = NET.brokers.map(url => ({
@@ -985,10 +996,48 @@
       retryTimer: 0, pingTimer: 0, connectTimer: 0, tries: 0, lastRecv: 0
     }));
     netStatus();
-    for (const c of NET.conns) connectConn(c);
+    if (NET.enabled) for (const c of NET.conns) connectConn(c);
     setInterval(heartbeat, 6000);
     window.addEventListener('focus', () => sayHi(true));
     document.addEventListener('visibilitychange', () => { if (!document.hidden) sayHi(true); });
+  }
+  function shutdownNet() {
+    if (askOffer) {
+      sendSig({ t: 'reject', from: myId, to: askOffer.from });
+      askOffer = null;
+      $('#askMask').hidden = true;
+    }
+    for (const c of NET.conns) {
+      c.token++;
+      clearTimeout(c.connectTimer);
+      clearTimeout(c.retryTimer);
+      clearInterval(c.pingTimer);
+      try { if (c.ws) c.ws.close(); } catch (e) {}
+      c.ws = null;
+      c.ready = false;
+      c.buf = new Uint8Array(0);
+      c.tries = 0;
+    }
+    for (const p of [...peers.values()]) {
+      if (p.auto && p.state === 'pending') {
+        p.state = 'closed';
+        p.note = '自动发现已关闭';
+        try { p.pc && p.pc.close(); } catch (e) {}
+        cleanupAuto(p);
+      }
+    }
+    disc.clear();
+    renderPeers();
+    netStatus();
+  }
+  const discToggle = $('#discToggle');
+  if (discToggle) {
+    discToggle.addEventListener('change', () => {
+      NET.enabled = discToggle.checked;
+      store.set('lt_disc', NET.enabled ? '1' : '0');
+      if (NET.enabled) restartNet();
+      else shutdownNet();
+    });
   }
   function upsertDevice(id, name, kind) {
     const cur = disc.get(id);
