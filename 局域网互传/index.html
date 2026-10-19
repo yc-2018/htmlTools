@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>局域网互传</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>局域网互传</h1>
+    <button class="me" id="meBtn" title="点击修改本机名称"></button>
+  </header>
+  <p class="tip">打开本页后，同一局域网（或同一发现房间）里的其它设备会自动出现在下方，点“连接”即可，不用再互填连接码。文件和文本始终点对点直传；只有“我在线 / 连接请求”这类配对信息会经过公共发现服务转发。</p>
+
+  <div class="discbar">
+    <span class="dot" id="discDot"></span>
+    <span id="discText">正在连接发现服务…</span>
+    <button class="linkbtn" id="roomBtn" title="只有同一房间的设备才会互相发现">房间：lan</button>
+    <button class="linkbtn" id="discRetry" hidden>重试</button>
+  </div>
+
+  <h2>设备</h2>
+  <div class="grid" id="grid"></div>
+
+  <h2>传输记录</h2>
+  <div class="empty" id="emptyLog">还没有传输记录</div>
+  <div class="logs" id="logList"></div>
+</div>
+
+<input type="file" id="fileInput" multiple hidden>
+
+<div class="mask" id="pairMask" hidden>
+  <div class="sheet">
+    <div class="sheet-h"><b>手动添加设备</b><button class="x" id="pairClose">✕</button></div>
+    <div class="tabs">
+      <button id="tabHost" class="on">我来发起</button>
+      <button id="tabJoin">我来加入</button>
+    </div>
+    <div id="panelHost">
+      <p class="hint">① 在这台设备生成邀请码，发给另一台设备（微信 / QQ 文件传输助手即可）。</p>
+      <button class="btn primary" id="btnGen">生成邀请码</button>
+      <div id="hostOut" hidden>
+        <textarea id="offerCode" readonly rows="4"></textarea>
+        <div class="row"><button class="btn" id="copyOffer">复制邀请码</button></div>
+        <p class="hint">② 对方生成回复码后，粘贴到下面：</p>
+        <textarea id="answerIn" rows="4" placeholder="粘贴回复码"></textarea>
+        <div class="row"><button class="btn" id="pasteAnswer">粘贴</button><button class="btn primary" id="btnConnect">连接</button></div>
+      </div>
+    </div>
+    <div id="panelJoin" hidden>
+      <p class="hint">① 粘贴对方发来的邀请码：</p>
+      <textarea id="offerIn" rows="4" placeholder="粘贴邀请码"></textarea>
+      <div class="row"><button class="btn" id="pasteOffer">粘贴</button><button class="btn primary" id="btnJoin">生成回复码</button></div>
+      <div id="joinOut" hidden>
+        <p class="hint">② 把下面的回复码发回给对方，对方点“连接”即可：</p>
+        <textarea id="answerCode" readonly rows="4"></textarea>
+        <div class="row"><button class="btn" id="copyAnswer">复制回复码</button></div>
+      </div>
+    </div>
+    <p class="msg" id="pairMsg"></p>
+    <details>
+      <summary>连不上怎么办？</summary>
+      <ol>
+        <li>自动发现不到设备：确认两边页面顶部都显示“自动发现已开启”、两边“房间”一致；部分公司 / 校园网或代理会挡住公共 MQTT 服务，此时用这里的连接码即可（连接码和传输本身都不需要外网）。</li>
+        <li>两台设备要在同一个 Wi-Fi / 同一个局域网，路由器不要开“AP 隔离”。</li>
+        <li>两边都用系统自带浏览器或 Chrome / Edge，不要用微信等 App 内置浏览器。</li>
+        <li>关闭 VPN 再试。</li>
+        <li>仍然失败：在 Chrome 地址栏打开 chrome://flags/#enable-webrtc-hide-local-ips-with-mdns ，改为 Disabled 后重启浏览器，两边都改。</li>
+      </ol>
+    </details>
+  </div>
+</div>
+
+<div class="mask" id="askMask" hidden>
+  <div class="sheet">
+    <div class="sheet-h"><b>连接请求</b></div>
+    <p class="hint" id="askText"></p>
+    <p class="hint" id="askMsg"></p>
+    <div class="row ask-actions">
+      <button class="btn" id="askNo">拒绝</button>
+      <button class="btn primary" id="askYes">接受</button>
+    </div>
+  </div>
+</div>
+
+<div class="mask" id="textMask" hidden>
+  <div class="sheet">
+    <div class="sheet-h"><b id="textTitle">发送文本</b><button class="x" id="textClose">✕</button></div>
+    <textarea id="textIn" rows="6" placeholder="输入要发送的文字"></textarea>
+    <div class="row"><button class="btn primary" id="textSend">发送</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js" defer></script>
+</body>
+</html>
