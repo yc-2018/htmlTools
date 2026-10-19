@@ -6,6 +6,8 @@
  * - 没有任何工具命中的按键置灰不可点
  * - 命中的字符会高亮：拼音/首字母命中也能定位回具体的汉字（搜 t 高亮「特」）
  * - 搜索/筛选时会强制展开所有 <details>，清空后恢复原始展开状态
+ * - 桌面端在页面任意位置按下字母/数字，会自动聚焦搜索框并输入该字符
+ * - 中文输入法请先按 / 或 Ctrl/Cmd+K 聚焦搜索框，再打拼音（见下方说明）
  */
 (function () {
   'use strict';
@@ -288,6 +290,62 @@
         input.value = '';
         applyFilter();
       }
+    });
+
+    // 正在输入内容的元素不能抢焦点，否则会打断用户输入
+    function isEditableTarget(el) {
+      if (!el || el.nodeType !== 1) return false;
+      var tag = el.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      return !!el.isContentEditable;
+    }
+
+    // 聚焦搜索框并把光标放到末尾；搜索框在手机端隐藏时返回 false
+    function focusSearch() {
+      if (!input.offsetParent) return false;
+      input.focus();
+      var len = input.value.length;
+      if (input.setSelectionRange) input.setSelectionRange(len, len);
+      return true;
+    }
+
+    // / 或 Ctrl/Cmd+K：只聚焦、不输入字符。
+    // 中文输入法必须先让输入框拿到焦点，第一个拼音字母才会进入输入法；
+    // 由 keydown 再补字符的话，输入法已经错过这个按键了。
+    document.addEventListener('keydown', function (e) {
+      if (e.defaultPrevented || e.isComposing) return;
+
+      var plainSlash = (e.key === '/' || e.code === 'Slash') &&
+        !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
+      var ctrlK = (e.ctrlKey || e.metaKey) && !e.altKey &&
+        (e.key === 'k' || e.key === 'K' || e.code === 'KeyK');
+      if (!plainSlash && !ctrlK) return;
+      // 在其他输入框里打字时不抢 / 键；Ctrl+K 在搜索框内仍可把光标放回末尾
+      if (isEditableTarget(e.target) && !(ctrlK && e.target === input)) return;
+
+      if (!focusSearch()) return;
+      e.preventDefault();
+    });
+
+    // 桌面端：任意位置按下字母/数字，直接把该字符送进搜索框
+    document.addEventListener('keydown', function (e) {
+      if (e.defaultPrevented || e.isComposing) return;
+      // Ctrl / Cmd / Alt 组合键留给浏览器
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // 搜索框在手机端隐藏，此时不拦截按键
+      if (!input.offsetParent) return;
+      if (isEditableTarget(e.target)) return;
+
+      var key = e.key;
+      if (!key || key.length !== 1 || !/[a-zA-Z0-9]/.test(key)) return;
+      // 部分输入法正在处理按键时会报 229，此时不能补字符
+      if (e.keyCode === 229) return;
+
+      e.preventDefault();
+      // 从输入框外触发时视为开始一次新搜索，避免拼在旧关键词后面
+      input.value = key.toLowerCase();
+      focusSearch();
+      applyFilter();
     });
   });
 })();
