@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>表格转 Markdown · 方格纸工作台</title>
+<link rel="icon" href="/favicon.ico" type="image/x-icon">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="stamp">TABLE<br>to MD</div>
+    <div>
+      <h1>表格转 Markdown<small>/ 方格纸工作台</small></h1>
+      <p>粘贴 Excel 内容、导入文件或用方格手工绘制，右侧实时生成 Markdown 表格。</p>
+    </div>
+  </div>
+  <div class="sync-chip"><i></i><span id="syncText">已同步 · 10×10</span></div>
+</header>
+
+<main class="workspace" id="workspace">
+
+  <!-- ========== 01 数据源 ========== -->
+  <section class="panel" id="panel-src" style="flex:0 0 212px">
+    <div class="panel-head">
+      <span class="panel-no">01</span>
+      <span class="panel-title">数据源<em>粘贴 / 导入</em></span>
+      <span class="spacer"></span>
+      <span class="count" id="srcCount">0 行</span>
+    </div>
+    <div class="panel-body">
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <div class="src-tools">
+          <span class="label">格式</span>
+          <select class="field" id="srcFormat">
+            <option value="auto">自动识别</option>
+            <option value="tsv">Excel / TSV（制表符）</option>
+            <option value="csv">CSV（逗号）</option>
+            <option value="md">Markdown 表格</option>
+            <option value="html">HTML 表格</option>
+          </select>
+          <button class="btn ghost mini" id="btnSample" title="填入一份演示数据">示例</button>
+          <button class="btn ghost mini" id="btnImport" title="支持 .xlsx / .csv / .tsv / .txt / .md / .html">导入文件</button>
+          <input type="file" id="fileInput" class="hidden"
+                 accept=".xlsx,.csv,.tsv,.txt,.md,.markdown,.html,.htm">
+          <button class="btn primary mini" id="btnParse" title="解析上方文本并覆盖方格">转为表格 →</button>
+          <span class="spacer grow"></span>
+          <button class="btn ghost mini" id="btnClearSrc">清空</button>
+        </div>
+        <div class="src-body" id="srcBody">
+          <div class="ln" id="srcLn">1</div>
+          <textarea id="srcText" spellcheck="false" wrap="off"
+            placeholder="在此粘贴 Excel 单元格（Ctrl+V，制表符分隔），或 CSV / Markdown / HTML 表格文本…"></textarea>
+        </div>
+        <div class="src-hint" id="srcHint">支持从 Excel、飞书、WPS 直接复制粘贴；也可以把文件拖到此面板。</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="grip" data-resize="panel-src" title="拖动调整高度"></div>
+
+  <!-- ========== 02 方格编辑 ========== -->
+  <section class="panel" id="panel-grid" style="flex:1 1 auto">
+    <div class="panel-head">
+      <span class="panel-no">02</span>
+      <span class="panel-title">方格编辑<em>点击单元格直接改</em></span>
+      <span class="spacer"></span>
+      <span class="count" id="sizeChip">10 × 10</span>
+      <button class="btn ghost mini side-toggle" id="btnSideToggle" aria-expanded="false">⚙ 工具</button>
+      <button class="btn ghost mini" id="btnAddRow" title="在表格末尾追加一行（按选区插入请用左侧按钮）">+ 行</button>
+      <button class="btn ghost mini" id="btnDelRow" title="删除末尾一行">− 行</button>
+      <button class="btn ghost mini" id="btnAddCol" title="在表格末尾追加一列（按选区插入请用左侧按钮）">+ 列</button>
+      <button class="btn ghost mini" id="btnDelCol" title="删除末尾一列">− 列</button>
+    </div>
+    <div class="panel-body">
+      <aside class="side" id="sideTools">
+        <h4>查找</h4>
+        <div class="row">
+          <input class="field" id="findInput" placeholder="搜索高亮…" spellcheck="false">
+          <button class="btn mini" id="btnFind" title="高亮所有匹配单元格（Ctrl+F）">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="7" r="4.6"/><path d="M10.5 10.5 14 14"/></svg>
+          </button>
+        </div>
+
+        <h4>行列（按当前选区插入）</h4>
+        <div class="row">
+          <button class="btn" id="btnInsRowAbove" title="在选中行上方插入一行">↑ 上方插行</button>
+          <button class="btn" id="btnInsRowBelow" title="在选中行下方插入一行">↓ 下方插行</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="btnInsColLeft" title="在选中列左侧插入一列">← 左侧插列</button>
+          <button class="btn" id="btnInsColRight" title="在选中列右侧插入一列">→ 右侧插列</button>
+        </div>
+        <div class="row">
+          <button class="btn danger" id="btnDelSelRow" title="删除选中的行">删选中行</button>
+          <button class="btn danger" id="btnDelSelCol" title="删除选中的列">删选中列</button>
+        </div>
+        <button class="btn danger big" id="btnTrim" title="删除所有空白行与空白列">删除空白行列</button>
+
+        <h4>历史</h4>
+        <div class="row">
+          <button class="btn" id="btnUndo">↶ 撤销</button>
+          <button class="btn" id="btnRedo">↷ 重做</button>
+        </div>
+        <button class="btn big" id="btnClearGrid">清空全部内容</button>
+
+        <h4>批量转换（作用于选区或全表）</h4>
+        <div class="row">
+          <button class="btn" id="btnUpper">A 大写</button>
+          <button class="btn" id="btnLower">a 小写</button>
+        </div>
+        <button class="btn big" id="btnTranspose" title="行列互换，会重建方格">⇄ 转置</button>
+
+        <hr>
+        <h4>搜索替换</h4>
+        <input class="field" id="repFind" placeholder="关键词" spellcheck="false">
+        <input class="field" id="repTo" placeholder="替换为…" spellcheck="false">
+        <button class="btn search big" id="btnReplace">搜索替换</button>
+        <div class="tip">留空替换为即删除；选中单元格后可只替换选区。</div>
+      </aside>
+      <div class="grid-wrap">
+        <div class="grid-scroll" id="gridScroll">
+          <table class="sheet" id="sheet">
+            <thead><tr id="sheetHead"></tr></thead>
+            <tbody id="sheetBody"></tbody>
+          </table>
+        </div>
+        <div class="grid-bar">
+          <span id="cellPos">A1</span>
+          <span>·</span>
+          <span id="selInfo">未选择区域</span>
+          <span class="spacer"></span>
+          <span class="msg" id="gridMsg"></span>
+          <span>拖动行号/列标可连续多选整行/整列</span>
+        </div>
+      </div>
+    </div>
+    <div class="panel-foot">
+      <span><kbd>Enter</kbd> 下移</span>
+      <span><kbd>Shift</kbd>+<kbd>Enter</kbd> 换行</span>
+      <span><kbd>Tab</kbd> 右移</span>
+      <span><kbd>拖拽</kbd> 选择区域</span>
+      <span><kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销</span>
+    </div>
+  </section>
+
+  <div class="grip" data-resize="panel-grid" title="拖动调整高度"></div>
+
+  <!-- ========== 03 导出 ========== -->
+  <section class="panel" id="panel-out" style="flex:0 0 300px">
+    <div class="panel-head">
+      <span class="panel-no">03</span>
+      <span class="panel-title">导出<em>Markdown / CSV / HTML</em></span>
+      <div class="seg out-tabs" id="outTabs">
+        <button type="button" data-pane="code" class="on">代码</button>
+        <button type="button" data-pane="preview">渲染预览</button>
+      </div>
+      <span class="spacer"></span>
+      <span style="font:600 11px var(--mono);color:var(--ink-soft)">格式</span>
+      <select class="field" id="outFormat">
+        <option value="md">Markdown</option>
+        <option value="tsv">TSV</option>
+        <option value="csv">CSV</option>
+        <option value="html">HTML 表格</option>
+      </select>
+      <button class="btn mini" id="btnCopy">复制</button>
+      <button class="btn primary mini" id="btnDownload">下载</button>
+    </div>
+    <div class="panel-body">
+      <div class="out-body">
+        <div class="code-area" id="codeArea">
+          <pre id="codePre" aria-hidden="true"></pre>
+          <span class="preview-tag">OUTPUT</span>
+          <textarea id="codeText" spellcheck="false" wrap="off" aria-label="导出内容"></textarea>
+        </div>
+        <div class="preview-pane hidden" id="previewPane">
+          <div id="previewWrap"></div>
+        </div>
+        <aside class="out-settings">
+          <h4>转义字符
+            <button type="button" class="help" id="escapeHelp" aria-expanded="false"
+              aria-controls="escapeTip" aria-label="转义字符说明">?</button>
+          </h4>
+          <div class="help-tip" id="escapeTip" hidden>
+            输出 Markdown 时，下面列出的字符会自动在前面加反斜杠 <code>\</code>，避免它们破坏表格结构。
+            默认只转义竖线 <code>|</code>；也可以填 <code>* _ ` [ ] #</code> 等。
+            留空则完全不转义；已经写成 <code>\|</code> 的字符不会重复转义。
+          </div>
+          <input class="field" id="escapeChars" value="|" title="输出时在这些字符前加反斜杠，可填多个">
+          <div class="escape-hint">自动转义：这些字符输出时前加 \，默认只处理表格竖线 |</div>
+          <label class="check"><input type="checkbox" id="optHeader" checked>首行作为标题</label>
+
+          <h4>文本对齐</h4>
+          <div class="seg" id="alignSeg">
+            <button type="button" data-align="left" class="on">左对齐</button>
+            <button type="button" data-align="center">居中</button>
+            <button type="button" data-align="right">右对齐</button>
+          </div>
+
+          <h4>输出选项</h4>
+          <div class="stack">
+            <label class="check"><input type="checkbox" id="optFormat" checked>格式化（列宽对齐）</label>
+            <label class="check"><input type="checkbox" id="optCompact">省略首尾竖线</label>
+            <label class="check"><input type="checkbox" id="optBoldRow">加粗第一行</label>
+            <label class="check"><input type="checkbox" id="optBoldCol">加粗第一列</label>
+          </div>
+
+        </aside>
+      </div>
+    </div>
+    <div class="panel-foot">
+      <span id="outStat">0 行 × 0 列 · 0 字符</span>
+      <span style="flex:1"></span>
+      <span>可直接粘贴进 GitHub / 语雀 / Obsidian</span>
+    </div>
+  </section>
+
+</main>
+<div class="toast" id="toast"></div>
+
+<script src="./app.js"></script>
+</body>
+</html>
