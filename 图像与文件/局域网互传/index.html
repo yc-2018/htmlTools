@@ -12,12 +12,12 @@
     <h1>局域网互传</h1>
     <button class="me" id="meBtn" title="点击修改本机名称"></button>
   </header>
-  <p class="tip">打开本页后，同一局域网（或同一发现房间）里的其它设备会自动出现在下方，点“连接”即可，不用再互填连接码。文件和文本始终点对点直传；只有“我在线 / 连接请求”这类配对信息会经过公共发现服务转发。</p>
+  <p class="tip">自动发现会按公网出口 IP 判断是否在同一局域网：同一个路由器下的设备才会互相出现，不同网络不会混在一起。判断依赖 STUN，公司 / 校园网封 UDP 时可能判断失败，此时自动发现暂停，继续用扫码 / 手动配对即可。文件和文本始终点对点直传，只有“我在线 / 连接请求”这类配对信息会经过公共发现服务转发。</p>
 
   <div class="discbar">
     <span class="dot" id="discDot"></span>
-    <span id="discText">正在连接发现服务…</span>
-    <button class="linkbtn" id="roomBtn" title="只有同一房间的设备才会互相发现">房间：lan</button>
+    <span id="discText">正在判断所在局域网…</span>
+    <button class="linkbtn" id="roomBtn" title="房间相同的同局域网设备才会互相发现；默认房间是公开的，建议改成自己的" hidden>房间：lan</button>
     <button class="linkbtn" id="discRetry" hidden>重试</button>
     <label class="switch" title="关闭后不连接任何公共发现服务，只保留手动 / 扫码配对">
       <input type="checkbox" id="discToggle" checked>
@@ -72,7 +72,9 @@
     <details>
       <summary>连不上怎么办？</summary>
       <ol>
-        <li>自动发现不到设备：确认两边页面顶部都显示“自动发现已开启”、两边“房间”一致；部分公司 / 校园网或代理会挡住公共 MQTT 服务，此时用这里的连接码即可（连接码和传输本身都不需要外网）。</li>
+        <li>自动发现按公网出口 IP 判断局域网：只有同一个路由器（同一个公网出口）下的设备才会互相出现；不同网络即使房间名相同也不会出现。判断依赖 STUN，公司 / 校园网封 UDP 时可能判断失败，顶部会显示“无法判断所在局域网”，此时用扫码 / 连接码配对即可。</li>
+        <li>宿舍 / 运营商大内网（CGNAT）可能让出口相同的陌生人互相看到；默认房间 lan 也是公开的，建议点顶部“房间”改成自己的名字（两边一致）。</li>
+        <li>自动发现不到设备：确认两边页面顶部都显示“同局域网发现已开启”、两边“房间”一致；部分网络会挡住公共 MQTT 服务，此时用这里的连接码即可（连接码和传输本身都不需要外网）。</li>
         <li>两台设备要在同一个 Wi-Fi / 同一个局域网，路由器不要开“AP 隔离”。</li>
         <li>两边都用系统自带浏览器或 Chrome / Edge，不要用微信等 App 内置浏览器。</li>
         <li>关闭 VPN 再试。</li>

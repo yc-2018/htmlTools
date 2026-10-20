@@ -184,7 +184,7 @@
     renderPeers();
     if (wasPending && failed) {
       if (modalPeer === p) setMsg('连接失败，请看下方“连不上怎么办”，然后重新配对。');
-      else toast('连接失败');
+      else toast('连接失败：双方可能不在同一局域网');
     } else if (!wasPending) {
       toast(p.name + ' 已断开');
     }
@@ -292,7 +292,7 @@
     return el('div', { class: 'card near' },
       el('div', { class: 'avatar' }, d.kind === 'phone' ? '📱' : '💻'),
       el('div', { class: 'nm' }, d.name),
-      el('div', { class: 'st ok' }, '附近 · 在线'),
+      el('div', { class: 'st ok', title: '按公网出口 IP 判断，通常等于同一个路由器' }, '同局域网 · 在线'),
       el('div', { class: 'btns' },
         el('button', { class: 'btn primary', onclick: () => connectNearby(d) }, '连接')));
   }
@@ -747,9 +747,10 @@
       'wss://broker.hivemq.com:8884/mqtt',
       'wss://test.mosquitto.org:8081/mqtt'
     ],
-    conns: [], state: 'idle', topic: '', room: 'lan', lastSay: 0, enabled: true
+    conns: [], state: 'idle', topic: '', room: 'lan', lastSay: 0, enabled: true,
+    scope: '', scopeBusy: false, scopeToken: 0, lastProbe: 0
   };
-  const disc = new Map(); // 附近设备：id -> {id,name,kind,last}
+  const disc = new Map(); // 同局域网设备：id -> {id,name,kind,last}
   const seenSig = new Set(); // 多通道去重：同一条配对消息只处理一次
   let askOffer = null;
   let sigSeq = 0;
@@ -792,6 +793,116 @@
   function publishPacket(topic, bytes) {
     return mqttPacket(3, 0, cat(mqttStr(topic), bytes));
   }
+
+  /* ---------- 同局域网判定（公网出口近似） ---------- */
+  /* 浏览器不能真的扫描局域网；这里用 STUN 探测公网出口 IP，把出口相同的设备分到同一个
+     MQTT topic。同一个路由器下的设备出口相同，不同网络即使房间名相同也互相看不到。 */
+  const STUN_URLS = [
+    'stun:stun.cloudflare.com:3478',
+    'stun:stun.nextcloud.com:443',
+    'stun:stun.l.google.com:19302'
+  ];
+  function v6Prefix64(ip) {
+    ip = ip.split('%')[0];
+    if (!ip.includes(':') || ip.includes('.')) return '';
+    const parts = ip.split('::');
+    let groups;
+    if (parts.length === 2) {
+      const left = parts[0] ? parts[0].split(':') : [];
+      const right = parts[1] ? parts[1].split(':') : [];
+      const fill = 8 - left.length - right.length;
+      if (fill < 0) return '';
+      groups = [...left, ...Array(fill).fill('0'), ...right];
+    } else {
+      groups = ip.split(':');
+      if (groups.length !== 8) return '';
+    }
+    if (groups.some(g => !/^[0-9a-fA-F]{1,4}$/.test(g))) return '';
+    return groups.slice(0, 4).map(g => g.toLowerCase().padStart(4, '0')).join(':');
+  }
+  async function scopeHash(key) {
+    const data = textEnc.encode(NET.room + '|' + key);
+    try {
+      if (typeof crypto !== 'undefined' && crypto.subtle) {
+        const d = await crypto.subtle.digest('SHA-256', data);
+        return [...new Uint8Array(d).slice(0, 8)].map(b => b.toString(16).padStart(2, '0')).join('');
+      }
+    } catch (e) {}
+    let h = 2166136261;
+    for (const b of data) { h ^= b; h = Math.imul(h, 16777619); }
+    return (h >>> 0).toString(16).padStart(8, '0');
+  }
+  async function probeScope() {
+    if (typeof RTCPeerConnection !== 'function') return '';
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: STUN_URLS }] });
+    try {
+      pc.createDataChannel('scope');
+      await pc.setLocalDescription(await pc.createOffer());
+      await iceDone(pc, 4000);
+      const sdp = (pc.localDescription && pc.localDescription.sdp) || '';
+      let v4 = '', v6 = '';
+      for (const line of sdp.split('\n')) {
+        if (!line.startsWith('a=candidate:')) continue;
+        const p = line.split(' ');
+        if (p[2] !== 'udp' || p[7] !== 'srflx') continue;
+        const ip = p[4];
+        if (!ip) continue;
+        if (!v4 && /^\d+\.\d+\.\d+\.\d+$/.test(ip)) v4 = ip;
+        else if (!v6 && ip.includes(':')) v6 = ip;
+      }
+      let key = '';
+      if (v4) key = 'v4:' + v4;
+      else if (v6) {
+        const prefix = v6Prefix64(v6);
+        if (prefix) key = 'v6:' + prefix;
+      }
+      if (!key) return '';
+      NET.lastProbe = Date.now();
+      return await scopeHash(key);
+    } catch (e) {
+      return '';
+    } finally {
+      try { pc.close(); } catch (e) {}
+    }
+  }
+  function topicFor() {
+    return NET.scope ? 'lt/v2/' + NET.scope + '/' + NET.room : '';
+  }
+  async function startDiscovery(forceProbe) {
+    if (!NET.enabled) return;
+    if (!NET.scope || forceProbe) {
+      const token = ++NET.scopeToken;
+      NET.scopeBusy = true;
+      netStatus();
+      const s = await probeScope();
+      if (token !== NET.scopeToken) return;
+      NET.scopeBusy = false;
+      if (!NET.enabled) { netStatus(); return; }
+      if (!s) { netStatus(); return; }
+      if (s !== NET.scope) {
+        NET.scope = s;
+        disc.clear();
+        renderPeers();
+      }
+    }
+    NET.topic = topicFor();
+    for (const c of NET.conns) connectConn(c);
+    netStatus();
+  }
+  async function recheckScope() {
+    if (!NET.enabled || NET.scopeBusy || !NET.scope) return;
+    if (Date.now() - NET.lastProbe < 120000) return;
+    const token = NET.scopeToken;
+    NET.lastProbe = Date.now();
+    const s = await probeScope();
+    if (token !== NET.scopeToken || !NET.enabled || !s || s === NET.scope) return;
+    NET.scope = s;
+    NET.topic = topicFor();
+    disc.clear();
+    renderPeers();
+    restartNet();
+  }
+
   function sendSig(obj) {
     if (!NET.conns.length) return false;
     const msg = Object.assign({ n: myId + ':' + (++sigSeq) }, obj);
@@ -806,13 +917,19 @@
   function netStatus() {
     const ready = NET.conns.filter(c => c.ready).length;
     const connecting = NET.conns.some(c => !c.ready && c.ws && c.ws.readyState === 0);
-    let kind = 'offline', text = '发现服务连不上（检查网络 / 代理），可继续用手动连接码';
+    let kind = 'offline', text = '发现服务连不上（检查网络 / 代理），可继续用扫码 / 手动连接码';
     if (!NET.enabled) {
       kind = 'off';
       text = '自动发现已关闭，扫码 / 手动配对仍可用';
+    } else if (NET.scopeBusy) {
+      kind = 'locating';
+      text = '正在判断所在局域网…';
+    } else if (!NET.scope) {
+      kind = 'unknown';
+      text = '无法判断所在局域网（STUN 不可用），自动发现已暂停，可用扫码 / 手动配对';
     } else if (ready) {
       kind = 'online';
-      text = '自动发现已开启' + (ready > 1 ? '（' + ready + ' 个通道）' : '');
+      text = '同局域网发现已开启' + (ready > 1 ? '（' + ready + ' 个通道）' : '');
     } else if (connecting) {
       kind = 'connecting';
       text = '正在连接发现服务…';
@@ -826,21 +943,21 @@
     const room = $('#roomBtn');
     if (room) {
       room.textContent = '房间：' + NET.room;
-      room.hidden = !NET.enabled;
+      room.hidden = !NET.enabled || !NET.scope;
     }
     const retry = $('#discRetry');
-    if (retry) retry.hidden = kind !== 'offline';
+    if (retry) retry.hidden = kind !== 'offline' && kind !== 'unknown';
     if (!changed) return;
     if (kind === 'online') {
       sendSig({ t: 'who', id: myId });
       sayHi(true);
-    } else if (kind === 'off' || disc.size) {
+    } else if (kind === 'off' || kind === 'unknown') {
       disc.clear();
       renderPeers();
     }
   }
   function connectConn(c) {
-    if (!NET.enabled) return;
+    if (!NET.enabled || !NET.scope) return;
     const token = ++c.token;
     clearTimeout(c.retryTimer);
     clearTimeout(c.connectTimer);
@@ -971,6 +1088,8 @@
   }
   function restartNet() {
     if (!NET.enabled) { netStatus(); return; }
+    if (!NET.scope) { startDiscovery(); return; }
+    NET.topic = topicFor();
     for (const c of NET.conns) {
       c.token++;
       clearTimeout(c.connectTimer);
@@ -990,18 +1109,28 @@
     const toggle = $('#discToggle');
     if (toggle) toggle.checked = NET.enabled;
     NET.room = roomNow();
-    NET.topic = 'lt/v1/' + NET.room;
+    NET.scope = '';
+    NET.scopeBusy = false;
+    NET.scopeToken = 0;
+    NET.lastProbe = 0;
     NET.conns = NET.brokers.map(url => ({
       url, ws: null, buf: new Uint8Array(0), ready: false, token: 0,
       retryTimer: 0, pingTimer: 0, connectTimer: 0, tries: 0, lastRecv: 0
     }));
-    netStatus();
-    if (NET.enabled) for (const c of NET.conns) connectConn(c);
+    if (NET.enabled) startDiscovery();
+    else netStatus();
     setInterval(heartbeat, 6000);
-    window.addEventListener('focus', () => sayHi(true));
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) sayHi(true); });
+    setInterval(() => { if (NET.enabled) recheckScope(); }, 300000);
+    window.addEventListener('focus', () => { sayHi(true); recheckScope(); });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) { sayHi(true); recheckScope(); }
+    });
   }
   function shutdownNet() {
+    NET.scopeToken++;
+    NET.scopeBusy = false;
+    NET.scope = '';
+    NET.topic = '';
     if (askOffer) {
       sendSig({ t: 'reject', from: myId, to: askOffer.from });
       askOffer = null;
@@ -1035,7 +1164,7 @@
     discToggle.addEventListener('change', () => {
       NET.enabled = discToggle.checked;
       store.set('lt_disc', NET.enabled ? '1' : '0');
-      if (NET.enabled) restartNet();
+      if (NET.enabled) startDiscovery(true);
       else shutdownNet();
     });
   }
@@ -1088,7 +1217,7 @@
         if (!sendSig({ t: 'offer', from: myId, to: d.id, sdp: pc.localDescription.sdp, name: myName, kind: myKind })) {
           throw new Error('发现服务已断开');
         }
-        watchPeer(p, 30000, '对方没有响应');
+        watchPeer(p, 30000, '连接超时：对方未响应，或不在同一局域网');
       } catch (e) {
         if (p.state !== 'closed') { p.state = 'closed'; p.note = '发起失败'; }
         try { p.pc && p.pc.close(); } catch (_) {}
@@ -1104,7 +1233,7 @@
     upsertDevice(m.from, m.name, m.kind);
     askOffer = m;
     $('#askText').textContent = String(m.name || '一台设备').slice(0, 24) + ' 想和你连接';
-    $('#askMsg').textContent = '接受后对方就能直接给你发文件和文本；不认识的设备请点拒绝。';
+    $('#askMsg').textContent = '接受后对方就能直接给你发文件和文本；不认识的设备请点拒绝。对方可能不在同一局域网，跨网络时可能连不上。';
     $('#askYes').disabled = false;
     $('#askNo').disabled = false;
     $('#askMask').hidden = false;
@@ -1118,7 +1247,7 @@
     try {
       const p = makePeer('join', {
         devId: m.from,
-        name: String(m.name || '附近设备').slice(0, 24),
+        name: String(m.name || '同局域网设备').slice(0, 24),
         kind: m.kind === 'phone' ? 'phone' : 'pc',
         auto: true,
         note: '正在建立连接…'
@@ -1134,7 +1263,7 @@
       askOffer = null;
       $('#askMask').hidden = true;
       renderPeers();
-      watchPeer(p, 20000, '连接超时');
+      watchPeer(p, 20000, '连接超时：可能不在同一局域网');
     } catch (e) {
       const p = pendingPeerFor(m.from);
       if (p) {
@@ -1195,16 +1324,19 @@
     if (!roomOk(r)) { toast('房间名只能用字母、数字、- 和 _'); return; }
     store.set('lt_room', r);
     NET.room = r;
-    NET.topic = 'lt/v1/' + r;
+    NET.topic = topicFor();
     disc.clear();
     askOffer = null;
     $('#askMask').hidden = true;
     renderPeers();
-    restartNet();
+    if (!NET.scope) startDiscovery(true);
+    else restartNet();
   };
   $('#discRetry').onclick = () => {
     for (const c of NET.conns) c.tries = 0;
-    restartNet();
+    if (!NET.enabled) return;
+    if (!NET.scope) startDiscovery(true);
+    else restartNet();
   };
 
   /* ---------- 全局：拖拽 / 粘贴 / 退出 ---------- */

@@ -78,9 +78,9 @@ details ol{padding-left:20px;margin:6px 0}
 /* 发现服务状态条 */
 .discbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--sub);margin:10px 0 0}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--sub);flex:none}
-.dot.connecting{background:var(--warn);animation:discpulse 1.2s ease-in-out infinite}
+.dot.connecting,.dot.locating{background:var(--warn);animation:discpulse 1.2s ease-in-out infinite}
 .dot.online{background:var(--ok)}
-.dot.offline{background:var(--err)}
+.dot.offline,.dot.unknown{background:var(--err)}
 .dot.off{background:var(--sub)}
 @keyframes discpulse{50%{opacity:.3}}
 .linkbtn{font:inherit;font-size:12px;border:0;background:none;color:var(--accent);cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px}
