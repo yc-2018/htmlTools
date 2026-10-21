@@ -42,8 +42,11 @@
 
   const elements = {
     tabs: Array.from(document.querySelectorAll(".mode-tab")),
+    sidebar: document.querySelector(".sidebar"),
     search: document.getElementById("generator-search"),
     nav: document.getElementById("generator-nav"),
+    navToggles: Array.from(document.querySelectorAll("[data-action='toggle-nav-expand']")),
+    navCount: document.getElementById("nav-count"),
     mobileSelect: document.getElementById("mobile-generator"),
     category: document.getElementById("tool-category"),
     title: document.getElementById("tool-title"),
@@ -597,6 +600,8 @@
   let lastCode = "";
   let lastSections = null;
   let previewToken = 0;
+  let navExpanded = false;
+  let navExpandTrigger = null;
   const copyResetTimers = new WeakMap();
   const previewState = {
     mode: "",
@@ -1252,12 +1257,14 @@
     const groups = groupsByMode[appState.mode];
     const currentId = appState.selected[appState.mode];
     const parts = [];
+    let visibleCount = 0;
 
     groups.forEach((group) => {
       const items = group.items.filter((item) => matchesQuery(item, group, query));
       if (!items.length) {
         return;
       }
+      visibleCount += items.length;
       parts.push(`<section class="nav-group">
         <h2>${esc(group.name)}<span>${items.length}</span></h2>
         ${items.map((item) => {
@@ -1270,6 +1277,40 @@
     elements.nav.innerHTML = parts.length
       ? parts.join("")
       : `<p class="nav-empty">没有找到“${esc(appState.query.trim())}”相关的生成器，试试其他关键词。</p>`;
+    if (elements.navCount) {
+      elements.navCount.textContent = query ? `匹配 ${visibleCount} 个` : `共 ${visibleCount} 个`;
+    }
+  }
+
+  function setNavExpanded(expanded, { restoreFocus = true } = {}) {
+    if (expanded === navExpanded) {
+      return;
+    }
+    navExpanded = expanded;
+    if (expanded) {
+      const active = document.activeElement;
+      navExpandTrigger = active && active.closest("[data-action='toggle-nav-expand']")
+        ? active
+        : elements.navToggles[0];
+    }
+    elements.sidebar.classList.toggle("is-fullscreen", expanded);
+    document.body.classList.toggle("nav-fullscreen", expanded);
+    elements.navToggles.forEach((button) => {
+      button.setAttribute("aria-expanded", String(expanded));
+      button.title = expanded ? "退出全屏" : "全屏查看生成器列表";
+      button.setAttribute("aria-label", button.title);
+      const text = button.querySelector(".nav-expand-text");
+      if (text) {
+        text.textContent = expanded ? "退出全屏" : "全屏";
+      }
+    });
+    if (expanded) {
+      elements.nav.scrollTop = 0;
+      const target = window.matchMedia("(max-width: 960px)").matches ? elements.navToggles[0] : elements.search;
+      target.focus({ preventScroll: true });
+    } else if (restoreFocus && navExpandTrigger) {
+      navExpandTrigger.focus({ preventScroll: true });
+    }
   }
 
   function scrollActiveNavIntoView() {
@@ -1691,6 +1732,12 @@
   }
 
   function bindEvents() {
+    elements.navToggles.forEach((button) => {
+      button.addEventListener("click", () => {
+        setNavExpanded(!navExpanded);
+      });
+    });
+
     elements.tabs.forEach((tab, index) => {
       tab.addEventListener("click", () => {
         switchMode(tab.dataset.mode);
@@ -1714,6 +1761,7 @@
 
     elements.search.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && elements.search.value) {
+        event.stopPropagation();
         elements.search.value = "";
         appState.query = "";
         renderNav();
@@ -1723,6 +1771,9 @@
     elements.nav.addEventListener("click", (event) => {
       const button = event.target.closest("[data-generator-id]");
       if (button) {
+        if (navExpanded) {
+          setNavExpanded(false);
+        }
         selectGenerator(button.dataset.generatorId);
       }
     });
@@ -1746,9 +1797,19 @@
     });
     elements.preview.addEventListener("load", handlePreviewLoad);
 
-    window.addEventListener("hashchange", applyHash);
+    window.addEventListener("hashchange", () => {
+      if (navExpanded) {
+        setNavExpanded(false, { restoreFocus: false });
+      }
+      applyHash();
+    });
 
     document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && navExpanded) {
+        event.preventDefault();
+        setNavExpanded(false);
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         if (window.matchMedia("(max-width: 960px)").matches) {
           return;

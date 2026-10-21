@@ -31,6 +31,16 @@
 
   <div class="app-layout">
     <aside class="sidebar" aria-label="生成器导航">
+      <div class="sidebar-fullscreen-bar">
+        <div>
+          <p class="sidebar-eyebrow">生成器导航</p>
+          <h2>全部生成器</h2>
+        </div>
+        <div class="sidebar-fullscreen-meta">
+          <span id="nav-count" class="sidebar-count"></span>
+          <span class="sidebar-esc-hint">按 Esc 退出</span>
+        </div>
+      </div>
       <div class="sidebar-head">
         <label class="search-field">
           <span class="sr-only">搜索生成器</span>
@@ -39,6 +49,15 @@
           </svg>
           <input id="generator-search" type="search" placeholder="搜索生成器…" autocomplete="off">
         </label>
+        <button class="nav-expand-button" type="button" data-action="toggle-nav-expand" aria-expanded="false" aria-controls="generator-nav" aria-label="全屏查看生成器列表" title="全屏查看生成器列表">
+          <svg class="nav-expand-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <svg class="nav-collapse-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path d="M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="nav-expand-text">全屏</span>
+        </button>
       </div>
       <nav id="generator-nav" class="generator-nav" aria-label="生成器列表"></nav>
     </aside>
@@ -47,6 +66,15 @@
       <div class="mobile-toolbar">
         <label class="sr-only" for="mobile-generator">选择生成器</label>
         <select id="mobile-generator"></select>
+        <button class="nav-expand-button" type="button" data-action="toggle-nav-expand" aria-expanded="false" aria-controls="generator-nav" aria-label="全屏查看生成器列表" title="全屏查看生成器列表">
+          <svg class="nav-expand-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <svg class="nav-collapse-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path d="M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="nav-expand-text">全屏</span>
+        </button>
       </div>
 
       <header class="tool-header">

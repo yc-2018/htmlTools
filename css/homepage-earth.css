@@ -295,3 +295,9 @@ img {
   box-shadow: 0 0 0 1px rgba(224, 176, 32, 0.35) inset;
   color: #333;
 }
+
+/* 小灰 */
+.xiao {
+  font-size: 10px;
+  color: #999;
+}

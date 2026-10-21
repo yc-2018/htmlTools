@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CSS与HTML生成器</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="site-shell">
+    <section class="hero">
+      <div class="hero-card hero-main" data-ghost="CODE">
+        <span class="eyebrow">参考 webcode.tools</span>
+        <h1>CSS与HTML生成器</h1>
+        <p class="lead">
+          这里收录了常用的 CSS 与 HTML 代码生成工具，保留了可视化调参、实时预览和一键复制代码的核心体验。整个站点使用中文界面编写，适合在本地快速生成前端页面片段与样式代码。
+        </p>
+        <div class="chip-row">
+          <span class="chip">完整分类侧栏</span>
+          <span class="chip">实时预览</span>
+          <span class="chip">复制代码</span>
+          <span class="chip">本地离线可用</span>
+        </div>
+      </div>
+      <div class="hero-card hero-side">
+        <div>
+          <h2 style="margin:0 0 10px;">当前规模</h2>
+          <p>CSS 页面已经覆盖到动画、背景、盒模型、滤镜、文本、布局、变换、过渡等完整菜单；HTML 页面也补齐了输入、媒体、文本和其他元素目录。</p>
+          <div class="stats-grid">
+            <div class="mini-stat">
+              <strong>44</strong>
+              <span>个 CSS 生成器</span>
+            </div>
+            <div class="mini-stat">
+              <strong>36</strong>
+              <span>个 HTML 生成器</span>
+            </div>
+            <div class="mini-stat">
+              <strong>100%</strong>
+              <span>中文交互</span>
+            </div>
+            <div class="mini-stat">
+              <strong>0</strong>
+              <span>安装依赖步骤</span>
+            </div>
+          </div>
+        </div>
+        <div class="chip-row">
+          <span class="ghost-chip">CSS Generator</span>
+          <span class="ghost-chip">HTML Generator</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="page-grid">
+      <div class="panel">
+        <span class="section-kicker">Generators</span>
+        <h2>两个生成器入口</h2>
+        <p class="panel-intro">
+          你可以先从下面两个入口进入。左侧是深色目录侧栏，中间是参数编辑区域，右侧是预览和代码。整体交互节奏保持了参考站点的使用习惯，但内容全部换成中文。
+        </p>
+        <div class="home-links">
+          <a class="tool-link" href="./css-generator.html">
+            <strong>CSS 生成器</strong>
+            <p>覆盖动画、背景、边框、阴影、滤镜、布局、文本、变换、过渡等 44 个 CSS 小工具。</p>
+          </a>
+          <a class="tool-link" href="./html-generator.html">
+            <strong>HTML 生成器</strong>
+            <p>覆盖输入控件、媒体、文本语义元素和其他常见标签，共 36 个 HTML 小工具。</p>
+          </a>
+        </div>
+      </div>
+
+      <div class="panel">
+        <span class="section-kicker">Notes</span>
+        <h2>这版的实现思路</h2>
+        <div class="feature-grid">
+          <div class="feature-card">
+            <strong>按目录拆工具</strong>
+            <p>不是把很多属性挤在一个页面里，而是像原站一样拆成独立条目，切换更清晰。</p>
+          </div>
+          <div class="feature-card">
+            <strong>一改即看</strong>
+            <p>每个工具都带自己的预览方式，修改参数后会立刻反映到结果区。</p>
+          </div>
+          <div class="feature-card">
+            <strong>代码可直接复制</strong>
+            <p>CSS 页输出样式片段，HTML 页输出标签片段，方便直接贴进项目或文档。</p>
+          </div>
+          <div class="feature-card">
+            <strong>后续还能继续补</strong>
+            <p>如果你还想扩展 JS 生成器、SVG 生成器或更多 CSS 细项，这套结构也方便继续往里加。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
