@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="320" viewBox="0 0 480 320" role="img" aria-label="示例插画">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset="0.55" stop-color="#a855f7"/>
+      <stop offset="1" stop-color="#f9a8d4"/>
+    </linearGradient>
+    <linearGradient id="backMountain" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4338ca"/>
+      <stop offset="1" stop-color="#7e22ce"/>
+    </linearGradient>
+    <linearGradient id="frontMountain" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#312e81"/>
+      <stop offset="1" stop-color="#1e1b4b"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c4b5fd"/>
+      <stop offset="1" stop-color="#818cf8"/>
+    </linearGradient>
+  </defs>
+  <rect width="480" height="320" fill="url(#sky)"/>
+  <circle cx="376" cy="78" r="40" fill="#fef3c7" opacity="0.92"/>
+  <circle cx="376" cy="78" r="56" fill="#fde68a" opacity="0.16"/>
+  <g fill="#ffffff" opacity="0.32">
+    <ellipse cx="102" cy="70" rx="54" ry="16"/>
+    <ellipse cx="142" cy="62" rx="38" ry="13"/>
+    <ellipse cx="264" cy="116" rx="46" ry="12"/>
+  </g>
+  <path d="M0 226 92 128l54 58 38-42 76 82z" fill="url(#backMountain)" opacity="0.9"/>
+  <path d="M196 224 302 92l58 66 34-34 86 100z" fill="url(#backMountain)" opacity="0.72"/>
+  <path d="M0 320V236l96-70 84 88 58-46 70 54 72-44 100 54v48z" fill="url(#frontMountain)"/>
+  <rect y="272" width="480" height="48" fill="url(#water)"/>
+  <g fill="#ffffff" opacity="0.55">
+    <rect x="62" y="286" width="58" height="2" rx="1"/>
+    <rect x="148" y="298" width="34" height="2" rx="1"/>
+    <rect x="286" y="288" width="72" height="2" rx="1"/>
+    <rect x="356" y="302" width="46" height="2" rx="1"/>
+  </g>
+  <g fill="#e0e7ff" opacity="0.8">
+    <circle cx="84" cy="124" r="2.4"/>
+    <circle cx="120" cy="106" r="1.8"/>
+    <circle cx="58" cy="160" r="2"/>
+    <circle cx="330" cy="52" r="2"/>
+    <circle cx="284" cy="82" r="1.6"/>
+  </g>
+</svg>
