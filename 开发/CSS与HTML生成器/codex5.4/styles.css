@@ -761,7 +761,8 @@ h3 {
   }
 
   .sidebar-scroll {
-    max-height: none;
+    max-height: 45vh;
+    overflow: auto;
   }
 }
 
