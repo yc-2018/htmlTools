@@ -42,9 +42,13 @@
             <option value="html">HTML 表格</option>
           </select>
           <button class="btn ghost mini" id="btnSample" title="填入一份演示数据">示例</button>
-          <button class="btn ghost mini" id="btnImport" title="支持 .xlsx / .csv / .tsv / .txt / .md / .html">导入文件</button>
+          <button class="btn ghost mini" id="btnImport" title="支持 .xlsx（多工作表可切换）/ .csv / .tsv / .txt / .md / .html">导入文件</button>
           <input type="file" id="fileInput" class="hidden"
                  accept=".xlsx,.csv,.tsv,.txt,.md,.markdown,.html,.htm">
+          <label class="sheet-pick hidden" id="sheetPick" title="切换工作簿中的工作表">
+            <span>工作表</span>
+            <select class="field" id="sheetSelect" aria-label="选择工作表"></select>
+          </label>
           <button class="btn primary mini" id="btnParse" title="解析上方文本并覆盖方格">转为表格 →</button>
           <span class="spacer grow"></span>
           <button class="btn ghost mini" id="btnClearSrc">清空</button>
@@ -59,7 +63,11 @@
     </div>
   </section>
 
-  <div class="grip" data-resize="panel-src" title="拖动调整高度"></div>
+  <div class="grip" data-resize="panel-src" title="拖动调整高度">
+    <button type="button" class="grip-btn" data-grip-reset title="还原默认高度">还原</button>
+    <span class="grip-line" aria-hidden="true"></span>
+    <button type="button" class="grip-btn" data-grip-expand title="展开到接近窗口高度">展开</button>
+  </div>
 
   <!-- ========== 02 方格编辑 ========== -->
   <section class="panel" id="panel-grid" style="flex:1 1 auto">
@@ -146,7 +154,11 @@
     </div>
   </section>
 
-  <div class="grip" data-resize="panel-grid" title="拖动调整高度"></div>
+  <div class="grip" data-resize="panel-grid" title="拖动调整高度">
+    <button type="button" class="grip-btn" data-grip-reset title="还原默认高度">还原</button>
+    <span class="grip-line" aria-hidden="true"></span>
+    <button type="button" class="grip-btn" data-grip-expand title="展开到接近窗口高度">展开</button>
+  </div>
 
   <!-- ========== 03 导出 ========== -->
   <section class="panel" id="panel-out" style="flex:0 0 300px">
@@ -178,33 +190,40 @@
         <div class="preview-pane hidden" id="previewPane">
           <div id="previewWrap"></div>
         </div>
-        <aside class="out-settings">
-          <h4>转义字符
-            <button type="button" class="help" id="escapeHelp" aria-expanded="false"
-              aria-controls="escapeTip" aria-label="转义字符说明">?</button>
-          </h4>
-          <div class="help-tip" id="escapeTip" hidden>
-            输出 Markdown 时，下面列出的字符会自动在前面加反斜杠 <code>\</code>，避免它们破坏表格结构。
-            默认只转义竖线 <code>|</code>；也可以填 <code>* _ ` [ ] #</code> 等。
-            留空则完全不转义；已经写成 <code>\|</code> 的字符不会重复转义。
+        <aside class="out-settings" id="outSettings">
+          <div class="opt-sec" data-formats="md">
+            <h4>转义字符
+              <button type="button" class="help" id="escapeHelp" aria-expanded="false"
+                aria-controls="escapeTip" aria-label="转义字符说明">?</button>
+            </h4>
+            <div class="help-tip" id="escapeTip" hidden>
+              输出 Markdown 时，下面列出的字符会自动在前面加反斜杠 <code>\</code>，避免它们破坏表格结构。
+              默认只转义竖线 <code>|</code>；也可以填 <code>* _ ` [ ] #</code> 等。
+              留空则完全不转义；已经写成 <code>\|</code> 的字符不会重复转义。
+            </div>
+            <input class="field" id="escapeChars" value="|" title="输出时在这些字符前加反斜杠，可填多个">
+            <div class="escape-hint">自动转义：这些字符输出时前加 \，默认只处理表格竖线 |</div>
           </div>
-          <input class="field" id="escapeChars" value="|" title="输出时在这些字符前加反斜杠，可填多个">
-          <div class="escape-hint">自动转义：这些字符输出时前加 \，默认只处理表格竖线 |</div>
-          <label class="check"><input type="checkbox" id="optHeader" checked>首行作为标题</label>
+          <label class="check" data-formats="md html"><input type="checkbox" id="optHeader" checked>首行作为标题</label>
 
-          <h4>文本对齐</h4>
-          <div class="seg" id="alignSeg">
-            <button type="button" data-align="left" class="on">左对齐</button>
-            <button type="button" data-align="center">居中</button>
-            <button type="button" data-align="right">右对齐</button>
+          <div class="opt-sec" data-formats="md">
+            <h4>文本对齐</h4>
+            <div class="seg" id="alignSeg">
+              <button type="button" data-align="none" class="on" title="输出 ---，不指定对齐">默认</button>
+              <button type="button" data-align="left">左对齐</button>
+              <button type="button" data-align="center">居中</button>
+              <button type="button" data-align="right">右对齐</button>
+            </div>
           </div>
 
-          <h4>输出选项</h4>
-          <div class="stack">
-            <label class="check"><input type="checkbox" id="optFormat" checked>格式化（列宽对齐）</label>
-            <label class="check"><input type="checkbox" id="optCompact">省略首尾竖线</label>
-            <label class="check"><input type="checkbox" id="optBoldRow">加粗第一行</label>
-            <label class="check"><input type="checkbox" id="optBoldCol">加粗第一列</label>
+          <div class="opt-sec" data-formats="md">
+            <h4>输出选项</h4>
+            <div class="stack">
+              <label class="check"><input type="checkbox" id="optFormat" checked>格式化（列宽对齐）</label>
+              <label class="check"><input type="checkbox" id="optCompact">省略首尾竖线</label>
+              <label class="check"><input type="checkbox" id="optBoldRow">加粗第一行</label>
+              <label class="check"><input type="checkbox" id="optBoldCol">加粗第一列</label>
+            </div>
           </div>
 
         </aside>
@@ -216,6 +235,12 @@
       <span>可直接粘贴进 GitHub / 语雀 / Obsidian</span>
     </div>
   </section>
+
+  <div class="grip grip-end" data-resize="panel-out" title="拖动调整高度">
+    <button type="button" class="grip-btn" data-grip-reset title="还原默认高度">还原</button>
+    <span class="grip-line" aria-hidden="true"></span>
+    <button type="button" class="grip-btn" data-grip-expand title="展开到接近窗口高度">展开</button>
+  </div>
 
 </main>
 <div class="toast" id="toast"></div>

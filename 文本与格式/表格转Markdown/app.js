@@ -10,7 +10,7 @@ const state = {
   sel: null,                // {r1,c1,r2,c2}
   anchor: null,             // 拖选起点
   highlight: '',            // 高亮关键词
-  align: 'left',
+  align: 'none',
   history: [],
   future: [],
   editing: null             // 当前进入编辑的 {r,c,value}
@@ -20,12 +20,12 @@ const $ = id => document.getElementById(id);
 const el = {
   srcText: $('srcText'), srcLn: $('srcLn'), srcFormat: $('srcFormat'),
   srcCount: $('srcCount'), srcHint: $('srcHint'), srcBody: $('srcBody'),
-  fileInput: $('fileInput'),
+  fileInput: $('fileInput'), sheetPick: $('sheetPick'), sheetSelect: $('sheetSelect'),
   sheetHead: $('sheetHead'), sheetBody: $('sheetBody'), gridScroll: $('gridScroll'),
   sizeChip: $('sizeChip'), cellPos: $('cellPos'), selInfo: $('selInfo'), gridMsg: $('gridMsg'),
   codeText: $('codeText'), codePre: $('codePre'), codeArea: $('codeArea'),
   outFormat: $('outFormat'), outStat: $('outStat'), previewWrap: $('previewWrap'),
-  previewPane: $('previewPane'), outTabs: $('outTabs'),
+  previewPane: $('previewPane'), outTabs: $('outTabs'), outSettings: $('outSettings'),
   escapeChars: $('escapeChars'), alignSeg: $('alignSeg'),
   optHeader: $('optHeader'), optFormat: $('optFormat'), optCompact: $('optCompact'),
   optBoldRow: $('optBoldRow'), optBoldCol: $('optBoldCol'),
@@ -389,6 +389,14 @@ function colToIndex(ref){
   let n=0; for(const ch of m[1]) n=n*26+(ch.charCodeAt(0)-64);
   return n-1;
 }
+const REL_NS='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+function sheetFileOf(target){
+  if(!target) return '';
+  let p=target.replace(/\\/g,'/');
+  if(p.startsWith('/')) p=p.slice(1);
+  else if(!p.startsWith('xl/')) p='xl/'+p;
+  return /^xl\/worksheets\/[^/]+\.xml$/i.test(p) ? p : '';
+}
 async function parseXlsx(file){
   const zip=await unzip(await file.arrayBuffer());
   const sharedXml=await zip.read('xl/sharedStrings.xml');
@@ -399,40 +407,76 @@ async function parseXlsx(file){
       [...si.getElementsByTagName('t')].map(txtOf).join('')
     );
   }
-  const sheetEntry=zip.files
-    .map(f=>f.name)
-    .filter(n=>/^xl\/worksheets\/sheet\d+\.xml$/.test(n))
-    .sort()[0];
-  if(!sheetEntry) throw new Error('xlsx 中没有找到工作表');
-  const sheetXml=await zip.read(sheetEntry);
-  const doc=new DOMParser().parseFromString(sheetXml,'application/xml');
-  const rows=[];
-  for(const row of doc.getElementsByTagName('row')){
-    const r=parseInt(row.getAttribute('r')||'0',10)-1;
-    const arr=[];
-    let cursor=0;
-    for(const cell of row.getElementsByTagName('c')){
-      const ref=cell.getAttribute('r');
-      const c=ref ? colToIndex(ref) : cursor;
-      cursor=c+1;
-      const t=cell.getAttribute('t');
-      let v='';
-      if(t==='inlineStr'){
-        v=[...cell.getElementsByTagName('t')].map(txtOf).join('');
-      } else {
-        const vs=cell.getElementsByTagName('v')[0];
-        const raw=vs?txtOf(vs):'';
-        if(t==='s') v=shared[+raw] ?? '';
-        else if(t==='b') v=raw==='1'?'TRUE':'FALSE';
-        else v=raw;
-      }
-      arr[c]=v;
+  const sheetFiles=zip.files.map(f=>f.name).filter(n=>/^xl\/worksheets\/sheet\d+\.xml$/.test(n));
+  if(!sheetFiles.length) throw new Error('xlsx 中没有找到工作表');
+
+  const relMap={};
+  const relsXml=await zip.read('xl/_rels/workbook.xml.rels');
+  if(relsXml){
+    const doc=new DOMParser().parseFromString(relsXml,'application/xml');
+    for(const rel of doc.getElementsByTagName('Relationship')){
+      const id=rel.getAttribute('Id');
+      const path=sheetFileOf(rel.getAttribute('Target'));
+      if(id && path) relMap[id]=path;
     }
-    if(Number.isFinite(r)) rows[r]=arr;
   }
-  const grid=Array.from(rows,r=>{ r=r||[]; const out=[]; for(let i=0;i<r.length;i++) out[i]=r[i]==null?'':String(r[i]); return out; });
-  const width=Math.max(0,...grid.map(r=>r.length));
-  return grid.map(r=>{ while(r.length<width) r.push(''); return r; });
+  const sheets=[];
+  const wbXml=await zip.read('xl/workbook.xml');
+  if(wbXml){
+    const doc=new DOMParser().parseFromString(wbXml,'application/xml');
+    for(const s of doc.getElementsByTagName('sheet')){
+      const rid=s.getAttribute('r:id') || s.getAttributeNS(REL_NS,'id');
+      const path=relMap[rid];
+      if(!path) continue;
+      const hideState=s.getAttribute('state');
+      sheets.push({
+        name:s.getAttribute('name') || ('Sheet'+(sheets.length+1)),
+        path,
+        hidden:hideState==='hidden' || hideState==='veryHidden'
+      });
+    }
+  }
+  if(!sheets.length){
+    sheetFiles
+      .slice()
+      .sort((a,b)=>Number(/(\d+)\.xml$/.exec(a)[1])-Number(/(\d+)\.xml$/.exec(b)[1]))
+      .forEach((path,i)=>sheets.push({name:'Sheet'+(i+1), path, hidden:false}));
+  }
+
+  async function readSheet(index){
+    const sheet=sheets[index];
+    const sheetXml=await zip.read(sheet.path);
+    if(!sheetXml) throw new Error('读取工作表「'+sheet.name+'」失败');
+    const doc=new DOMParser().parseFromString(sheetXml,'application/xml');
+    const rows=[];
+    for(const row of doc.getElementsByTagName('row')){
+      const r=parseInt(row.getAttribute('r')||'0',10)-1;
+      const arr=[];
+      let cursor=0;
+      for(const cell of row.getElementsByTagName('c')){
+        const ref=cell.getAttribute('r');
+        const c=ref ? colToIndex(ref) : cursor;
+        cursor=c+1;
+        const t=cell.getAttribute('t');
+        let v='';
+        if(t==='inlineStr'){
+          v=[...cell.getElementsByTagName('t')].map(txtOf).join('');
+        } else {
+          const vs=cell.getElementsByTagName('v')[0];
+          const raw=vs?txtOf(vs):'';
+          if(t==='s') v=shared[+raw] ?? '';
+          else if(t==='b') v=raw==='1'?'TRUE':'FALSE';
+          else v=raw;
+        }
+        arr[c]=v;
+      }
+      if(Number.isFinite(r)) rows[r]=arr;
+    }
+    const grid=Array.from(rows,r=>{ r=r||[]; const out=[]; for(let i=0;i<r.length;i++) out[i]=r[i]==null?'':String(r[i]); return out; });
+    const width=Math.max(0,...grid.map(r=>r.length));
+    return grid.map(r=>{ while(r.length<width) r.push(''); return r; });
+  }
+  return {sheets, readSheet, fileName:file.name};
 }
 
 /* =====================================================================
@@ -487,7 +531,8 @@ function buildMarkdown(){
     const min=Math.max(3,w);
     if(align==='center') return ':'+'-'.repeat(Math.max(1,min-2))+':';
     if(align==='right') return '-'.repeat(Math.max(2,min-1))+':';
-    return ':'+'-'.repeat(Math.max(1,min-1));
+    if(align==='left') return ':'+'-'.repeat(Math.max(1,min-1));
+    return '-'.repeat(min);
   };
 
   const line = arr => {
@@ -550,9 +595,22 @@ function buildOutput(){
    导出区同步
    ===================================================================== */
 let syncing=false;
+/* 只显示当前格式真正生效的输出设置 */
+function updateOutSettings(){
+  const fmt=el.outFormat.value;
+  let any=false;
+  el.outSettings.querySelectorAll('[data-formats]').forEach(node=>{
+    const show=node.dataset.formats.split(' ').includes(fmt);
+    node.hidden=!show;
+    if(show) any=true;
+  });
+  el.outSettings.classList.toggle('hidden', !any);
+  el.outSettings.classList.toggle('slim', fmt==='html');
+}
 function syncExport(){
   if(syncing) return;
   syncing=true;
+  updateOutSettings();
   const text=buildOutput();
   el.codeText.value=text;
   el.codePre.innerHTML=highlightCode(text, el.outFormat.value);
@@ -581,26 +639,30 @@ function highlightCode(text, fmt){
   }).join('\n');
 }
 function renderPreview(){
-  const md=buildOutput();
-  if(el.outFormat.value!=='md'){
-    el.previewWrap.innerHTML='<div class="preview-empty">仅 Markdown 格式提供渲染预览</div>';
+  const fmt=el.outFormat.value;
+  if(fmt==='tsv'||fmt==='csv'){
+    el.previewWrap.innerHTML='<div class="preview-empty">TSV / CSV 为纯文本，暂无渲染预览</div>';
     return;
   }
   const {rows,cols}=outputSize();
   if(!rows||!cols){ el.previewWrap.innerHTML='<div class="preview-empty">方格为空</div>'; return; }
+  if(fmt==='html'){
+    el.previewWrap.innerHTML=buildHtml();
+    return;
+  }
   // 从状态直接生成预览表格（比解析 Markdown 更可靠）
   const boldRow=el.optBoldRow.checked, boldCol=el.optBoldCol.checked;
   const header=el.optHeader.checked;
   const al=state.align;
-  const alignCss = al==='center'?'center':al==='right'?'right':'left';
+  const alignCss = al==='center'?'center':al==='right'?'right':al==='left'?'left':'';
   let html='<table>';
   for(let r=0;r<rows;r++){
     html+='<tr>';
     for(let c=0;c<cols;c++){
       const tag=(r===0&&header)?'th':'td';
       const bold=(boldRow&&r===0)||(boldCol&&c===0);
-      const style='text-align:'+alignCss+';'+(bold?'font-weight:700;':'');
-      html+='<'+tag+' style="'+style+'">'+escHtml(state.data[r][c]).replace(/\n/g,'<br>')+'</'+tag+'>';
+      const style=(alignCss?'text-align:'+alignCss+';':'')+(bold?'font-weight:700;':'');
+      html+='<'+tag+(style?' style="'+style+'"':'')+'>'+escHtml(state.data[r][c]).replace(/\n/g,'<br>')+'</'+tag+'>';
     }
     html+='</tr>';
   }
@@ -863,6 +925,8 @@ function loadMatrix(matrix, sourceLabel){
   toast('已载入 '+matrix.length+' 行 × '+Math.max(...matrix.map(r=>r.length))+' 列（'+sourceLabel+'）');
 }
 function ingest(text, label){
+  xlsxBook=null;
+  setSheetPicker(null);
   try{
     loadMatrix(parseAny(text), label+'解析');
   }catch(err){
@@ -871,7 +935,39 @@ function ingest(text, label){
   }
 }
 
-/* 导入文件 */
+/* 导入文件（xlsx 支持多工作表切换） */
+let xlsxBook=null;
+function setSheetPicker(book){
+  const multi=!!book && book.sheets.length>1;
+  el.sheetPick.classList.toggle('hidden', !multi);
+  el.sheetSelect.innerHTML='';
+  if(!book) return;
+  book.sheets.forEach((s,i)=>{
+    const opt=document.createElement('option');
+    opt.value=String(i);
+    opt.textContent=(i+1)+'. '+s.name+(s.hidden?'（隐藏）':'');
+    el.sheetSelect.appendChild(opt);
+  });
+}
+async function loadXlsxSheet(index){
+  const book=xlsxBook;
+  const sheet=book && book.sheets[index];
+  if(!sheet) return;
+  el.sheetSelect.value=String(index);
+  el.srcHint.textContent='正在读取工作表「'+sheet.name+'」…';
+  try{
+    const matrix=await book.readSheet(index);
+    el.srcHint.textContent='已导入 '+book.fileName+' · 工作表「'+sheet.name+'」（共 '+book.sheets.length+' 个）';
+    loadMatrix(matrix,'xlsx · '+sheet.name);
+  }catch(err){
+    console.error(err);
+    alert('读取工作表失败：'+err.message);
+    el.srcHint.textContent='读取工作表「'+sheet.name+'」失败';
+  }
+}
+el.sheetSelect.addEventListener('change', ()=>{
+  loadXlsxSheet(Number(el.sheetSelect.value));
+});
 $('btnImport').addEventListener('click', ()=>el.fileInput.click());
 el.fileInput.addEventListener('change', ()=>{
   const f=el.fileInput.files[0];
@@ -883,11 +979,14 @@ async function handleFile(file){
   try{
     if(name.endsWith('.xlsx')){
       el.srcHint.textContent='正在解析 '+file.name+' …';
-      const matrix=await parseXlsx(file);
-      el.srcHint.textContent='已导入 '+file.name;
-      loadMatrix(matrix,'xlsx');
+      const book=await parseXlsx(file);
+      xlsxBook=book;
+      setSheetPicker(book);
+      await loadXlsxSheet(0);
       return;
     }
+    xlsxBook=null;
+    setSheetPicker(null);
     const text=await file.text();
     el.srcText.value=text;
     updateLineNumbers();
@@ -919,32 +1018,82 @@ async function handleFile(file){
    面板拖拽调高
    ===================================================================== */
 let resizeCtx=null;
+let resizeRaf=0;
+function applyPanelHeight(){
+  const ctx=resizeCtx; if(!ctx) return;
+  const h=Math.max(150, ctx.startH + (ctx.lastY-ctx.startY) + ctx.extra);
+  if(ctx.important){
+    ctx.panel.style.setProperty('flex','0 0 '+h+'px','important');
+    ctx.panel.style.setProperty('height',h+'px','important');
+  } else {
+    ctx.panel.style.flex='0 0 '+h+'px';
+  }
+}
+/* 拖到视口底部时自动滚屏，让贴底的拖拽条能继续向下拉 */
+function resizeAutoScroll(ts){
+  const ctx=resizeCtx; if(!ctx) return;
+  if(ctx.lastY > window.innerHeight-32){
+    const dt=ctx.lastTs ? Math.min(50, ts-ctx.lastTs) : 0;
+    ctx.lastTs=ts;
+    const grow=Math.round(dt*0.35);
+    if(grow){
+      ctx.extra+=grow;
+      applyPanelHeight();
+      window.scrollBy(0,grow);
+    }
+  } else {
+    ctx.lastTs=0;
+  }
+  resizeRaf=requestAnimationFrame(resizeAutoScroll);
+}
 document.querySelectorAll('.grip').forEach(grip=>{
+  const panel=$(grip.dataset.resize);
+  if(!panel) return;
+  const defaultFlex=panel.style.flex;
   grip.addEventListener('pointerdown', e=>{
+    if(e.target.closest('.grip-btn')) return;
     e.preventDefault();
-    const panel=$(grip.dataset.resize);
-    if(!panel) return;
-    resizeCtx={panel, startY:e.clientY, startH:panel.getBoundingClientRect().height,
+    resizeCtx={panel, startY:e.clientY, lastY:e.clientY, extra:0,
+      startH:panel.getBoundingClientRect().height,
       important: window.matchMedia('(max-height:820px) and (min-width:981px)').matches};
     document.body.classList.add('resizing');
     grip.setPointerCapture(e.pointerId);
+    resizeRaf=requestAnimationFrame(resizeAutoScroll);
+  });
+  grip.querySelector('[data-grip-reset]').addEventListener('click', ()=>{
+    panel.style.removeProperty('height');
+    panel.style.flex=defaultFlex;
+  });
+  grip.querySelector('[data-grip-expand]').addEventListener('click', ()=>{
+    setPanelHeight(panel, Math.max(240, Math.round(window.innerHeight-96)));
+    panel.scrollIntoView({behavior:'smooth',block:'start'});
   });
 });
 window.addEventListener('pointermove', e=>{
   if(!resizeCtx) return;
-  const h=Math.max(150, resizeCtx.startH + (e.clientY-resizeCtx.startY));
-  if(resizeCtx.important){
-    resizeCtx.panel.style.setProperty('flex','0 0 '+h+'px','important');
-    resizeCtx.panel.style.setProperty('height',h+'px','important');
-  } else {
-    resizeCtx.panel.style.flex='0 0 '+h+'px';
-  }
+  resizeCtx.lastY=e.clientY;
+  applyPanelHeight();
 });
-window.addEventListener('pointerup', ()=>{
+window.addEventListener('pointerup', endResize);
+window.addEventListener('pointercancel', endResize);
+window.addEventListener('blur', endResize);
+function endResize(){
   if(!resizeCtx) return;
   resizeCtx=null;
+  cancelAnimationFrame(resizeRaf);
   document.body.classList.remove('resizing');
-});
+}
+
+function setPanelHeight(panel, h){
+  const important=window.matchMedia('(max-height:820px) and (min-width:981px)').matches;
+  if(important){
+    panel.style.setProperty('flex','0 0 '+h+'px','important');
+    panel.style.setProperty('height',h+'px','important');
+  } else {
+    panel.style.flex='0 0 '+h+'px';
+    panel.style.removeProperty('height');
+  }
+}
 
 /* =====================================================================
    导出设置
