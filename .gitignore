@@ -45,3 +45,4 @@ screenshot
 # 3D人体标注：make-body-glb.js 下载的 MakeHuman 素材缓存，产物已提交，缓存不用进库
 # 用 **/ 前缀，工具目录以后再挪分类也不会失效
 **/3D人体标注/tools/.mh-cache/
+*.qoder.site
