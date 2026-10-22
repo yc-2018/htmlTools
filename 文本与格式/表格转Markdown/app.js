@@ -79,7 +79,11 @@ function redo(){
    ===================================================================== */
 function renderGrid(){
   const head = ['<th class="corner">#</th>'];
-  for(let c=0;c<state.cols;c++) head.push('<th data-col="'+c+'">'+colName(c)+'</th>');
+  for(let c=0;c<state.cols;c++){
+    head.push('<th data-col="'+c+'">'+colName(c)
+      +'<button type="button" class="col-drag" data-col-drag="'+c+'" title="拖动调整列顺序"'
+      +' aria-label="拖动调整第 '+(c+1)+' 列（'+colName(c)+'）的顺序"></button></th>');
+  }
   el.sheetHead.innerHTML = head.join('');
 
   const rowsHtml = [];
@@ -775,6 +779,7 @@ el.sheetBody.addEventListener('pointerdown', e=>{
   startHeaderDrag(e,'row',+th.dataset.row);
 });
 el.sheetHead.addEventListener('pointerdown', e=>{
+  if(e.target.closest('.col-drag')) return;
   const th=e.target.closest('th[data-col]'); if(!th) return;
   startHeaderDrag(e,'col',+th.dataset.col);
 });
@@ -787,6 +792,83 @@ window.addEventListener('pointerup', ()=>{
   if(!headerDrag) return;
   headerDrag=null;
   document.body.classList.remove('header-drag');
+});
+
+/* =====================================================================
+   列拖拽排序
+   ===================================================================== */
+let colDrag=null;
+function colInsertIndex(x){
+  const ths=[...el.sheetHead.querySelectorAll('th[data-col]')];
+  for(let i=0;i<ths.length;i++){
+    const r=ths[i].getBoundingClientRect();
+    if(x < r.left + r.width/2) return i;
+  }
+  return ths.length;
+}
+function paintColDrop(insert){
+  el.sheetHead.querySelectorAll('.drop-left,.drop-right').forEach(th=>{
+    th.classList.remove('drop-left','drop-right');
+  });
+  const ths=[...el.sheetHead.querySelectorAll('th[data-col]')];
+  if(!ths.length) return;
+  if(insert>=ths.length) ths[ths.length-1].classList.add('drop-right');
+  else ths[insert].classList.add('drop-left');
+}
+function clearColDrag(){
+  colDrag=null;
+  document.body.classList.remove('header-drag');
+  el.sheetHead.querySelectorAll('.col-dragging,.drop-left,.drop-right').forEach(th=>{
+    th.classList.remove('col-dragging','drop-left','drop-right');
+  });
+}
+function moveColumn(from,to){
+  if(from===to || to<0 || to>=state.cols) return;
+  snapshot();
+  const moved=state.data.map(row=>row.splice(from,1)[0]);
+  state.data.forEach((row,i)=>row.splice(to,0,moved[i]));
+  state.sel=null;
+  renderGrid();
+  toast('已将 '+colName(from)+' 列移到第 '+(to+1)+' 列');
+}
+el.sheetHead.addEventListener('pointerdown', e=>{
+  const btn=e.target.closest('.col-drag'); if(!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const th=btn.closest('th[data-col]');
+  colDrag={from:+th.dataset.col, insert:+th.dataset.col};
+  th.classList.add('col-dragging');
+  document.body.classList.add('header-drag');
+});
+window.addEventListener('pointermove', e=>{
+  if(!colDrag) return;
+  const insert=colInsertIndex(e.clientX);
+  if(insert===colDrag.insert) return;
+  colDrag.insert=insert;
+  paintColDrop(insert);
+});
+function endColDrag(){
+  if(!colDrag) return;
+  const {from,insert}=colDrag;
+  clearColDrag();
+  const to=insert>from ? insert-1 : insert;
+  if(to===from) return;
+  moveColumn(from,to);
+}
+window.addEventListener('pointerup', endColDrag);
+window.addEventListener('pointercancel', endColDrag);
+window.addEventListener('blur', endColDrag);
+el.sheetHead.addEventListener('keydown', e=>{
+  const btn=e.target.closest('.col-drag'); if(!btn) return;
+  const dir=e.key==='ArrowLeft'?-1:e.key==='ArrowRight'?1:0;
+  if(!dir) return;
+  e.preventDefault();
+  const from=+btn.closest('th[data-col]').dataset.col;
+  const to=from+dir;
+  if(to<0 || to>=state.cols) return;
+  moveColumn(from,to);
+  const next=el.sheetHead.querySelector('.col-drag[data-col-drag="'+to+'"]');
+  if(next) next.focus();
 });
 
 /* =====================================================================
