@@ -119,7 +119,9 @@
     const p = Object.assign({
       id: ++seq, role, name: '新设备', kind: 'pc', state: 'pending',
       pc: null, dc: null, queue: [], sending: false, rx: null, code: '',
-      devId: null, auto: false, note: '', timer: 0, answered: false
+      devId: null, auto: false, note: '', timer: 0, answered: false,
+      chunkSize: myKind === 'phone' ? 64 * 1024 : 128 * 1024, // 手机保守 64KB，电脑 128KB；再按实测速度微调
+      slow: 0, fast: 0
     }, extra || {});
     p.role = role;
     peers.set(p.id, p);
@@ -270,10 +272,12 @@
           el('button', { class: 'btn', onclick: () => removePeer(p) }, '移除')
         ];
     }
+    const stLine = el('div', { class: 'st ' + stCls }, stText);
+    if (open) stLine.appendChild(el('button', { class: 'info-link', onclick: () => openConnInfo(p) }, '连接信息'));
     const card = el('div', { class: 'card' + (open ? ' open' : '') },
       el('div', { class: 'avatar', title: open ? '点击选择文件发送' : '' }, p.kind === 'phone' ? '📱' : '💻'),
       el('div', { class: 'nm' }, p.name),
-      el('div', { class: 'st ' + stCls }, stText),
+      stLine,
       el('div', { class: 'btns' }, btns)
     );
     if (open) {
@@ -296,6 +300,86 @@
       el('div', { class: 'btns' },
         el('button', { class: 'btn primary', onclick: () => connectNearby(d) }, '连接')));
   }
+
+  /* ---------- 连接信息 ---------- */
+  let infoPeer = null;
+  function ipInfo(ip) {
+    if (!ip) return { private: false, v6: false, p2: '', p3: '' };
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+    if (!m) return { private: false, v6: ip.includes(':'), p2: '', p3: '' };
+    const a = +m[1], b = +m[2];
+    return {
+      private: a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168),
+      v6: false,
+      p2: a + '.' + b,
+      p3: a + '.' + b + '.' + m[3]
+    };
+  }
+  function describeType(t) {
+    if (t === 'host') return 'host（本机地址）';
+    if (t === 'srflx') return 'srflx（公网/NAT 地址）';
+    if (t === 'relay') return 'relay（中继）';
+    if (t === 'prflx') return 'prflx（对端反射地址）';
+    return t || '未知';
+  }
+  async function connInfoText(p) {
+    if (!p || !p.pc) return '尚未建立连接';
+    let stats;
+    try { stats = await p.pc.getStats(); } catch (e) { return '读取连接信息失败：' + (e.message || e); }
+    let pair = null, any = null;
+    stats.forEach(s => {
+      if (s.type !== 'candidate-pair' || s.state !== 'succeeded') return;
+      if (s.nominated) pair = s;
+      else if (!any) any = s;
+    });
+    pair = pair || any;
+    if (!pair) return '还没有可用的连接路径（可能仍在协商）';
+    const local = stats.get(pair.localCandidateId) || {};
+    const remote = stats.get(pair.remoteCandidateId) || {};
+    const lIp = local.address || '', rIp = remote.address || '';
+    const l = ipInfo(lIp), r = ipInfo(rIp);
+    const lt = local.candidateType || '', rt = remote.candidateType || '';
+    let how;
+    if (lt === 'relay' || rt === 'relay') how = '经过中继（TURN），不是局域网直连';
+    else if (lt === 'srflx' || rt === 'srflx') how = '经过 NAT / 公网地址，不是纯局域网';
+    else if (l.private && r.private) {
+      if (l.p2 && r.p2 && l.p2 !== r.p2) how = '都是内网，但不在同一网段（可能经过 VPN / 虚拟网卡）';
+      else if (l.p3 && r.p3 && l.p3 !== r.p3) how = '同 /16 不同 /24，可能不同子网或 VPN';
+      else how = '局域网直连';
+    } else if (l.v6 && r.v6) how = 'IPv6 直连';
+    else how = '直连（host）';
+    const net = local.networkType && local.networkType !== 'unknown' ? ' · 网络 ' + local.networkType : '';
+    const fmt = c => c.address ? (c.address.includes(':') ? '[' + c.address + ']' : c.address) + ':' + (c.port || '?') : '未知';
+    return [
+      '连接方式：' + (lt || '未知') + ' ↔ ' + (rt || '未知') + ' · ' + how,
+      '本机：' + fmt(local) + ' · ' + describeType(lt) + net,
+      '对端：' + fmt(remote) + ' · ' + describeType(rt),
+      '协议：' + String(local.protocol || remote.protocol || 'udp').toUpperCase(),
+      '数据块：' + Math.round(p.chunkSize / 1024) + ' KB（' +
+        (myKind === 'phone' || p.kind === 'phone' ? '手机固定 64KB' : '电脑自适应') + '）',
+      '状态：' + (p.state === 'open' ? '已连接' : p.state === 'unstable' ? '连接不稳定' : p.state)
+    ].join('\n');
+  }
+  async function refreshConnInfo() {
+    if (!infoPeer) return;
+    $('#infoText').value = await connInfoText(infoPeer);
+  }
+  function openConnInfo(p) {
+    infoPeer = p;
+    $('#infoText').value = '正在读取…';
+    $('#infoMask').hidden = false;
+    refreshConnInfo();
+  }
+  $('#infoClose').onclick = () => { $('#infoMask').hidden = true; infoPeer = null; };
+  $('#infoRefresh').onclick = refreshConnInfo;
+  $('#infoCopy').onclick = async () => {
+    const ta = $('#infoText');
+    const ok = await copyText(ta.value, ta);
+    toast(ok ? '已复制连接信息' : '复制失败，请手动选择');
+  };
+  $('#infoMask').addEventListener('click', e => {
+    if (e.target === $('#infoMask')) { $('#infoMask').hidden = true; infoPeer = null; }
+  });
 
   /* ---------- 传输记录 ---------- */
   const logList = $('#logList'), emptyLog = $('#emptyLog'), clearLogsBtn = $('#clearLogs');
@@ -399,24 +483,63 @@
   }
   function waitDrain(dc) {
     return new Promise(res => {
-      const h = () => { dc.removeEventListener('bufferedamountlow', h); dc.removeEventListener('close', h); res(); };
-      dc.addEventListener('bufferedamountlow', h); dc.addEventListener('close', h);
+      if (dc.readyState !== 'open' || dc.bufferedAmount <= dc.bufferedAmountLowThreshold) { res(); return; }
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        dc.removeEventListener('bufferedamountlow', finish);
+        dc.removeEventListener('close', finish);
+        res();
+      };
+      // 兜底：极少数情况下 bufferedamountlow 事件可能丢失，避免整个传输卡死
+      const timer = setTimeout(finish, 1000);
+      dc.addEventListener('bufferedamountlow', finish);
+      dc.addEventListener('close', finish);
     });
+  }
+  function tuneChunk(p, bytes, ms) {
+    if (ms < 150) return;
+    const speed = bytes / (ms / 1000);
+    // 手机（本机或对端）固定 64KB：手机处理大块数据不一定更快，保守更稳
+    if (myKind === 'phone' || p.kind === 'phone') return;
+    p.slow = speed < 1048576 ? (p.slow || 0) + 1 : 0;
+    p.fast = speed > 5 * 1048576 ? (p.fast || 0) + 1 : 0;
+    const sctpMax = (p.pc && p.pc.sctp && p.pc.sctp.maxMessageSize) || 128 * 1024;
+    const maxChunk = Math.min(128 * 1024, sctpMax);
+    let next = p.chunkSize;
+    // 连续两个窗口都很慢才降、连续两个窗口都很快才升，避免网络抖动来回切
+    if (next > 64 * 1024 && p.slow >= 2) { next = 64 * 1024; p.slow = 0; p.fast = 0; }
+    else if (next < 128 * 1024 && p.fast >= 2) { next = 128 * 1024; p.slow = 0; p.fast = 0; }
+    next = Math.max(16 * 1024, Math.min(next, maxChunk));
+    if (next !== p.chunkSize) p.chunkSize = next;
   }
   async function sendFile(p, file, item) {
     const dc = p.dc;
+    if (myKind === 'phone' || p.kind === 'phone') p.chunkSize = 64 * 1024;
     item.status = 'sending'; item.t0 = performance.now(); refreshItem(item);
     try {
       dc.send(JSON.stringify({ type: 'file-start', name: file.name, size: file.size, mime: file.type }));
-      const BLOCK = 1 << 20, CH = 64 * 1024;
-      let off = 0;
+      const BLOCK = 4 << 20, SAMPLE = 2 << 20, WARMUP = 4 << 20;
+      let off = 0, sent = 0;
+      let winT0 = performance.now(), winBytes = 0;
       while (off < file.size) {
         const block = await file.slice(off, off + BLOCK).arrayBuffer();
-        for (let i = 0; i < block.byteLength; i += CH) {
+        for (let i = 0; i < block.byteLength;) {
           if (dc.readyState !== 'open') throw new Error('连接已断开');
+          const ch = Math.min(p.chunkSize, block.byteLength - i);
           if (dc.bufferedAmount > 4 * 1048576) await waitDrain(dc);
           if (dc.readyState !== 'open') throw new Error('连接已断开');
-          dc.send(block.slice(i, i + CH));
+          dc.send(block.slice(i, i + ch));
+          i += ch;
+          sent += ch;
+          winBytes += ch;
+          if (winBytes >= SAMPLE && sent >= WARMUP) {
+            const now = performance.now();
+            tuneChunk(p, winBytes, now - winT0);
+            winT0 = now; winBytes = 0;
+          }
         }
         off += block.byteLength;
         progress(item, off);

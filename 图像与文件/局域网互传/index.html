@@ -104,6 +104,15 @@
   </div>
 </div>
 
+<div class="mask" id="infoMask" hidden>
+  <div class="sheet">
+    <div class="sheet-h"><b>连接信息</b><button class="x" id="infoClose">✕</button></div>
+    <textarea id="infoText" readonly rows="8"></textarea>
+    <div class="row"><button class="btn" id="infoCopy">复制</button><button class="btn" id="infoRefresh">重新检测</button></div>
+    <p class="hint">本机 / 对端都是内网且同一网段才是局域网直连；出现 srflx / relay 或地址不在同一网段，可能走了公网、VPN 或虚拟网卡。</p>
+  </div>
+</div>
+
 <div class="mask" id="askMask" hidden>
   <div class="sheet">
     <div class="sheet-h"><b>连接请求</b></div>

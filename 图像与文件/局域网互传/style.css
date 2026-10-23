@@ -22,6 +22,7 @@ h2{font-size:13px;color:var(--sub);font-weight:600;letter-spacing:.04em;margin:2
 .card .nm{font-weight:600;word-break:break-all}
 .st{font-size:12px;color:var(--sub)}
 .st.ok{color:var(--ok)}.st.warn{color:var(--warn)}.st.err{color:var(--err)}
+.info-link{font:inherit;font-size:11px;margin-left:6px;border:0;background:none;color:var(--accent);cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px}
 .btns{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:6px}
 .btn{font:inherit;font-size:13px;padding:6px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}
 .btn:hover{border-color:var(--accent)}
@@ -69,6 +70,7 @@ details ol{padding-left:20px;margin:6px 0}
 /* 二维码显示 / 扫描 */
 #qrMask{z-index:20}
 #scanMask{z-index:25}
+#infoMask{z-index:18}
 .qr-wrap{background:#fff;border-radius:14px;padding:14px;display:grid;place-items:center}
 #qrCanvas{width:100%;max-width:380px;height:auto;display:block;image-rendering:pixelated}
 .scan-wrap{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:1/1}
