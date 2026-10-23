@@ -413,6 +413,11 @@
     d.meta = el('div', { class: 'meta' });
     d.bar = el('i'); d.barWrap = el('div', { class: 'bar' }, d.bar);
     d.act = el('div', { class: 'act' });
+    if (o.kind === 'file') {
+      it.cancelBtn = el('button', { class: 'btn', onclick: () => cancelTransfer(it) }, '取消');
+      it.cancelBtn.hidden = true;
+      d.act.append(it.cancelBtn);
+    }
     it.dom = d;
     it.node = el('div', { class: 'log ' + o.dir }, d.icon, d.thumb, el('div', { class: 'info' }, d.nm, d.meta, d.barWrap), d.act);
     logList.prepend(it.node);
@@ -443,14 +448,19 @@
     if (it.status === 'sending' || it.status === 'receiving') st = Math.floor(pct) + '% · ' + fmtSize(it.speed) + '/s';
     else if (it.status === 'queued') st = '排队中';
     else if (it.status === 'done') st = '完成';
+    else if (it.status === 'canceled') st = '已取消';
     else if (it.status === 'error') st = '失败：' + (it.err || '未知错误');
     d.meta.textContent = [who, fmtSize(it.size), st].filter(Boolean).join(' · ');
-    d.barWrap.hidden = (it.status === 'done' || it.status === 'error');
+    d.barWrap.hidden = (it.status === 'done' || it.status === 'error' || it.status === 'canceled');
+    if (it.cancelBtn) {
+      it.cancelBtn.hidden = !(it.status === 'sending' || it.status === 'receiving' || it.status === 'queued');
+      it.cancelBtn.disabled = !!it.canceling;
+    }
     if (it.dir === 'in' && it.status === 'done' && it.url) {
       if (/^image\//.test(it.mime || '') && it.size < 30 * 1048576) { d.thumb.src = it.url; d.thumb.hidden = false; }
       d.act.replaceChildren(el('a', { class: 'btn primary', href: it.url, download: it.name }, '保存'));
-    } else if (it.status === 'error') {
-      d.act.replaceChildren();
+    } else if (it.status === 'error' || it.status === 'canceled') {
+      if (it.cancelBtn) d.act.replaceChildren(it.cancelBtn);
     }
   }
   function progress(it, done) {
@@ -461,12 +471,39 @@
     it.speed = done / Math.max(0.001, (now - it.t0) / 1000);
     refreshItem(it);
   }
+  function cancelTransfer(it) {
+    const p = it.peer;
+    if (!p) return;
+    if (it.status === 'queued') {
+      const i = p.queue.findIndex(j => j.item === it);
+      if (i >= 0) p.queue.splice(i, 1);
+      it.canceled = true;
+      it.status = 'canceled';
+      refreshItem(it);
+      toast('已取消：' + it.name);
+      return;
+    }
+    if (it.status === 'sending') {
+      it.canceled = true;
+      it.canceling = true;
+      refreshItem(it);
+      toast('正在取消…');
+      return;
+    }
+    if (it.status === 'receiving') {
+      try { safeSend(p, { type: 'file-abort', name: it.name }); } catch (e) {}
+      if (p.rx && p.rx.item === it) p.rx = null;
+      it.status = 'canceled';
+      refreshItem(it);
+      toast('已取消接收：' + it.name);
+    }
+  }
 
   /* ---------- 发送 ---------- */
   function enqueueFiles(p, files) {
     if (p.state !== 'open' && p.state !== 'unstable') { toast('设备未连接'); return; }
     for (const f of files) {
-      const item = addLog({ dir: 'out', peerName: p.name, kind: 'file', name: f.name, size: f.size, mime: f.type, status: 'queued' });
+      const item = addLog({ dir: 'out', peerName: p.name, peer: p, kind: 'file', name: f.name, size: f.size, mime: f.type, status: 'queued' });
       p.queue.push({ file: f, item });
     }
     pump(p);
@@ -518,6 +555,17 @@
   async function sendFile(p, file, item) {
     const dc = p.dc;
     if (myKind === 'phone' || p.kind === 'phone') p.chunkSize = 64 * 1024;
+    p.sendName = file.name;
+    p.abortSend = false;
+    if (item.canceled) { item.status = 'canceled'; refreshItem(item); return; }
+    const cancel = () => {
+      p.abortSend = false;
+      item.status = 'canceled';
+      item.canceled = true;
+      safeSend(p, { type: 'file-cancel' });
+      refreshItem(item);
+      return true;
+    };
     item.status = 'sending'; item.t0 = performance.now(); refreshItem(item);
     try {
       dc.send(JSON.stringify({ type: 'file-start', name: file.name, size: file.size, mime: file.type }));
@@ -526,10 +574,13 @@
       let winT0 = performance.now(), winBytes = 0;
       while (off < file.size) {
         const block = await file.slice(off, off + BLOCK).arrayBuffer();
+        if (item.canceled || p.abortSend) { cancel(); return; }
         for (let i = 0; i < block.byteLength;) {
           if (dc.readyState !== 'open') throw new Error('连接已断开');
+          if (item.canceled || p.abortSend) { cancel(); return; }
           const ch = Math.min(p.chunkSize, block.byteLength - i);
           if (dc.bufferedAmount > 4 * 1048576) await waitDrain(dc);
+          if (item.canceled || p.abortSend) { cancel(); return; }
           if (dc.readyState !== 'open') throw new Error('连接已断开');
           dc.send(block.slice(i, i + ch));
           i += ch;
@@ -571,7 +622,7 @@
         addLog({ dir: 'in', peerName: p.name, kind: 'text', text: String(m.text || '') });
         toast(p.name + ' 发来一段文本'); break;
       case 'file-start': {
-        const item = addLog({ dir: 'in', peerName: p.name, kind: 'file', name: m.name || '未命名', size: m.size || 0, mime: m.mime || '', status: 'receiving' });
+        const item = addLog({ dir: 'in', peerName: p.name, peer: p, kind: 'file', name: m.name || '未命名', size: m.size || 0, mime: m.mime || '', status: 'receiving' });
         item.t0 = performance.now();
         p.rx = { item, chunks: [], got: 0 }; break;
       }
@@ -588,6 +639,11 @@
       case 'file-cancel': {
         const r = p.rx; if (!r) break; p.rx = null;
         r.item.status = 'error'; r.item.err = '对方取消了发送'; refreshItem(r.item); break;
+      }
+      case 'file-abort': {
+        // 接收方点了“取消”：停掉当前正在发送的这个文件
+        if (p.sending && p.sendName && m.name === p.sendName) p.abortSend = true;
+        break;
       }
     }
   }
