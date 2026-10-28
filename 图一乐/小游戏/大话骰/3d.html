@@ -12,6 +12,7 @@
       position: relative;
       width: 100%;
       height: clamp(320px, 52vh, 480px);
+      margin-top: 24px;          /* 整体布局往下移 */
       margin-bottom: 1.2rem;
       border-radius: 18px;
       overflow: hidden;
@@ -76,7 +77,7 @@
 <div id="scene3d">
   <div id="sceneError"></div>
   <div id="sceneBadge">🎲 大话骰 · 第三版 (3D)</div>
-  <div id="sceneTip">拖动旋转视角 · 滚轮缩放 · 双击复位</div>
+  <div id="sceneTip">拖动骰盅上下滑 · 快速上滑直接开盅 · 滚轮缩放</div>
 </div>
 
 <div style="display: grid;grid-template-columns: repeat(2, 1fr); gap: 10px;margin-bottom: 20px;">
@@ -129,12 +130,12 @@
 
   /* ======================== 3D 配置 ======================== */
   const DICE_COUNT = 5;          // 骰子数量(大话骰固定 5 颗)
-  const DIE_SIZE = 1;            // 骰子边长
+  const DIE_SIZE = 0.78;         // 骰子边长(缩小, 相对骰盅更协调)
   const DIE_HALF = DIE_SIZE / 2;
-  const DIE_CORNER = 0.09;       // 骰子圆角半径
-  const PAIR_DIST = 0.88;        // 骰子两两最小中心距(略小于边长, 视觉可接受)
-  const CUP_R = 2.3;             // 骰盅内壁半径
-  const CUP_H = 5.2;             // 骰盅高度
+  const DIE_CORNER = 0.07;       // 骰子圆角半径
+  const PAIR_DIST = 0.69;        // 骰子两两最小中心距(略小于边长, 视觉可接受)
+  const CUP_R = 3.1;             // 骰盅内壁半径(放大, 盖得更严实)
+  const CUP_H = 5.6;             // 骰盅高度
   const CUP_CLOSED_Y = CUP_H / 2;   // 关盅时骰盅中心 Y(底贴桌面)
   const CUP_OPEN_Y = 9.8;        // 开盅时骰盅中心 Y(高高抬起)
 
@@ -163,9 +164,20 @@
   const clock = new THREE.Clock();
 
   // 视角(球坐标)与拖动
-  let theta = 0.7, phi = 0.95, dist = 8.0;
-  const target = new THREE.Vector3(0, 0.45, 0);
+  let theta = 0.7, phi = 0.9, dist = 11.8;
+  // 视线略微上抬: 让关盅时盅顶在画面顶部露出一截, 方便手指从上面往下划
+  const target = new THREE.Vector3(0, 2.0, 0);
   let dragging = false, lastX = 0, lastY = 0;
+
+  // 拖盅: 命中骰盅后进入, 手指纵向位移直接驱动 cup.position.y
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  let cupDragActive = false;     // 是否正在拖动骰盅
+  let cupDragY = 0;              // 拖动中的骰盅中心 Y
+  let cupDragStartY = 0;         // 拖动开始时骰盅中心 Y
+  let cupDragStartPointerY = 0;  // 拖动开始时的指针 Y
+  let cupDragVy = 0;             // 纵向速度(用于判断甩动)
+  let cupDragLastY = 0;          // 上一帧指针 Y(算速度)
 
   // 复用的临时对象(避免每帧 GC)
   const _v = new THREE.Vector3();
@@ -272,17 +284,17 @@
     scene = new THREE.Scene();
 
     // 灯光
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x454a50, 0.95));
-    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
-    dir.position.set(4, 10, 6);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x454a50, 0.9));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.75);
+    dir.position.set(5, 9, 7);
     dir.castShadow = true;
     dir.shadow.mapSize.set(1024, 1024);
     dir.shadow.camera.near = 0.5;
     dir.shadow.camera.far = 30;
-    dir.shadow.camera.left = -7;
-    dir.shadow.camera.right = 7;
-    dir.shadow.camera.top = 7;
-    dir.shadow.camera.bottom = -7;
+    dir.shadow.camera.left = -8;
+    dir.shadow.camera.right = 8;
+    dir.shadow.camera.top = 8;
+    dir.shadow.camera.bottom = -8;
     dir.shadow.radius = 4;
     scene.add(dir);
 
@@ -302,34 +314,58 @@
     ring.position.y = 0.02;
     scene.add(ring);
 
-    // 骰盅(圆台, 开口朝下)
+    // 骰盅(开口朝下的圆筒, 上半部分收成圆弧顶)
     cup = new THREE.Group();
-    const cupGeo = new THREE.CylinderGeometry(CUP_R + 0.18, CUP_R, CUP_H, 48, 1, true);
+    // 用侧剖面 + 旋转(LatheGeometry)建模: 下半段近直筒, 上半段以圆弧内收封顶
+    const cupPts = [];
+    const yBottom = -CUP_H / 2;
+    const yTop = CUP_H / 2;
+    const rBottom = CUP_R;
+    const rTop = CUP_R + 0.18;      // 与旧版顶部半径一致, 视觉衔接
+    const straightH = CUP_H * 0.74; // 直筒段占 74% 高度(收圆更靠顶, 骰子弹跳不易顶到内收壁)
+    // 1) 底部 + 直筒段(半径从 rBottom 极缓地过渡到接近 rTop 的 0.96 倍)
+    const seg1 = 10;
+    for (let i = 0; i <= seg1; i++) {
+      const t = i / seg1;
+      const y = yBottom + t * straightH;
+      // 下半段半径: 底部 rBottom, 往上缓慢放大到 0.965*rTop
+      const r = rBottom + (rTop * 0.965 - rBottom) * t;
+      cupPts.push(new THREE.Vector2(r, y));
+    }
+    // 2) 上半段: 圆弧内收封顶(从 0.965*rTop 收到接近 0)
+    const seg2 = 16;
+    const rShoulder = rTop * 0.965;
+    const yShoulder = yBottom + straightH;
+    const domeH = yTop - yShoulder;
+    for (let i = 1; i <= seg2; i++) {
+      const a = (i / seg2) * (Math.PI / 2); // 0 -> PI/2
+      // 椭圆弧: 水平半径 cos, 竖直按 sin 上升, 顶部收拢
+      const r = rShoulder * Math.cos(a);
+      const y = yShoulder + domeH * Math.sin(a);
+      cupPts.push(new THREE.Vector2(Math.max(r, 0.001), y));
+    }
+    const cupGeo = new THREE.LatheGeometry(cupPts, 64);
+    // 默认完全不透明: 骰盅盖着时不能看到里面的点数(半透明需手动勾选)
     cupMat = new THREE.MeshStandardMaterial({
-      color: 0x3a3f47, roughness: 0.32, metalness: 0.8,
-      side: THREE.DoubleSide, transparent: true, opacity: 0.98
+      color: 0x3a3f47, roughness: 0.78, metalness: 0.15,
+      side: THREE.DoubleSide, transparent: false, opacity: 1
     });
     const cupBody = new THREE.Mesh(cupGeo, cupMat);
     cupBody.castShadow = true;
     cup.add(cupBody);
-    // 骰盅顶盖(封顶, 防止从上方看到里面)
-    const lidGeo = new THREE.CircleGeometry(CUP_R + 0.18, 48);
-    const lid = new THREE.Mesh(lidGeo, cupMat);
-    lid.rotation.x = -Math.PI / 2;
-    lid.position.y = CUP_H / 2;
-    cup.add(lid);
-    // 骰盅把手
-    const handleGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.9, 16);
-    const handle = new THREE.Mesh(handleGeo, cupMat);
-    handle.position.y = CUP_H / 2 + 0.45;
-    handle.castShadow = true;
-    cup.add(handle);
+    // 顶部不再需要平面盖: LatheGeometry 已在顶端自然收拢封顶(骰盅本身没有把手/装饰杆)
     // 底部金属圈
     const rimGeo = new THREE.TorusGeometry(CUP_R, 0.06, 12, 48);
     const rim = new THREE.Mesh(rimGeo, cupMat);
     rim.rotation.x = -Math.PI / 2;
     rim.position.y = 0.02;
     cup.add(rim);
+    // 底部裙边: 沿盅口向下再包一段, 盖住盅口与桌面之间的缝隙, 防止骰子从边缘露出
+    const skirtGeo = new THREE.CylinderGeometry(CUP_R, CUP_R - 0.06, 0.34, 48, 1, true);
+    const skirt = new THREE.Mesh(skirtGeo, cupMat);
+    skirt.position.y = -CUP_H / 2 - 0.14;
+    skirt.castShadow = true;
+    cup.add(skirt);
     cup.position.y = CUP_OPEN_Y;
     scene.add(cup);
 
@@ -345,7 +381,7 @@
       const mesh = new THREE.Mesh(diceGeo, diceMats);
       mesh.castShadow = true;
       const ang = Math.random() * Math.PI * 2;
-      const rad = Math.random() * 1.2;
+      const rad = Math.random() * (CUP_R - DIE_HALF - 0.5);
       mesh.position.set(Math.cos(ang) * rad, DIE_HALF, Math.sin(ang) * rad);
       mesh.quaternion.setFromEuler(new THREE.Euler(
         Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2
@@ -379,19 +415,81 @@
 
   function bindDrag() {
     sceneBox.addEventListener('pointerdown', e => {
+      // 先判断是否点/按在骰盅上: 命中则拖盅, 否则旋转视角
+      if (hitCup(e)) {
+        cupDragActive = true;
+        cupDragY = cup.position.y;
+        cupDragStartY = cup.position.y;
+        cupDragStartPointerY = e.clientY;
+        cupDragLastY = e.clientY;
+        cupDragVy = 0;
+        // 拖动时取消自动开合, 保留当前状态
+        sceneBox.setPointerCapture(e.pointerId);
+        sceneBox.style.cursor = 'grabbing';
+        return;
+      }
       dragging = true; lastX = e.clientX; lastY = e.clientY;
       sceneBox.setPointerCapture(e.pointerId);
     });
     sceneBox.addEventListener('pointermove', e => {
+      if (cupDragActive) {
+        // 手指竖向位移 -> 盅的 Y(向上拖 = 抬盅), 灵敏度按画布高度换算
+        const dy = e.clientY - cupDragStartPointerY;
+        const worldPerPx = (CUP_OPEN_Y - CUP_CLOSED_Y) / Math.max(160, sceneBox.clientHeight * 0.5);
+        let y = cupDragStartY - dy * worldPerPx;
+        y = Math.max(CUP_CLOSED_Y - 0.2, Math.min(CUP_OPEN_Y + 0.4, y));
+        cupDragY = y;
+        cupDragVy = e.clientY - cupDragLastY;
+        cupDragLastY = e.clientY;
+        return;
+      }
       if (!dragging) return;
       theta -= (e.clientX - lastX) * 0.01;
       phi = Math.max(0.28, Math.min(1.42, phi - (e.clientY - lastY) * 0.01));
       lastX = e.clientX; lastY = e.clientY;
       updateCamera();
     });
-    const end = () => { dragging = false; };
+    const end = e => {
+      if (cupDragActive) {
+        cupDragActive = false;
+        sceneBox.style.cursor = 'grab';
+        settleCupAfterDrag();
+      }
+      dragging = false;
+    };
     sceneBox.addEventListener('pointerup', end);
     sceneBox.addEventListener('pointercancel', end);
+  }
+
+  /**
+   * 屏幕坐标 -> NDC, 判断是否命中骰盅(盅的所有网格)
+   */
+  function hitCup(e) {
+    if (!cup) return false;
+    const rect = sceneBox.getBoundingClientRect();
+    ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(ndc, camera);
+    return raycaster.intersectObject(cup, true).length > 0;
+  }
+
+  /**
+   * 拖动结束: 依据最终位置与甩动速度决定吸附到开/关, 或强力上滑直接开结果
+   */
+  function settleCupAfterDrag() {
+    const mid = (CUP_OPEN_Y + CUP_CLOSED_Y) / 2;
+    // 快速向上甩(指针 Y 快速减小) -> 直接触发开结果
+    const flingUp = cupDragVy < -18 && cupDragY > mid - 1.0;
+    if (flingUp) {
+      // 先把盅抬到开位, 再开结果
+      cupDragY = CUP_OPEN_Y;
+      cup.position.y = CUP_OPEN_Y;
+      setCover(true);
+      if (!isShaking) calculate();
+      return;
+    }
+    // 否则按当前位置吸附: 过半则开, 否则关
+    setCover(cupDragY > mid);
   }
 
   function bindWheel() {
@@ -400,7 +498,7 @@
       updateCamera();
     }, { passive: true });
     sceneBox.addEventListener('dblclick', () => {
-      theta = 0.7; phi = 0.95; dist = 8.0;
+      theta = 0.7; phi = 0.9; dist = 11.8;
       updateCamera();
     });
   }
@@ -474,7 +572,9 @@
 
   /* ======================== 物理 ======================== */
   function step(dt) {
-    const ceiling = (!isCoverOpen || isShaking) ? CUP_H - 0.05 : 999; // 关盅/摇动时有顶
+    // 顶部内收留余量: 骰子跳起时够不到顶盖边沿(避免从顶部露出边角)
+    // 顶部设限: 骰子跳起最高点仍留在直筒区(圆弧收窄处下方), 避免顶出盅口
+    const ceiling = (!isCoverOpen || isShaking) ? CUP_H - 1.8 : 999; // 关盅/摇动时有顶
     const dtSafe = Math.min(dt, 0.033);
 
     for (const d of dice) {
@@ -515,7 +615,7 @@
       }
       // 圆形内壁
       const r = Math.hypot(p.x, p.z);
-      const maxR = CUP_R - DIE_HALF - 0.02;
+      const maxR = CUP_R - DIE_HALF - 0.28; // 多留余量, 骰子不贴壁, 避免从盅口边缘露出
       if (r > maxR) {
         const nx = p.x / r, nz = p.z / r;
         p.x = nx * maxR; p.z = nz * maxR;
@@ -574,9 +674,9 @@
       for (const d of dice) {
         d.atRest = false;
         d.restTimer = 0;
-        d.vel.x += (Math.random() - 0.5) * 26 * dtSafe * 6;
-        d.vel.y += (Math.random() * 18 + 6) * dtSafe * 6;
-        d.vel.z += (Math.random() - 0.5) * 26 * dtSafe * 6;
+        d.vel.x += (Math.random() - 0.5) * 18 * dtSafe * 6;
+        d.vel.y += (Math.random() * 9 + 3) * dtSafe * 6;
+        d.vel.z += (Math.random() - 0.5) * 18 * dtSafe * 6;
         d.angVel.x += (Math.random() - 0.5) * 14 * dtSafe * 60;
         d.angVel.y += (Math.random() - 0.5) * 14 * dtSafe * 60;
         d.angVel.z += (Math.random() - 0.5) * 14 * dtSafe * 60;
@@ -603,12 +703,13 @@
     const dt = Math.min(clock.getDelta(), 0.05);
     step(dt);
 
-    // 骰盅 Y 平滑过渡
-    const targetY = isCoverOpen ? CUP_OPEN_Y : CUP_CLOSED_Y;
-    cup.position.y += (targetY - cup.position.y) * Math.min(1, dt * 7);
-
-    // 闲置微旋转
-    if (!dragging && !isShaking) { theta += 0.0012; updateCamera(); }
+    // 骰盅 Y: 拖动时跟手, 否则平滑过渡到开/关目标
+    if (cupDragActive) {
+      cup.position.y = cupDragY;
+    } else {
+      const targetY = isCoverOpen ? CUP_OPEN_Y : CUP_CLOSED_Y;
+      cup.position.y += (targetY - cup.position.y) * Math.min(1, dt * 7);
+    }
 
     renderer.render(scene, camera);
   }
@@ -626,6 +727,7 @@
   function shakeDice(isInit = false) {
     if (isInit) return;
     if (isNotRollDice || isShaking) return;
+    cupDragActive = false; // 摇骰时结束任何拖动
     shakeDiceB.disabled = true;
     resultB.disabled = true;
     result.innerHTML = '';
@@ -641,7 +743,7 @@
     for (const d of dice) {
       d.atRest = false;
       d.restTimer = 0;
-      d.vel.set((Math.random() - 0.5) * 8, Math.random() * 6 + 5, (Math.random() - 0.5) * 8);
+      d.vel.set((Math.random() - 0.5) * 6, Math.random() * 3.5 + 2.5, (Math.random() - 0.5) * 6);
       d.angVel.set((Math.random() - 0.5) * 16, (Math.random() - 0.5) * 16, (Math.random() - 0.5) * 16);
     }
     isShaking = true;
@@ -660,8 +762,20 @@
     }
   }
 
+  /**
+   * 骰盅半透明开关
+   * 关键: 不透明时必须把 transparent 置 false 并关掉 depthWrite=false 的行为,
+   * 否则即使 opacity 接近 1 也会因透明渲染关闭深度写入而透出骰子。
+   */
+  function setCupTransparency(checked) {
+    cupMat.transparent = !!checked;
+    cupMat.opacity = checked ? 0.35 : 1;
+    cupMat.depthWrite = !checked;
+    cupMat.needsUpdate = true;
+  }
+
   function handleTransparency(checkbox) {
-    cupMat.opacity = checkbox.checked ? 0.35 : 0.98;
+    setCupTransparency(checkbox.checked);
   }
 
   /**
