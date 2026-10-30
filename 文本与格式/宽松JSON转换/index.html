@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="description" content="把被引号包裹、缺括号、带注释、用单引号或中文引号的 JSON 字符串，宽松地还原成标准 JSON 或 JS 对象">
+<title>loose json · 字符串 JSON 宽松转换</title>
+<link rel="icon" href="/favicon.ico">
+<style>
+  :root {
+    --paper: #F2F4F8;
+    --panel: #FFFFFF;
+    --ink: #1B2230;
+    --ink-soft: #626B7B;
+    --line: #DFE3EA;
+    --line-2: #C8CED9;
+    --accent: #1F6FEB;      /* 本页唯一强调色 */
+    --accent-tint: #E9F1FE;
+    --ok: #1E7F4F;
+    --err: #BE2C1C;
+    --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;
+    --sans: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    margin: 0;
+    padding: 28px 20px 40px;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .sheet {
+    width: 100%;
+    max-width: 1280px;
+    background: var(--panel);
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
+    box-shadow: 0 20px 48px -30px rgba(27, 34, 48, .5);
+    overflow: hidden;
+  }
+
+  /* 顶栏 */
+  .head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 20px 22px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .mark { margin: 0; font-family: var(--mono); font-size: 22px; font-weight: 600; letter-spacing: -.5px; }
+  .mark i { font-style: normal; color: var(--accent); }
+  .tagline { margin: 2px 0 0; font-size: 13px; color: var(--ink-soft); }
+  .tally { display: flex; gap: 20px; flex-shrink: 0; }
+  .tally div { text-align: right; }
+  .tally b { display: block; font-family: var(--mono); font-size: 19px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
+  .tally span { font-size: 11px; color: var(--ink-soft); }
+
+  /* 双栏：左进右出 */
+  .wrap { display: grid; grid-template-columns: 1fr 1fr; }
+  .pane { display: flex; flex-direction: column; min-width: 0; padding: 14px 20px 16px; }
+  .pane + .pane { border-left: 1px solid var(--line); }
+
+  .cap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 7px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    flex-wrap: wrap;
+  }
+  .tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; }
+
+  button {
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    background: #FAFBFC;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 4px 11px;
+    cursor: pointer;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  button:hover { color: var(--accent); border-color: #B6CDF2; background: #fff; }
+  .cap button { padding: 2px 6px; border: 0; background: none; color: var(--accent); }
+  .cap button:hover { text-decoration: underline; }
+
+  textarea, .out {
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 46vh;
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: var(--ink);
+    background: #FCFCFE;
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
+    padding: 12px 14px;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s, background .15s;
+  }
+  textarea { resize: vertical; }
+  textarea:focus { background: #fff; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+
+  .out {
+    overflow: auto;
+    white-space: pre;
+    tab-size: 4;
+  }
+  .out:empty::after { content: '结果会出现在这里'; color: #B4BCC9; }
+
+  /* 输出语法着色 */
+  .tok-key { color: #6F42C1; }
+  .tok-str { color: #116329; }
+  .tok-num { color: #0550AE; }
+  .tok-lit { color: #BE2C1C; }
+
+  /* 结果状态：成功提示 + 做过的宽松修补 */
+  .status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    min-height: 22px;
+    font-size: 12.5px;
+  }
+  .status .ok { color: var(--ok); }
+  .status .bad { color: var(--err); word-break: break-word; }
+  .pill {
+    display: inline-block;
+    font-size: 11.5px;
+    color: #3B5BA5;
+    background: var(--accent-tint);
+    border: 1px solid #C8DCFB;
+    border-radius: 999px;
+    padding: 1px 9px;
+  }
+
+  .foot {
+    padding: 13px 22px;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--ink-soft);
+    background: #FAFBFC;
+  }
+  .foot code { font-family: var(--mono); font-size: 11.5px; background: #EEF1F6; border-radius: 3px; padding: 1px 4px; }
+
+  select {
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--ink);
+    background: #FAFBFC;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 3px 4px;
+  }
+
+  /* JSON / JS 切换 */
+  .tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .tab { border: 0; border-radius: 0; background: #FAFBFC; color: var(--ink-soft); padding: 4px 13px; }
+  .tab + .tab { border-left: 1px solid var(--line); }
+  .tab.is-on { background: var(--accent-tint); color: var(--accent); font-weight: 600; }
+  .tab:hover { text-decoration: none; }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (max-width: 820px) {
+    body { padding: 12px 8px 24px; }
+    .head { flex-direction: column; align-items: flex-start; gap: 10px; padding: 16px; }
+    .tally div { text-align: left; }
+    .wrap { grid-template-columns: 1fr; }
+    .pane { padding: 12px 16px; }
+    .pane + .pane { border-left: 0; border-top: 1px solid var(--line); }
+    textarea, .out { min-height: 34vh; }
+    .foot { padding: 12px 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main class="sheet">
+  <header class="head">
+    <div class="title">
+      <h1 class="mark">loose<i>json</i></h1>
+      <p class="tagline">字符串里的 JSON —— 多一层引号、少一个括号、带注释，都能转成 JSON / JS</p>
+    </div>
+    <div class="tally">
+      <div><b id="nIn">0</b><span>输入字符</span></div>
+      <div><b id="nOut">0</b><span>输出字符</span></div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <section class="pane">
+      <div class="cap">
+        <label for="src">粘贴进来（外层引号、缺括号都不挑）</label>
+        <span class="tools">
+          <button type="button" id="btnSample">示例</button>
+          <button type="button" id="btnClear">清空</button>
+        </span>
+      </div>
+      <textarea id="src" spellcheck="false" autocapitalize="off" autocorrect="off"
+        placeholder="把那一坨直接贴进来，例如：&#10;&quot;{\&quot;a\&quot;:1,&quot;b\&quot;:[1,2&quot;&#10;末尾少个 ]} 也没关系"></textarea>
+      <div id="status" class="status" aria-live="polite"></div>
+    </section>
+
+    <section class="pane">
+      <div class="cap">
+        <div class="tabs" role="tablist" aria-label="输出格式">
+          <button type="button" class="tab is-on" id="tabJson" role="tab" aria-selected="true">JSON</button>
+          <button type="button" class="tab" id="tabJs" role="tab" aria-selected="false">JS 对象</button>
+        </div>
+        <span class="tools">
+          <select id="indent" aria-label="缩进方式">
+            <option value="2">2 空格</option>
+            <option value="4">4 空格</option>
+            <option value="tab">Tab</option>
+            <option value="">压缩</option>
+          </select>
+          <button type="button" id="btnCopy">复制</button>
+          <button type="button" id="btnDownload">下载</button>
+        </span>
+      </div>
+      <pre id="out" class="out"></pre>
+    </section>
+  </div>
+
+  <footer class="foot">
+    全部在浏览器里算，内容不外传。能吃的写法：外面多一层引号（英文、中文、直角引号、反引号都行）、被转义过的 JSON 字符串、少一个 <code>}</code> 或 <code>]</code> 或多一个、尾随逗号、漏写逗号、<code>//</code> 与 <code>/* */</code> 注释、单引号、全角标点、键不加引号、<code>{a:1}</code> 这种 JS 写法。
+  </footer>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+
+  function esc(text) {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ------------------------------------------------------------------
+  // 词法：尽量不抛错，认不出的字符当裸词处理
+  // ------------------------------------------------------------------
+  const PUNCT = {
+    '{': '{', '｛': '{',
+    '}': '}', '｝': '}',
+    '[': '[', '［': '[',
+    ']': ']', '］': ']',
+    ':': ':', '：': ':',
+    ',': ',', '，': ','
+  };
+  // 成对引号：ASCII 的 + 中文/直角引号
+  const QUOTE_PAIRS = { '"': '"', "'": "'", '`': '`', '“': '”', '‘': '’', '「': '」', '『': '』' };
+  const ESC_MAP = { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', v: '\v', '0': '\0', '\\': '\\', '"': '"', "'": "'", '`': '`', '/': '/' };
+
+  const SPACE_RE = /\s/;
+  const NUM_RE = /[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/y;
+
+  // 反解转义：只在外层引号被剥掉时用，避免误伤正常 JSON 里的 "\n"
+  function unescapeLoose(text) {
+    if (text.indexOf('\\') === -1) return text;
+    return text.replace(/\\(u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[\s\S])/g, (all, body) => {
+      if (body[0] === 'u' && body[1] === '{') {
+        const cp = parseInt(body.slice(2, -1), 16);
+        try { return String.fromCodePoint(cp); } catch (e) { return ''; }
+      }
+      if (body[0] === 'u' && body.length === 5) return String.fromCharCode(parseInt(body.slice(1), 16));
+      if (body[0] === 'x' && body.length === 3) return String.fromCharCode(parseInt(body.slice(1), 16));
+      return Object.prototype.hasOwnProperty.call(ESC_MAP, body) ? ESC_MAP[body] : body;
+    });
+  }
+
+  function tokenize(src) {
+    const tokens = [];
+    const notes = new Set();
+    const len = src.length;
+    let i = 0;
+
+    while (i < len) {
+      const ch = src[i];
+
+      if (SPACE_RE.test(ch)) { i += 1; continue; }
+
+      // 注释
+      if (ch === '/' && src[i + 1] === '/') {
+        const end = src.indexOf('\n', i + 2);
+        i = end === -1 ? len : end + 1;
+        continue;
+      }
+      if (ch === '/' && src[i + 1] === '*') {
+        const end = src.indexOf('*/', i + 2);
+        i = end === -1 ? len : end + 2;
+        continue;
+      }
+      // 分号直接丢掉
+      if (ch === ';' || ch === '；') { i += 1; continue; }
+
+      // 标点
+      const punc = PUNCT[ch];
+      if (punc) {
+        tokens.push({ t: 'p', v: punc });
+        i += 1;
+        continue;
+      }
+
+      // 字符串：引号内允许出现裸换行（被转义还原过的内容常见）
+      if (QUOTE_PAIRS[ch]) {
+        const close = QUOTE_PAIRS[ch];
+        let j = i + 1;
+        let raw = '';
+        let closed = false;
+        while (j < len) {
+          const c = src[j];
+          if (c === '\\') { raw += c + (src[j + 1] || ''); j += 2; continue; }
+          if (c === close) { closed = true; j += 1; break; }
+          raw += c;
+          j += 1;
+        }
+        if (!closed) notes.add('字符串没闭合，已延伸到结尾');
+        tokens.push({ t: 's', v: unescapeLoose(raw) });
+        i = j;
+        continue;
+      }
+
+      // 数字（后面紧跟字母数字就当成裸词，比如 12px）
+      NUM_RE.lastIndex = i;
+      const numMatch = NUM_RE.exec(src);
+      if (numMatch) {
+        const after = src[i + numMatch[0].length];
+        if (after === undefined || !/[A-Za-z0-9_$\u4e00-\u9fa5]/.test(after)) {
+          tokens.push({ t: 'n', v: numMatch[0] });
+          i += numMatch[0].length;
+          continue;
+        }
+      }
+
+      // 裸词
+      let j = i;
+      while (j < len) {
+        const c = src[j];
+        if (SPACE_RE.test(c) || PUNCT[c] || QUOTE_PAIRS[c] || c === ';' || c === '；') break;
+        j += 1;
+      }
+      if (j === i) { i += 1; continue; }
+      const word = src.slice(i, j);
+      i = j;
+      if (/^(true|false|null|undefined|NaN|Infinity)$/i.test(word)) {
+        tokens.push({ t: 'w', v: word });
+      } else {
+        tokens.push({ t: 's', v: word, bare: true });
+      }
+    }
+
+    return { tokens: tokens, notes: notes };
+  }
+
+  // ------------------------------------------------------------------
+  // 括号修复：缺的补上，多的删掉，错位的先把内层收掉
+  // ------------------------------------------------------------------
+  function repairBrackets(tokens, notes) {
+    const out = [];
+    const stack = [];
+
+    for (const tk of tokens) {
+      if (tk.t === 'p' && (tk.v === '{' || tk.v === '[')) {
+        out.push(tk);
+        stack.push(tk.v);
+        continue;
+      }
+      if (tk.t === 'p' && (tk.v === '}' || tk.v === ']')) {
+        const need = tk.v === '}' ? '{' : '[';
+        const idx = stack.lastIndexOf(need);
+        if (idx === -1) {
+          notes.add('删掉多余的 ' + tk.v);
+          continue;
+        }
+        for (let k = stack.length - 1; k > idx; k -= 1) {
+          const close = stack[k] === '{' ? '}' : ']';
+          out.push({ t: 'p', v: close });
+          notes.add('补全缺的 ' + close);
+        }
+        stack.length = idx;
+        out.push(tk);
+        continue;
+      }
+      out.push(tk);
+    }
+
+    for (let k = stack.length - 1; k >= 0; k -= 1) {
+      const close = stack[k] === '{' ? '}' : ']';
+      out.push({ t: 'p', v: close });
+      notes.add('补全缺的 ' + close);
+    }
+
+    return out;
+  }
+
+  // 顶层出现冒号说明整个对象少了最外层的花括号
+  function hasRootColon(tokens) {
+    let depth = 0;
+    for (const tk of tokens) {
+      if (tk.t !== 'p') continue;
+      if (tk.v === '{' || tk.v === '[') depth += 1;
+      else if (tk.v === '}' || tk.v === ']') depth -= 1;
+      else if (tk.v === ':' && depth === 0) return true;
+    }
+    return false;
+  }
+
+  function wrapTokens(tokens, open, close) {
+    return [{ t: 'p', v: open }].concat(tokens, [{ t: 'p', v: close }]);
+  }
+
+  // ------------------------------------------------------------------
+  // 语法：递归下降，尽量容忍漏逗号、尾随逗号、简写
+  // ------------------------------------------------------------------
+  function parseTokens(tokens) {
+    let i = 0;
+
+    function fail(msg) {
+      const tk = tokens[i];
+      const where = tk ? '，停在 "' + String(tk.v).slice(0, 24) + '"' : '，内容已经结束';
+      throw new Error(msg + where);
+    }
+
+    function skipCommas() {
+      while (tokens[i] && tokens[i].t === 'p' && tokens[i].v === ',') i += 1;
+    }
+
+    function parseObject() {
+      i += 1; // {
+      const obj = {};
+      for (;;) {
+        skipCommas();
+        const tk = tokens[i];
+        if (!tk) fail('对象没有闭合，缺 }');
+        if (tk.t === 'p' && tk.v === '}') { i += 1; return obj; }
+        if (tk.t === 'p') fail('对象里出现了不该有的 "' + tk.v + '"');
+        const key = String(tk.v);
+        i += 1;
+        let value = null;
+        if (tokens[i] && tokens[i].t === 'p' && tokens[i].v === ':') {
+          i += 1;
+          value = parseValue();
+        }
+        obj[key] = value;
+        skipCommas();
+      }
+    }
+
+    function parseArray() {
+      i += 1; // [
+      const arr = [];
+      for (;;) {
+        skipCommas();
+        const tk = tokens[i];
+        if (!tk) fail('数组没有闭合，缺 ]');
+        if (tk.t === 'p' && tk.v === ']') { i += 1; return arr; }
+        arr.push(parseValue());
+        skipCommas();
+      }
+    }
+
+    function parseValue() {
+      const tk = tokens[i];
+      if (!tk) fail('值缺失');
+      if (tk.t === 'p') {
+        if (tk.v === '{') return parseObject();
+        if (tk.v === '[') return parseArray();
+        fail('意外的 "' + tk.v + '"');
+      }
+      i += 1;
+      if (tk.t === 's') return tk.v;
+      if (tk.t === 'n') {
+        const num = Number(tk.v);
+        return Number.isNaN(num) ? tk.v : num;
+      }
+      const kw = String(tk.v).toLowerCase();
+      if (kw === 'true') return true;
+      if (kw === 'false') return false;
+      return null; // null / undefined / NaN / Infinity
+    }
+
+    const value = parseValue();
+    if (i < tokens.length) fail('解析完成后还有多余内容');
+    return value;
+  }
+
+  function parseCandidate(text, notes) {
+    const lex = tokenize(text);
+    lex.notes.forEach((n) => notes.add(n));
+    if (!lex.tokens.length) throw new Error('没有可以解析的内容');
+
+    const tokens = repairBrackets(lex.tokens, notes);
+    const trials = [];
+
+    if (hasRootColon(tokens)) {
+      trials.push({ tokens: wrapTokens(tokens, '{', '}'), note: '补全最外层 { }' });
+    } else {
+      trials.push({ tokens: tokens, note: '' });
+      trials.push({ tokens: wrapTokens(tokens, '[', ']'), note: '补全最外层 [ ]' });
+    }
+
+    let lastError = null;
+    for (const trial of trials) {
+      try {
+        const value = parseTokens(trial.tokens);
+        if (trial.note) notes.add(trial.note);
+        return value;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    throw lastError || new Error('无法解析');
+  }
+
+  // ------------------------------------------------------------------
+  // 外层引号：可以叠好几层，逐层剥
+  // ------------------------------------------------------------------
+  function preclean(raw) {
+    return raw
+      .replace(/^\uFEFF/, '')
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .trim();
+  }
+
+  function asJsonStringLiteral(text) {
+    try {
+      const value = JSON.parse(text);
+      return typeof value === 'string' ? value : undefined;
+    } catch (e) {
+      return undefined;
+    }
+  }
+
+  function unwrapAll(text, notes) {
+    let s = text;
+    for (let round = 0; round < 6; round += 1) {
+      s = s.trim();
+      if (s.length < 2) break;
+
+      const first = s[0];
+      const last = s[s.length - 1];
+
+      // 标准 JSON 字符串字面量：交给 JSON.parse 正确还原转义
+      if (first === '"') {
+        const inner = asJsonStringLiteral(s);
+        if (inner !== undefined) {
+          notes.add('还原外层 JSON 字符串');
+          s = inner;
+          continue;
+        }
+      }
+
+      // 其他成对引号包裹
+      if (QUOTE_PAIRS[first] === last) {
+        notes.add('去掉外层引号 ' + first + last);
+        s = unescapeLoose(s.slice(1, -1));
+        continue;
+      }
+
+      break;
+    }
+    return s;
+  }
+
+  // 前后夹着日志之类的东西时，取最外层括号区间再试一次
+  function sliceBrackets(text) {
+    const start = text.search(/[[{]/);
+    if (start === -1) return '';
+    const end = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'));
+    if (end <= start) return '';
+    return text.slice(start, end + 1);
+  }
+
+  // 字符串之外还出现 \" ，说明这一整段本身是被转义过的（例如剥掉外层引号后）
+  function looksLikeEscapedText(text) {
+    let inString = false;
+    for (let i = 0; i < text.length; i += 1) {
+      const ch = text[i];
+      if (inString) {
+        if (ch === '\\') { i += 1; continue; }
+        if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') { inString = true; continue; }
+      if (ch === '\\' && text[i + 1] === '"') return true;
+    }
+    return false;
+  }
+
+  function convertOnce(raw, notes) {
+    let text = unwrapAll(preclean(raw), notes);
+
+    // 外层引号没了但内部转义还在（贴的时候少了开头或结尾的引号）
+    if (looksLikeEscapedText(text)) {
+      text = unescapeLoose(text);
+      notes.add('还原内容里的转义字符');
+    }
+    const candidates = [text];
+    const sliced = sliceBrackets(text);
+    if (sliced && sliced !== text) candidates.push(sliced);
+
+    let lastError = null;
+    for (let idx = 0; idx < candidates.length; idx += 1) {
+      const local = new Set();
+      try {
+        const value = parseCandidate(candidates[idx], local);
+        if (idx > 0) local.add('只取了最外层括号里的内容');
+        local.forEach((n) => notes.add(n));
+        return value;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    throw lastError || new Error('无法解析');
+  }
+
+  function convert(raw) {
+    const notes = new Set();
+    let value = convertOnce(raw, notes);
+
+    // 剥完外层引号还是字符串（比如 "{\"a\":1}" 少了个收尾引号）→ 再解析一层
+    let guard = 0;
+    while (typeof value === 'string' && guard < 3 && /[[{]/.test(value)) {
+      guard += 1;
+      const sub = new Set();
+      let next;
+      try {
+        next = convertOnce(value, sub);
+      } catch (e) {
+        break;
+      }
+      if (typeof next === 'string' && next === value) break;
+      sub.forEach((n) => notes.add(n));
+      notes.add('把字符串内容再解析一层');
+      value = next;
+    }
+
+    return { value: value, notes: Array.from(notes) };
+  }
+
+  // ------------------------------------------------------------------
+  // 输出
+  // ------------------------------------------------------------------
+  function toJSON(value, unit) {
+    const text = unit === '' ? JSON.stringify(value) : JSON.stringify(value, null, unit);
+    return text === undefined ? 'null' : text;
+  }
+
+  const IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+  function jsString(value) {
+    return JSON.stringify(value).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+  }
+
+  function toJS(value, unit) {
+    const compact = unit === '';
+
+    function walk(val, depth) {
+      if (val === null || val === undefined) return 'null';
+      const type = typeof val;
+      if (type === 'string') return jsString(val);
+      if (type === 'number') return Number.isFinite(val) ? String(val) : 'null';
+      if (type === 'boolean') return String(val);
+
+      const pad = compact ? '' : unit.repeat(depth + 1);
+      const tail = compact ? '' : unit.repeat(depth);
+      const colon = compact ? ':' : ': ';
+
+      if (Array.isArray(val)) {
+        if (!val.length) return '[]';
+        const body = val.map((item) => pad + walk(item, depth + 1));
+        return compact ? '[' + body.join(',') + ']' : '[\n' + body.join(',\n') + '\n' + tail + ']';
+      }
+
+      const keys = Object.keys(val);
+      if (!keys.length) return '{}';
+      const body = keys.map((k) => pad + (IDENT_RE.test(k) ? k : jsString(k)) + colon + walk(val[k], depth + 1));
+      return compact ? '{' + body.join(',') + '}' : '{\n' + body.join(',\n') + '\n' + tail + '}';
+    }
+
+    return walk(value, 0);
+  }
+
+  // 轻量着色：键（带引号或 JS 模式的裸标识符）、字符串、数字、字面量
+  // 裸标识符后面必须跟冒号才算键，否则回落成普通文本
+  const HL_RE = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|([A-Za-z_$][A-Za-z0-9_$]*(?=\s*:))|\b(true|false|null|undefined)\b|([+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g;
+
+  // 从这里往后看，碰到的第一个非空白是不是冒号
+  function isKeyAt(code, idx) {
+    for (let i = idx; i < code.length; i += 1) {
+      const c = code[i];
+      if (c === ':') return true;
+      if (c !== ' ' && c !== '\t' && c !== '\n' && c !== '\r') return false;
+    }
+    return false;
+  }
+
+  function highlight(code) {
+    if (code.length > 300000) return esc(code);
+    let html = '';
+    let last = 0;
+    let m;
+    HL_RE.lastIndex = 0;
+    while ((m = HL_RE.exec(code)) !== null) {
+      html += esc(code.slice(last, m.index));
+      const token = m[0];
+      const prev = m.index > 0 ? code[m.index - 1] : '';
+      if (m[1]) {
+        html += isKeyAt(code, m.index + token.length)
+          ? '<span class="tok-key">' + esc(token) + '</span>'
+          : '<span class="tok-str">' + esc(token) + '</span>';
+      } else if (m[2]) {
+        html += '<span class="tok-key">' + esc(token) + '</span>';
+      } else if (m[3]) {
+        html += '<span class="tok-lit">' + esc(token) + '</span>';
+      } else if (/[\w$]/.test(prev)) {
+        html += esc(token);
+      } else {
+        html += '<span class="tok-num">' + esc(token) + '</span>';
+      }
+      last = m.index + token.length;
+    }
+    html += esc(code.slice(last));
+    return html;
+  }
+
+  // ------------------------------------------------------------------
+  // 页面
+  // ------------------------------------------------------------------
+  const SAMPLE = String.raw`"{\"title\":\"干啥了？-截止到2024.7.26\",\"version\":408,\"structure\":\"mind_free\",\"children\":[{\"id\":\"root\",\"title\":\"TMS\"},{\"id\":\"m\",\"title\":\"移动端\",\"ok\":true,}]`;
+
+  const INDENTS = { '2': '  ', '4': '    ', tab: '\t', '': '' };
+
+  const src = $('src');
+  const out = $('out');
+  const statusEl = $('status');
+  const nIn = $('nIn');
+  const nOut = $('nOut');
+  const indentSel = $('indent');
+  const tabJson = $('tabJson');
+  const tabJs = $('tabJs');
+
+  let mode = 'json';
+  let timer = 0;
+  let currentValue = null; // 最近一次解析成功的值，下载时拿来起文件名
+
+  function setStatus(kind, notes, message) {
+    statusEl.textContent = '';
+    if (kind === 'empty') return;
+
+    if (kind === 'fail') {
+      const span = document.createElement('span');
+      span.className = 'bad';
+      span.textContent = '转换失败：' + message;
+      statusEl.appendChild(span);
+      return;
+    }
+
+    const ok = document.createElement('span');
+    ok.className = 'ok';
+    ok.textContent = notes && notes.length ? '转换成功，顺手做了这些修复：' : '转换成功';
+    statusEl.appendChild(ok);
+
+    (notes || []).forEach((note) => {
+      const pill = document.createElement('span');
+      pill.className = 'pill';
+      pill.textContent = note;
+      statusEl.appendChild(pill);
+    });
+  }
+
+  function refresh() {
+    const raw = src.value;
+    nIn.textContent = String(raw.trim().length);
+
+    if (!raw.trim()) {
+      out.textContent = '';
+      out.dataset.plain = '';
+      nOut.textContent = '0';
+      currentValue = null;
+      setStatus('empty');
+      return;
+    }
+
+    let result;
+    try {
+      result = convert(raw);
+    } catch (e) {
+      out.textContent = '';
+      out.dataset.plain = '';
+      nOut.textContent = '0';
+      currentValue = null;
+      setStatus('fail', null, e && e.message ? e.message : String(e));
+      return;
+    }
+
+    const unit = INDENTS[indentSel.value];
+    const text = mode === 'js' ? toJS(result.value, unit) : toJSON(result.value, unit);
+
+    currentValue = result.value;
+    out.dataset.plain = text;
+    out.innerHTML = highlight(text);
+    nOut.textContent = String(text.length);
+    setStatus('ok', result.notes);
+  }
+
+  // ------------------------------------------------------------------
+  // 复制 / 下载
+  // ------------------------------------------------------------------
+  const ILLEGAL_NAME_RE = /[\\/:*?"<>|\r\n\t]/g;
+
+  // 用数据里的 title / name 起名，没有就用 data
+  function fileName(value, ext) {
+    let base = '';
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      if (typeof value.title === 'string') base = value.title;
+      else if (typeof value.name === 'string') base = value.name;
+    }
+    const cleaned = String(base)
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(ILLEGAL_NAME_RE, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 40);
+    return (cleaned || 'data') + '.' + ext;
+  }
+
+  function download(text, name, type) {
+    const blob = new Blob([text], { type: type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => { URL.revokeObjectURL(url); }, 2000);
+  }
+
+  function flash(btn, doneLabel, idleLabel) {
+    btn.textContent = doneLabel;
+    clearTimeout(btn._t);
+    btn._t = setTimeout(() => { btn.textContent = idleLabel; }, 1500);
+  }
+
+  function scheduleRefresh() {
+    clearTimeout(timer);
+    timer = setTimeout(refresh, 120);
+  }
+
+  src.addEventListener('input', scheduleRefresh);
+  indentSel.addEventListener('change', refresh);
+
+  tabJson.addEventListener('click', () => {
+    mode = 'json';
+    tabJson.classList.add('is-on');
+    tabJs.classList.remove('is-on');
+    tabJson.setAttribute('aria-selected', 'true');
+    tabJs.setAttribute('aria-selected', 'false');
+    refresh();
+  });
+
+  tabJs.addEventListener('click', () => {
+    mode = 'js';
+    tabJs.classList.add('is-on');
+    tabJson.classList.remove('is-on');
+    tabJs.setAttribute('aria-selected', 'true');
+    tabJson.setAttribute('aria-selected', 'false');
+    refresh();
+  });
+
+  $('btnSample').addEventListener('click', () => {
+    src.value = SAMPLE;
+    src.focus();
+    refresh();
+  });
+
+  $('btnClear').addEventListener('click', () => {
+    src.value = '';
+    src.focus();
+    refresh();
+  });
+
+  $('btnCopy').addEventListener('click', () => {
+    const text = out.dataset.plain || '';
+    if (!text) return;
+    const btn = $('btnCopy');
+    const done = () => { flash(btn, '已复制', '复制'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, done);
+      return;
+    }
+    const tmp = document.createElement('textarea');
+    tmp.value = text;
+    document.body.appendChild(tmp);
+    tmp.select();
+    try { document.execCommand('copy'); } catch (e) { /* 忽略 */ }
+    document.body.removeChild(tmp);
+    done();
+  });
+
+  $('btnDownload').addEventListener('click', () => {
+    const text = out.dataset.plain || '';
+    if (!text) return;
+    const isJs = mode === 'js';
+    download(
+      text,
+      fileName(currentValue, isJs ? 'js' : 'json'),
+      isJs ? 'text/javascript;charset=utf-8' : 'application/json;charset=utf-8'
+    );
+    flash($('btnDownload'), '已下载', '下载');
+  });
+
+  // Tab 键在输入框里缩进两格，而不是跳走
+  src.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab' || e.shiftKey) return;
+    e.preventDefault();
+    const start = src.selectionStart;
+    const end = src.selectionEnd;
+    src.value = src.value.slice(0, start) + '  ' + src.value.slice(end);
+    src.setSelectionRange(start + 2, start + 2);
+    scheduleRefresh();
+  });
+
+  refresh();
+})();
+</script>
+</body>
+</html>
