@@ -1,518 +1,158 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN">
 <head>
-  <meta charset="utf-8"/>
-  <title>PDF多功能编辑器</title>
-  <!--通义编写： https://www.qianwen.com/share?shareId=0fcdd159-1f9c-4620-9fcd-588cabd19ac1 -->
-  <!--    <script src="https://unpkg.com/pdf-lib"></script>-->
-  <!--    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script> -->
-  <!--这库的文档 https://pdf-lib.js.org/docs/api/ -->
-  <script src="./pdf-lib.js"></script>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 1000px;
-      margin: 0 auto;
-      padding: 20px;
-      background-color: #f5f5f5;
-    }
-
-    .container {
-      background-color: white;
-      padding: 20px;
-      border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    }
-
-    h1 {
-      color: #333;
-      text-align: center;
-    }
-
-    .section {
-      margin: 20px 0;
-      padding: 15px;
-      border: 1px solid #ddd;
-      border-radius: 5px;
-      background-color: #fafafa;
-    }
-
-    .section h3 {
-      margin-top: 0;
-      color: #444;
-    }
-
-    input[type="file"], input[type="text"], input[type="number"], select, button {
-      padding: 10px;
-      margin: 5px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-    }
-
-    button {
-      background-color: #4CAF50;
-      color: white;
-      cursor: pointer;
-      margin: 5px 10px 5px 0;
-    }
-
-    button:hover {
-      background-color: #45a049;
-    }
-
-    .action-btn {
-      background-color: #2196F3;
-    }
-
-    .action-btn:hover {
-      background-color: #1976D2;
-    }
-
-    .delete-btn {
-      background-color: #f44336;
-    }
-
-    .delete-btn:hover {
-      background-color: #d32f2f;
-    }
-
-    iframe {
-      width: 100%;
-      height: 400px;
-      border: 1px solid #ddd;
-    }
-
-    .info {
-      background-color: #e7f3ff;
-      padding: 10px;
-      border-radius: 4px;
-      margin: 10px 0;
-    }
-
-    .example {
-      font-style: italic;
-      color: #666;
-    }
-
-    .operation-group {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .operation-item {
-      margin-right: 15px;
-      display: flex;
-      align-items: center;
-    }
-
-    .hidden {
-      display: none;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="description" content="PDF 多功能编辑器 — 在浏览器本地删除页面、插入 PDF、插入图片，无需上传服务器。">
+<title>PDF多功能编辑器</title>
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="./styles.css">
+<!--通义编写： https://www.qianwen.com/share?shareId=0fcdd159-1f9c-4620-9fcd-588cabd19ac1 -->
+<!--这库的文档 https://pdf-lib.js.org/docs/api/ -->
+<script src="./pdf-lib.js"></script>
 </head>
 
 <body>
-<div class="container">
-  <h1>PDF多功能编辑器</h1>
-
-  <div style="display: flex;gap: 8px;">
-    <div class="section">
-      <h3>上传主PDF文件</h3>
-      <input type="file" id="mainPdfFileInput" accept=".pdf"/>
-      <p>当前文档页数: <span id="currentTotalPages">0</span></p>
-    </div>
-
-    <div class="section">
-      <h3>其他功能</h3>
-      <button onclick="window.location.href='./压缩/index.html'" class="action-btn">跳转至PDF压缩页面</button>
-    </div>
-  </div>
-
-  <div class="info">
-    <p><strong>功能说明：</strong></p>
-    <ul>
-      <li><strong>删除页面:</strong> 输入页面号，支持单页(1)、多页(1,3,5)、范围(2-5)或组合(1,3-5,7)</li>
-      <li><strong>插入PDF:</strong> 在指定页面前或后插入另一个PDF的所有页面</li>
-      <li><strong>插入图片:</strong> 将图片转换为PDF页面并插入到指定位置</li>
-    </ul>
-  </div>
-
-  <div class="section">
-    <h3>操作选择</h3>
-    <select id="operationType">
-      <option value="delete">删除页面</option>
-      <option value="insertPdf">插入PDF</option>
-      <option value="insertImage">插入图片</option>
-    </select>
-  </div>
-
-  <!-- 删除页面区域 -->
-  <div id="deleteSection" class="section">
-    <h3>删除页面</h3>
-    <label>输入要删除的页面号 (如: 1,3-5,7): </label>
-    <input type="text" id="pageNumbersInput" placeholder="例如: 1,3-5,7"/>
-    <button class="delete-btn" onclick="deletePages()">删除页面</button>
-  </div>
-
-  <!-- 插入PDF区域 -->
-  <div id="insertPdfSection" class="section hidden">
-    <h3>插入PDF</h3>
-    <div class="operation-group">
-      <div class="operation-item">
-        <label>插入位置: </label>
-        <select id="insertPositionPdf">
-          <option value="before">在第几页前</option>
-          <option value="after">在第几页后</option>
-        </select>
-      </div>
-      <div class="operation-item">
-        <label>页面号: </label>
-        <input type="number" id="insertPageNumberPdf" min="1" value="1"/>
-      </div>
-      <div class="operation-item">
-        <label>插入的PDF: </label>
-        <input type="file" id="insertPdfFileInput" accept=".pdf"/>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">PDF</span>
+      <div>
+        <h1>PDF 多功能编辑器</h1>
+        <p class="tagline">删页 · 插 PDF · 插图片，全部在本地浏览器完成</p>
       </div>
     </div>
-    <button class="action-btn" onclick="insertPdf()">插入PDF</button>
-  </div>
-
-  <!-- 插入图片区域 -->
-  <div id="insertImageSection" class="section hidden">
-    <h3>插入图片</h3>
-    <div class="operation-group">
-      <div class="operation-item">
-        <label>插入位置: </label>
-        <select id="insertPositionImage">
-          <option value="before">在第几页前</option>
-          <option value="after">在第几页后</option>
-        </select>
-      </div>
-      <div class="operation-item">
-        <label>页面号: </label>
-        <input type="number" id="insertPageNumberImage" min="1" value="1"/>
-      </div>
-      <div class="operation-item">
-        <label>插入的图片: </label>
-        <input type="file" id="insertImageFileInput" accept="image/*"/>
-      </div>
+    <div class="top-side">
+      <div class="stat"><b id="currentTotalPages">0</b><span>页</span></div>
+      <a class="ghost-btn" href="./压缩/index.html">PDF 压缩 →</a>
     </div>
-    <button class="action-btn" onclick="insertImage()">插入图片</button>
-  </div>
+  </header>
 
-  <div class="section">
-    <h3>PDF预览</h3>
-    <iframe id="pdfPreview"></iframe>
-    <br>
-    <button onclick="downloadPdf()" id="downloadBtn" disabled>下载处理后的PDF</button>
-    <button onclick="resetEditor()">重置编辑器</button>
-  </div>
+  <main class="workspace">
+    <!-- 左栏：步骤 -->
+    <div class="col-left">
+      <section class="card">
+        <h2 class="card-title"><i>1</i>上传主 PDF</h2>
+        <label class="drop" id="dropZone">
+          <input type="file" id="mainPdfFileInput" class="sr-only" accept="application/pdf,.pdf"/>
+          <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
+            <path d="M14 3v5h5"/>
+            <path d="M12 17v-5"/>
+            <path d="m9.5 14.5 2.5-2.5 2.5 2.5"/>
+          </svg>
+          <span class="drop-title" id="dropTitle">点击或拖入 PDF 文件</span>
+          <span class="drop-sub" id="dropSub">文件只在本地处理，不会上传</span>
+        </label>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title"><i>2</i>选择操作</h2>
+        <div class="tabs" role="tablist" aria-label="操作类型">
+          <button type="button" class="tab is-active" role="tab" aria-selected="true" aria-controls="deleteSection" data-op="delete">删除页面</button>
+          <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="insertPdfSection" data-op="insertPdf">插入 PDF</button>
+          <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="insertImageSection" data-op="insertImage">插入图片</button>
+        </div>
+
+        <!-- 删除页面 -->
+        <div id="deleteSection" class="pane" role="tabpanel">
+          <label class="field">
+            <span class="label">要删除的页面</span>
+            <input type="text" id="pageNumbersInput" placeholder="例如: 1,3-5,7" inputmode="numeric"/>
+          </label>
+          <p class="hint">
+            支持单页 <code>1</code>、多页 <code>1,3,5</code>、范围 <code>2-5</code> 或组合 <code>1,3-5,7</code>
+          </p>
+          <button type="button" class="btn btn-danger btn-block" onclick="deletePages(this)">删除所选页面</button>
+        </div>
+
+        <!-- 插入 PDF -->
+        <div id="insertPdfSection" class="pane" hidden role="tabpanel">
+          <div class="row-2">
+            <label class="field">
+              <span class="label">插入位置</span>
+              <select id="insertPositionPdf">
+                <option value="before">在第几页前</option>
+                <option value="after">在第几页后</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="label">页码</span>
+              <input type="number" id="insertPageNumberPdf" min="1" value="1"/>
+            </label>
+          </div>
+          <label class="field">
+            <span class="label">要插入的 PDF</span>
+            <input type="file" id="insertPdfFileInput" accept="application/pdf,.pdf"/>
+          </label>
+          <button type="button" class="btn btn-block" onclick="insertPdf(this)">插入 PDF</button>
+        </div>
+
+        <!-- 插入图片 -->
+        <div id="insertImageSection" class="pane" hidden role="tabpanel">
+          <div class="row-2">
+            <label class="field">
+              <span class="label">插入位置</span>
+              <select id="insertPositionImage">
+                <option value="before">在第几页前</option>
+                <option value="after">在第几页后</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="label">页码</span>
+              <input type="number" id="insertPageNumberImage" min="1" value="1"/>
+            </label>
+          </div>
+          <label class="field">
+            <span class="label">要插入的图片</span>
+            <input type="file" id="insertImageFileInput" accept="image/png,image/jpeg"/>
+          </label>
+          <p class="hint">支持 JPG、PNG，图片会成为一张独立的新页面</p>
+          <button type="button" class="btn btn-block" onclick="insertImage(this)">插入图片</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- 右栏：预览与导出 -->
+    <section class="card preview-card">
+      <div class="card-head">
+        <h2 class="card-title"><i>3</i>预览与导出</h2>
+        <span class="hist-step" id="histStep">未载入</span>
+        <div class="head-actions">
+          <button type="button" class="icon-btn" id="undoBtn" onclick="undo()" disabled title="回退 (Ctrl+Z)" aria-label="回退">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9 14 4 9l5-5"/>
+              <path d="M4 9h9a6 6 0 0 1 0 12H8"/>
+            </svg>
+          </button>
+          <button type="button" class="icon-btn" id="redoBtn" onclick="redo()" disabled title="前进 (Ctrl+Y)" aria-label="前进">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m15 14 5-5-5-5"/>
+              <path d="M20 9h-9a6 6 0 0 0 0 12h5"/>
+            </svg>
+          </button>
+          <button type="button" class="btn" id="downloadBtn" onclick="downloadPdf(this)" disabled>下载 PDF</button>
+          <button type="button" class="btn btn-quiet" onclick="resetEditor()">重置</button>
+        </div>
+      </div>
+      <div class="preview">
+        <iframe id="pdfPreview" title="PDF 预览"></iframe>
+        <div class="preview-empty" id="previewEmpty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
+            <path d="M14 3v5h5"/>
+            <path d="M9 13h6M9 17h4"/>
+          </svg>
+          <p>还没有载入 PDF</p>
+          <span>上传后在这里查看每一页的修改效果</span>
+        </div>
+      </div>
+    </section>
+  </main>
 </div>
 
-<script>
-  let pdfDoc = null;
-  let originalPdfBytes = null;
+<div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
 
-  // 初始化页面显示
-  document.getElementById('operationType').addEventListener('change', function () {
-    const operation = this.value;
-    document.getElementById('deleteSection').classList.toggle('hidden', operation !== 'delete');
-    document.getElementById('insertPdfSection').classList.toggle('hidden', operation !== 'insertPdf');
-    document.getElementById('insertImageSection').classList.toggle('hidden', operation !== 'insertImage');
-  });
-
-  document.getElementById('mainPdfFileInput').addEventListener('change', async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    originalPdfBytes = await file.arrayBuffer();
-    await loadAndDisplayPdf(originalPdfBytes);
-  });
-
-  async function loadAndDisplayPdf(pdfBytes) {
-    try {
-      pdfDoc = await PDFLib.PDFDocument.load(pdfBytes);
-      const totalPages = pdfDoc.getPageCount();
-      document.getElementById('currentTotalPages').textContent = totalPages;
-
-      // 显示PDF预览
-      const previewUrl = URL.createObjectURL(new Blob([pdfBytes], {type: 'application/pdf'}));
-      document.getElementById('pdfPreview').src = previewUrl;
-
-      // 启用下载按钮
-      document.getElementById('downloadBtn').disabled = false;
-    } catch (error) {
-      alert('加载PDF失败: ' + error.message);
-    }
-  }
-
-  // 解析页面范围字符串，例如 "1,3-5,7" -> [1,3,4,5,7]
-  function parsePageRanges(rangeStr, totalPages) {
-    const pages = [];
-    const ranges = rangeStr.split(',').map(r => r.trim());
-
-    for (const range of ranges) {
-      if (range.includes('-')) {
-        // 处理范围，如 "3-5"
-        const [start, end] = range.split('-').map(Number);
-
-        if (isNaN(start) || isNaN(end)) {
-          throw new Error(`无效的页面范围: ${range}`);
-        }
-
-        if (start < 1 || end > totalPages || start > end) {
-          throw new Error(`页面范围超出有效范围: ${range} (总页数: ${totalPages})`);
-        }
-
-        for (let i = start; i <= end; i++) {
-          pages.push(i);
-        }
-      } else {
-        // 处理单个页面
-        const pageNum = Number(range);
-
-        if (isNaN(pageNum) || pageNum < 1 || pageNum > totalPages) {
-          throw new Error(`页面号无效: ${pageNum} (总页数: ${totalPages})`);
-        }
-
-        pages.push(pageNum);
-      }
-    }
-
-    // 去重并排序
-    return [...new Set(pages)].sort((a, b) => a - b);
-  }
-
-  async function deletePages() {
-    if (!pdfDoc) {
-      alert('请先上传PDF文件');
-      return;
-    }
-
-    const pageRangeStr = document.getElementById('pageNumbersInput').value.trim();
-    if (!pageRangeStr) {
-      alert('请输入要删除的页面号');
-      return;
-    }
-
-    try {
-      const totalPages = pdfDoc.getPageCount();
-      const pagesToDelete = parsePageRanges(pageRangeStr, totalPages);
-
-      if (pagesToDelete.length === 0) {
-        alert('没有找到有效的页面号');
-        return;
-      }
-
-      // 验证所有页面号都在有效范围内
-      for (const pageNum of pagesToDelete) {
-        if (pageNum < 1 || pageNum > totalPages) {
-          alert(`页面号 ${pageNum} 超出范围 (1-${totalPages})`);
-          return;
-        }
-      }
-
-      // 按降序排列页面号，这样删除时索引不会受影响
-      const sortedPages = pagesToDelete.sort((a, b) => b - a);
-
-      console.log(`将要删除页面: ${sortedPages.join(', ')}`);
-
-      // 删除页面 (注意：pdf-lib中页面索引从0开始)
-      for (const pageNum of sortedPages) {
-        pdfDoc.removePage(pageNum - 1); // 减1因为数组索引从0开始
-      }
-
-      // 保存并显示更新后的PDF
-      const modifiedPdfBytes = await pdfDoc.save();
-      await loadAndDisplayPdf(modifiedPdfBytes);
-
-      alert(`成功删除页面: ${pagesToDelete.join(', ')}`);
-    } catch (error) {
-      alert('删除页面失败: ' + error.message);
-    }
-  }
-
-  async function insertPdf() {
-    if (!pdfDoc) {
-      alert('请先上传主PDF文件');
-      return;
-    }
-
-    const insertPdfFile = document.getElementById('insertPdfFileInput').files[0];
-    if (!insertPdfFile) {
-      alert('请选择要插入的PDF文件');
-      return;
-    }
-
-    const position = document.getElementById('insertPositionPdf').value;
-    const targetPage = parseInt(document.getElementById('insertPageNumberPdf').value);
-    const totalPages = pdfDoc.getPageCount();
-
-    if (isNaN(targetPage) || targetPage < 1 || targetPage > totalPages) {
-      alert(`页面号无效 (1-${totalPages})`);
-      return;
-    }
-
-    try {
-      // 加载要插入的PDF
-      const insertPdfBytes = await insertPdfFile.arrayBuffer();
-      const insertPdfDoc = await PDFLib.PDFDocument.load(insertPdfBytes);
-
-      // 计算插入位置的索引
-      let insertIndex = targetPage - 1; // 转换为0基索引
-      if (position === 'after') {
-        insertIndex += 1; // 在指定页后面插入
-      }
-
-      // 将要插入PDF的页面复制到主PDF
-      const copiedPages = await pdfDoc.copyPages(insertPdfDoc, insertPdfDoc.getPageIndices());
-
-      // 在指定位置插入页面
-      for (let i = 0; i < copiedPages.length; i++) {
-        pdfDoc.insertPage(insertIndex + i, copiedPages[i]);
-      }
-
-      // 保存并显示更新后的PDF
-      const modifiedPdfBytes = await pdfDoc.save();
-      await loadAndDisplayPdf(modifiedPdfBytes);
-
-      alert(`成功在第${targetPage}页${position === 'before' ? '前' : '后'}插入了${copiedPages.length}页PDF内容`);
-    } catch (error) {
-      alert('插入PDF失败: ' + error.message);
-    }
-  }
-
-  async function insertImage() {
-    if (!pdfDoc) {
-      alert('请先上传主PDF文件');
-      return;
-    }
-
-    const insertImageFile = document.getElementById('insertImageFileInput').files[0];
-    if (!insertImageFile) {
-      alert('请选择要插入的图片文件');
-      return;
-    }
-
-    const position = document.getElementById('insertPositionImage').value;
-    const targetPage = parseInt(document.getElementById('insertPageNumberImage').value);
-    const totalPages = pdfDoc.getPageCount();
-
-    if (isNaN(targetPage) || targetPage < 1 || targetPage > totalPages) {
-      alert(`页面号无效 (1-${totalPages})`);
-      return;
-    }
-
-    try {
-      // 读取图片数据
-      const imageBytes = await insertImageFile.arrayBuffer();
-
-      // 创建一个新的PDF文档来存放图片
-      const imagePdfDoc = await PDFLib.PDFDocument.create();
-
-      // 根据图片类型嵌入到PDF
-      let embeddedImage;
-      if (insertImageFile.type.startsWith('image/jpeg')) {
-        embeddedImage = await imagePdfDoc.embedJpg(imageBytes);
-      } else if (insertImageFile.type.startsWith('image/png')) {
-        embeddedImage = await imagePdfDoc.embedPng(imageBytes);
-      } else {
-        alert('仅支持JPG和PNG格式的图片');
-        return;
-      }
-
-      // 添加一个页面用于放置图片
-      const imagePage = imagePdfDoc.addPage();
-      const {width, height} = embeddedImage.scale(1);
-
-      // 设置页面尺寸为图片尺寸或A4比例
-      const maxWidth = 500;
-      const maxHeight = 700;
-      let scale = Math.min(maxWidth / width, maxHeight / height, 1);
-
-      const scaledWidth = width * scale;
-      const scaledHeight = height * scale;
-
-      imagePage.setSize(scaledWidth, scaledHeight);
-      imagePage.drawImage(embeddedImage, {
-        x: (scaledWidth - width * scale) / 2,
-        y: (scaledHeight - height * scale) / 2,
-        width: width * scale,
-        height: height * scale,
-      });
-
-      // 保存图片PDF
-      const imagePdfBytes = await imagePdfDoc.save();
-      const imagePdfDocLoaded = await PDFLib.PDFDocument.load(imagePdfBytes);
-
-      // 计算插入位置的索引
-      let insertIndex = targetPage - 1; // 转换为0基索引
-      if (position === 'after') {
-        insertIndex += 1; // 在指定页后面插入
-      }
-
-      // 将图片PDF的页面复制到主PDF
-      const copiedPages = await pdfDoc.copyPages(imagePdfDocLoaded, imagePdfDocLoaded.getPageIndices());
-
-      // 在指定位置插入页面
-      for (let i = 0; i < copiedPages.length; i++) {
-        pdfDoc.insertPage(insertIndex + i, copiedPages[i]);
-      }
-
-      // 保存并显示更新后的PDF
-      const modifiedPdfBytes = await pdfDoc.save();
-      await loadAndDisplayPdf(modifiedPdfBytes);
-
-      alert(`成功在第${targetPage}页${position === 'before' ? '前' : '后'}插入了图片`);
-    } catch (error) {
-      alert('插入图片失败: ' + error.message);
-    }
-  }
-
-  function downloadPdf() {
-    if (!pdfDoc) {
-      alert('没有可下载的PDF');
-      return;
-    }
-
-    pdfDoc.save().then(pdfBytes => {
-      const blob = new Blob([pdfBytes], {type: 'application/pdf'});
-      const url = URL.createObjectURL(blob);
-
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'edited-pdf.pdf';
-      document.body.appendChild(a);
-      a.click();
-
-      // 清理DOM元素和URL对象
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }).catch(error => {
-      alert('下载失败: ' + error.message);
-    });
-  }
-
-  function resetEditor() {
-    // 重置所有输入字段
-    document.getElementById('mainPdfFileInput').value = '';
-    document.getElementById('pageNumbersInput').value = '';
-    document.getElementById('insertPageNumberPdf').value = '1';
-    document.getElementById('insertPdfFileInput').value = '';
-    document.getElementById('insertPageNumberImage').value = '1';
-    document.getElementById('insertImageFileInput').value = '';
-
-    // 重置状态
-    pdfDoc = null;
-    originalPdfBytes = null;
-    document.getElementById('currentTotalPages').textContent = '0';
-    document.getElementById('pdfPreview').src = '';
-    document.getElementById('downloadBtn').disabled = true;
-  }
-</script>
+<script src="./app.js"></script>
 </body>
 </html>
-
-
-

@@ -1,345 +1,160 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN">
 <head>
-  <meta charset="utf-8"/>
-  <title>PDF压缩工具</title>
-  <!--    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>-->
-  <!--    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>-->
-  <!-- trae编写，始于2026.1.8 -->
-  <script src="./pdf.min.js"></script>
-  <script src="./jspdf.umd.min.js"></script>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 1000px;
-      margin: 0 auto;
-      padding: 20px;
-      background-color: #f5f5f5;
-    }
-
-    .container {
-      background-color: white;
-      padding: 20px;
-      border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    }
-
-    h1 {
-      color: #333;
-      text-align: center;
-    }
-
-    .section {
-      margin: 20px 0;
-      padding: 15px;
-      border: 1px solid #ddd;
-      border-radius: 5px;
-      background-color: #fafafa;
-    }
-
-    h3 {
-      margin-top: 0;
-      color: #444;
-    }
-
-    input[type="file"], input[type="number"], button, select {
-      padding: 10px;
-      margin: 5px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-    }
-
-    button {
-      background-color: #4CAF50;
-      color: white;
-      cursor: pointer;
-      margin: 5px 10px 5px 0;
-    }
-
-    button:hover {
-      background-color: #45a049;
-    }
-
-    .action-btn {
-      background-color: #2196F3;
-    }
-
-    .action-btn:hover {
-      background-color: #1976D2;
-    }
-
-    iframe {
-      width: 100%;
-      height: 400px;
-      border: 1px solid #ddd;
-    }
-
-    .info {
-      background-color: #e7f3ff;
-      padding: 10px;
-      border-radius: 4px;
-      margin: 10px 0;
-    }
-
-    .file-info {
-      margin: 10px 0;
-      padding: 10px;
-      background-color: #f0f0f0;
-      border-radius: 4px;
-    }
-
-    .back-btn {
-      background-color: #607d8b;
-    }
-
-    .back-btn:hover {
-      background-color: #455a64;
-    }
-  </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF 压缩工具</title>
+  <!-- trae编写，始于2026.1.8；2026.11.3 qoder+dsv4f1017 重构：pdf-lib 直嵌 JPEG + 进度条 -->
+  <link rel="stylesheet" href="./styles.css">
 </head>
 
 <body>
-<div class="container">
-  <h1>PDF压缩工具</h1>
+  <div class="page">
+    <header class="hero">
+      <div>
+        <h1>PDF 压缩</h1>
+        <p class="hero-sub">逐页重采样后重新封装，全程本地处理，文件不会上传。</p>
+      </div>
+      <a class="back-link" href="..">返回主页面</a>
+    </header>
 
-  <div class="section">
-    <h3>上传PDF文件</h3>
-    <input type="file" id="pdfFileInput" accept=".pdf"/>
-    <div id="fileInfo" class="file-info hidden"></div>
-  </div>
+    <div class="grid2">
+      <section class="card">
+        <h2><span class="idx">1</span>选择文件</h2>
+        <label class="dropzone" id="dropzone">
+          <input type="file" id="fileInput" class="visually-hidden" accept="application/pdf,.pdf" tabindex="-1">
+          <span class="dz-icon">PDF</span>
+          <span class="dz-title" id="dzTitle">点击选择或拖拽 PDF 文件到这里</span>
+          <span class="dz-hint">支持 100MB 以上的大文件，本地处理不上传</span>
+        </label>
 
-  <div class="section">
-    <h3>压缩选项</h3>
-    <div>
-      <label for="compressionLevel">压缩级别: </label>
-      <select id="compressionLevel">
-        <option value="low">低压缩 (保留高质量)</option>
-        <option value="medium" selected>中等压缩 (平衡质量和大小)</option>
-        <option value="high">高压缩 (更小文件)</option>
-      </select>
+        <div class="file-meta" id="fileMeta" hidden>
+          <div class="meta-item wide">
+            <span>文件名</span>
+            <strong id="metaName">-</strong>
+          </div>
+          <div class="meta-item">
+            <span>原始大小</span>
+            <strong id="metaSize">-</strong>
+          </div>
+          <div class="meta-item">
+            <span>页数</span>
+            <strong id="metaPages">-</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2><span class="idx">2</span>压缩设置</h2>
+        <div class="modes" id="modes" role="group" aria-label="压缩方式">
+          <button type="button" class="mode active" data-mode="raster" aria-pressed="true">整页转图片</button>
+          <button type="button" class="mode" data-mode="image" aria-pressed="false">只压缩图片</button>
+        </div>
+        <p class="mode-note" id="modeNote">每页重新渲染成一整张图片再封装：体积下降最多，但文字会变成图像，不能再选中或搜索。</p>
+        <div class="presets" id="presets">
+          <button type="button" class="preset" data-level="low" aria-pressed="false">
+            <span class="preset-name">低压缩</span>
+            <span class="preset-desc">画质优先<br>144 DPI · 质量 85</span>
+          </button>
+          <button type="button" class="preset active" data-level="medium" aria-pressed="true">
+            <span class="preset-name">中等压缩</span>
+            <span class="preset-desc">推荐 · 平衡<br>108 DPI · 质量 70</span>
+          </button>
+          <button type="button" class="preset" data-level="high" aria-pressed="false">
+            <span class="preset-name">高压缩</span>
+            <span class="preset-desc">体积优先<br>84 DPI · 质量 55</span>
+          </button>
+        </div>
+
+        <details class="advanced">
+          <summary id="advSummary">高级设置</summary>
+          <label class="field">
+            <span>图片质量 <em id="qualityValue">70</em></span>
+            <input type="range" id="qualityRange" min="30" max="95" step="1" value="70">
+          </label>
+          <label class="field">
+            <span id="dpiLabel">渲染清晰度</span>
+            <select id="dpiSelect">
+              <option value="72">72 DPI（最小体积）</option>
+              <option value="84">84 DPI</option>
+              <option value="96">96 DPI</option>
+              <option value="108" selected>108 DPI</option>
+              <option value="144">144 DPI</option>
+              <option value="180">180 DPI</option>
+              <option value="216">216 DPI（最慢）</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>黑白（灰度）</span>
+            <input type="checkbox" id="grayToggle">
+          </label>
+          <p class="field-hint">把彩色转成灰度，体积通常再降 5%~8%，打印也更省墨。彩色图片、图表、印章请勿开启。</p>
+        </details>
+
+        <p class="tip" id="modeTip">压缩方式是把每页重新渲染成图片，因此页面里的文字会变成图像（不可再选中/搜索）。扫描件、图片型 PDF 效果最好，纯文字 PDF 反而可能变大。</p>
+      </section>
     </div>
-    <div style="margin-top: 10px;">
-      <label for="imageQuality">图片质量 (0-100): </label>
-      <input type="number" id="imageQuality" min="10" max="100" value="70" step="5"/>
-    </div>
+
+    <section class="card">
+      <div class="actions">
+        <button type="button" class="btn btn-primary" id="compressBtn" disabled>开始压缩</button>
+        <button type="button" class="btn btn-danger" id="cancelBtn" hidden>取消</button>
+        <button type="button" class="btn btn-ghost" id="downloadBtn" disabled>下载压缩后的 PDF</button>
+      </div>
+
+      <div class="progress" id="progressBox" hidden>
+        <div class="progress-head">
+          <span class="label" id="progressLabel" aria-live="polite">准备中…</span>
+          <span class="pct" id="progressPercent">0%</span>
+        </div>
+        <div class="bar">
+          <div class="bar-fill" id="barFill"></div>
+        </div>
+        <div class="progress-foot">
+          <span id="progressDetail">&nbsp;</span>
+          <span id="progressEta">&nbsp;</span>
+        </div>
+      </div>
+
+      <div class="result" id="resultBox" hidden>
+        <div class="stat">
+          <span>原始大小</span>
+          <strong id="statBefore">-</strong>
+        </div>
+        <div class="stat">
+          <span>压缩后</span>
+          <strong id="statAfter">-</strong>
+        </div>
+        <div class="stat" id="statRatioCard">
+          <span>压缩率</span>
+          <strong id="statRatio">-</strong>
+        </div>
+        <div class="stat">
+          <span>耗时</span>
+          <strong id="statTime">-</strong>
+        </div>
+      </div>
+
+      <div class="notice info" id="resultNote" hidden></div>
+
+      <div class="notice error" id="errorBox" hidden></div>
+    </section>
+
+    <section class="card">
+      <div class="preview-head">
+        <h2 style="margin: 0;">PDF 预览</h2>
+        <div class="tabs">
+          <button type="button" class="tab active" id="tabOriginal" disabled>原文件</button>
+          <button type="button" class="tab" id="tabCompressed" disabled>压缩后</button>
+        </div>
+      </div>
+      <div class="preview-empty" id="previewEmpty">选择 PDF 文件后即可预览</div>
+      <iframe id="pdfPreview" hidden title="PDF 预览"></iframe>
+    </section>
   </div>
 
-  <div class="section">
-    <button onclick="compressPdf()" id="compressBtn" disabled>压缩PDF</button>
-    <button onclick="downloadCompressedPdf()" id="downloadBtn" disabled>下载压缩后的PDF</button>
-    <button onclick="window.location.href='..'" class="back-btn">返回主页面</button>
-  </div>
-
-  <div class="section">
-    <h3>PDF预览</h3>
-    <iframe id="pdfPreview"></iframe>
-  </div>
-
-  <div class="info">
-    <p><strong>功能说明：</strong></p>
-    <ul>
-      <li>支持上传PDF文件并进行压缩</li>
-      <li>提供多种压缩级别选择</li>
-      <li>可调整图片质量以进一步减小文件大小</li>
-      <li>支持实时预览压缩前后的PDF</li>
-    </ul>
-  </div>
-</div>
-
-<script>
-  let originalPdfBytes = null;
-  let compressedPdfBytes = null;
-  let originalFileSize = 0;
-  let compressedFileSize = 0;
-
-  document.getElementById('pdfFileInput').addEventListener('change', async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    originalFileSize = file.size;
-    originalPdfBytes = await file.arrayBuffer();
-
-    // 更新文件信息
-    const fileInfoDiv = document.getElementById('fileInfo');
-    fileInfoDiv.innerHTML = `
-                <p>文件名: ${file.name}</p>
-                <p>原始大小: ${formatFileSize(originalFileSize)}</p>
-                <p>页数: <span id="pageCount">0</span></p>
-            `;
-    fileInfoDiv.classList.remove('hidden');
-
-    // 显示PDF预览
-    const previewUrl = URL.createObjectURL(new Blob([originalPdfBytes], {type: 'application/pdf'}));
-    document.getElementById('pdfPreview').src = previewUrl;
-
-    // 使用PDF.js获取并显示页数
-    try {
-      const pdfjsLib = window['pdfjs-dist/build/pdf'];
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-      // 创建ArrayBuffer副本，避免detached ArrayBuffer错误
-      const pdfBytesCopy = originalPdfBytes.slice(0);
-      const pdfData = new Uint8Array(pdfBytesCopy);
-      const pdf = await pdfjsLib.getDocument({data: pdfData}).promise;
-      document.getElementById('pageCount').textContent = pdf.numPages;
-    } catch (error) {
-      console.error('获取页数失败:', error);
-    }
-
-    // 启用压缩按钮
-    document.getElementById('compressBtn').disabled = false;
-    document.getElementById('downloadBtn').disabled = true;
-  });
-
-  async function compressPdf() {
-    if (!originalPdfBytes) {
-      alert('请先上传PDF文件');
-      return;
-    }
-
-    try {
-      // 显示加载状态
-      const compressBtn = document.getElementById('compressBtn');
-      const originalText = compressBtn.textContent;
-      compressBtn.textContent = '压缩中...';
-      compressBtn.disabled = true;
-
-      // 获取压缩选项
-      const compressionLevel = document.getElementById('compressionLevel').value;
-      let imageQuality = parseInt(document.getElementById('imageQuality').value) / 100;
-
-      // 根据压缩级别调整图片质量
-      if (compressionLevel === 'high') {
-        imageQuality = Math.min(imageQuality, 0.6); // 高压缩级别使用更低的图片质量
-      } else if (compressionLevel === 'low') {
-        imageQuality = Math.max(imageQuality, 0.8); // 低压缩级别保持较高图片质量
-      }
-
-      // 使用PDF.js解析PDF
-      const pdfjsLib = window['pdfjs-dist/build/pdf'];
-      // pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.js';
-
-      // 创建ArrayBuffer副本，避免detached ArrayBuffer错误
-      const pdfBytesCopy = originalPdfBytes.slice(0);
-      const pdfData = new Uint8Array(pdfBytesCopy);
-      const pdf = await pdfjsLib.getDocument({data: pdfData}).promise;
-      const totalPages = pdf.numPages;
-
-      // 使用jsPDF创建新的PDF文档，先不设置固定尺寸
-      const {jsPDF} = window.jspdf;
-      let newPdf;
-
-      // 遍历所有页面，转换为图片并压缩
-      for (let i = 1; i <= totalPages; i++) {
-        const page = await pdf.getPage(i);
-        const viewport = page.getViewport({scale: 1.5});
-
-        // 创建Canvas用于渲染PDF页面
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-
-        // 渲染PDF页面到Canvas
-        await page.render({
-          canvasContext: context,
-          viewport: viewport
-        }).promise;
-
-        // 压缩图片（将Canvas转换为Blob，设置压缩质量）
-        const compressedImageBlob = await new Promise((resolve) => {
-          canvas.toBlob(resolve, 'image/jpeg', imageQuality);
-        });
-
-        // 将Blob转换为DataURL
-        const compressedImageUrl = URL.createObjectURL(compressedImageBlob);
-
-        // 获取当前页面的原始尺寸（转换为mm，1px = 0.2645833333mm）
-        const pxToMm = 0.2645833333;
-        const currentWidth = viewport.width * pxToMm;
-        const currentHeight = viewport.height * pxToMm;
-        const isLandscape = currentWidth > currentHeight;
-
-        // 第一页：创建PDF文档
-        if (i === 1) {
-          newPdf = new jsPDF({
-            orientation: isLandscape ? 'landscape' : 'portrait',
-            unit: 'mm',
-            format: [currentWidth, currentHeight]
-          });
-        } else {
-          // 后续页面：使用当前页面尺寸添加新页
-          // jsPDF支持为每个页面设置不同尺寸
-          newPdf.addPage([currentWidth, currentHeight], isLandscape ? 'landscape' : 'portrait');
-        }
-
-        // 添加图片到PDF，使用当前页面的尺寸
-        newPdf.addImage(compressedImageUrl, 'JPEG', 0, 0, currentWidth, currentHeight);
-
-        // 清理URL对象
-        URL.revokeObjectURL(compressedImageUrl);
-      }
-
-      // 保存压缩后的PDF
-      const pdfOutput = newPdf.output('arraybuffer');
-      compressedPdfBytes = new Uint8Array(pdfOutput);
-      compressedFileSize = compressedPdfBytes.byteLength;
-
-      // 显示压缩后的文件大小
-      const fileInfoDiv = document.getElementById('fileInfo');
-      fileInfoDiv.innerHTML = `
-                    <p>文件名: ${document.getElementById('pdfFileInput').files[0].name}</p>
-                    <p>原始大小: ${formatFileSize(originalFileSize)}</p>
-                    <p>压缩后大小: ${formatFileSize(compressedFileSize)}</p>
-                    <p>压缩率: ${((1 - compressedFileSize / originalFileSize) * 100).toFixed(1)}%</p>
-                    <p>页数: ${totalPages}</p>
-                `;
-
-      // 更新预览
-      document.getElementById('pdfPreview').src = URL.createObjectURL(new Blob([compressedPdfBytes], {type: 'application/pdf'}));
-
-      // 恢复按钮状态
-      compressBtn.textContent = originalText;
-      compressBtn.disabled = false;
-      document.getElementById('downloadBtn').disabled = false;
-
-      alert('PDF压缩完成!');
-    } catch (error) {
-      console.error('压缩失败:', error);
-      alert('压缩失败: ' + error.message);
-      // 恢复按钮状态
-      document.getElementById('compressBtn').disabled = false;
-    }
-  }
-
-  function downloadCompressedPdf() {
-    if (!compressedPdfBytes) {
-      alert('请先压缩PDF文件');
-      return;
-    }
-
-    const blob = new Blob([compressedPdfBytes], {type: 'application/pdf'});
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'compressed-pdf.pdf';
-    document.body.appendChild(a);
-    a.click();
-
-    // 清理
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
-  function formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  }
-</script>
+  <script src="./pdf.min.js"></script>
+  <script src="../pdf-lib.js"></script>
+  <script src="./app.js"></script>
 </body>
 </html>
