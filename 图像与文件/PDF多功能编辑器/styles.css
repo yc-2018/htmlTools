@@ -435,6 +435,15 @@ input[type="file"]::file-selector-button:hover { border-color: var(--accent); co
 .annot-actions { display: flex; align-items: center; gap: 4px; }
 /* 窄屏放不下就换行，按钮本身不许被压得文字折行 */
 .annot-tools { flex-wrap: wrap; min-width: 0; }
+/* 颜色与粗细合成一组，换行时整体挪到下一行，不会被拆散 */
+.annot-style {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+.annot-style .annot-colors { flex: none; }
+.annot-style .annot-widths { flex: none; }
 .annot-tool,
 .annot-actions button {
   padding: 4px 9px;
