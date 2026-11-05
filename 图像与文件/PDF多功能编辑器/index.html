@@ -10,6 +10,8 @@
 <!--通义编写： https://www.qianwen.com/share?shareId=0fcdd159-1f9c-4620-9fcd-588cabd19ac1 -->
 <!--这库的文档 https://pdf-lib.js.org/docs/api/ -->
 <script src="./pdf-lib.js"></script>
+<!--预览渲染复用压缩工具目录下的 pdf.js，避免浏览器自带 PDF 查看器的未翻译文案-->
+<script src="./压缩/pdf.min.js"></script>
 </head>
 
 <body>
@@ -135,8 +137,157 @@
           <button type="button" class="btn btn-quiet" onclick="resetEditor()">重置</button>
         </div>
       </div>
-      <div class="preview">
-        <iframe id="pdfPreview" title="PDF 预览"></iframe>
+      <div class="preview" id="previewPane">
+        <div class="viewer-bar" id="viewerBar" hidden>
+          <div class="viewer-group">
+            <button type="button" class="viewer-btn" id="thumbsBtn" title="显示/隐藏页面缩略图" aria-label="显示/隐藏页面缩略图" aria-pressed="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <path d="M9 3v18"/>
+              </svg>
+            </button>
+          </div>
+          <span class="viewer-sep" aria-hidden="true"></span>
+          <div class="viewer-group">
+            <button type="button" class="viewer-btn" id="prevPageBtn" title="上一页" aria-label="上一页" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m14 6-6 6 6 6"/>
+              </svg>
+            </button>
+            <span class="viewer-nav">
+              <input type="number" id="viewPageInput" min="1" value="1" aria-label="当前页码"/>
+              <span class="viewer-nav-total">/<b id="viewPageTotal">0</b></span>
+            </span>
+            <button type="button" class="viewer-btn" id="nextPageBtn" title="下一页" aria-label="下一页" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m10 6 6 6-6 6"/>
+              </svg>
+            </button>
+            <button type="button" class="viewer-btn" id="twoUpBtn" title="双页并排" aria-label="双页并排" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="4" width="8" height="16" rx="1.5"/>
+                <rect x="13" y="4" width="8" height="16" rx="1.5"/>
+              </svg>
+            </button>
+          </div>
+          <span class="viewer-sep" aria-hidden="true"></span>
+          <div class="viewer-group">
+            <button type="button" class="viewer-btn" id="rotateLeftBtn" title="向左旋转 90 度" aria-label="向左旋转 90 度">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+              </svg>
+            </button>
+            <button type="button" class="viewer-btn" id="rotateRightBtn" title="向右旋转 90 度" aria-label="向右旋转 90 度">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+                <path d="M21 3v5h-5"/>
+              </svg>
+            </button>
+            <button type="button" class="viewer-btn" id="annotationsBtn" title="显示/隐藏 PDF 内已有注释" aria-label="显示/隐藏 PDF 内已有注释" aria-pressed="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+          <div class="viewer-group viewer-group-end">
+            <button type="button" class="viewer-btn" id="annotateBtn" title="标注（画笔 · 荧光笔）" aria-label="标注（画笔 · 荧光笔）" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 20h9"/>
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+              </svg>
+            </button>
+            <button type="button" class="viewer-btn" id="zoomOutBtn" title="缩小" aria-label="缩小">−</button>
+            <span class="viewer-zoom" id="zoomLabel">100%</span>
+            <button type="button" class="viewer-btn" id="zoomInBtn" title="放大" aria-label="放大">+</button>
+            <button type="button" class="viewer-btn viewer-btn-wide" id="fitBtn" title="按预览区宽度铺满">适应宽度</button>
+            <button type="button" class="viewer-btn" id="presentBtn" title="全屏演示" aria-label="全屏演示">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="12" rx="2"/>
+                <path d="M12 16v4"/>
+                <path d="M8 20h8"/>
+              </svg>
+            </button>
+            <button type="button" class="viewer-btn" id="infoBtn" title="文档属性" aria-label="文档属性">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M12 16v-5"/>
+                <path d="M12 8h.01"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="annot-bar" id="annotBar" hidden>
+          <div class="annot-tools" id="annotTools">
+            <button type="button" class="annot-tool is-active" data-tool="ink">画笔</button>
+            <button type="button" class="annot-tool" data-tool="marker">荧光笔</button>
+            <button type="button" class="annot-tool" data-tool="line">直线</button>
+            <button type="button" class="annot-tool" data-tool="rect">矩形</button>
+            <button type="button" class="annot-tool" data-tool="ellipse">椭圆</button>
+          </div>
+          <div class="annot-colors" id="annotColors">
+            <button type="button" class="annot-color is-active" data-color="#E5484D" style="--c:#E5484D" aria-label="红色"></button>
+            <button type="button" class="annot-color" data-color="#211C2B" style="--c:#211C2B" aria-label="黑色"></button>
+            <button type="button" class="annot-color" data-color="#2F6FEB" style="--c:#2F6FEB" aria-label="蓝色"></button>
+            <button type="button" class="annot-color" data-color="#F5A524" style="--c:#F5A524" aria-label="黄色"></button>
+            <button type="button" class="annot-color-custom" id="annotCustomBtn" title="自定义颜色" aria-label="自定义颜色" aria-expanded="false">
+              <span class="annot-custom-dot" id="annotCustomDot"></span>
+            </button>
+          </div>
+          <div class="annot-widths" id="annotWidths">
+            <span class="annot-size" id="annotSize"><i class="annot-dot" id="annotDot"></i><span id="annotSizeText">4 px</span></span>
+            <input type="range" class="annot-range" id="annotWidthRange" min="1" max="16" step="1" value="4" aria-label="笔画粗细"/>
+          </div>
+          <div class="annot-actions">
+            <button type="button" class="annot-icon" id="annotUndoBtn" title="撤销笔画" aria-label="撤销笔画" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9 14 4 9l5-5"/>
+                <path d="M4 9h9a6 6 0 0 1 0 12H8"/>
+              </svg>
+            </button>
+            <button type="button" class="annot-icon" id="annotRedoBtn" title="前进笔画" aria-label="前进笔画" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m15 14 5-5-5-5"/>
+                <path d="M20 9h-9a6 6 0 0 0 0 12h5"/>
+              </svg>
+            </button>
+            <button type="button" id="annotClearBtn">清空本页</button>
+          </div>
+        </div>
+        <div class="viewer-body" id="viewerBody" hidden>
+          <aside class="viewer-thumbs" id="viewerThumbs" aria-label="页面缩略图">
+            <div class="viewer-thumb-list" id="viewerThumbList"></div>
+          </aside>
+          <div class="viewer-scroll" id="viewerScroll">
+            <div class="viewer-pages" id="viewerPages"></div>
+            <div class="annot-cursor" id="annotCursor" hidden aria-hidden="true"></div>
+          </div>
+        </div>
+        <div class="viewer-status" id="viewerStatus" hidden></div>
+
+        <div class="present-stage" id="presentStage" hidden>
+          <canvas id="presentCanvas"></canvas>
+          <div class="present-bar">
+            <span id="presentPage">1 / 1</span>
+            <span>← → 翻页 · Esc 退出</span>
+          </div>
+        </div>
+
+        <div class="info-panel" id="infoPanel" hidden role="dialog" aria-modal="true" aria-label="文档属性">
+          <div class="info-card">
+            <div class="info-head">
+              <h3>文档属性</h3>
+              <button type="button" class="icon-btn" id="infoCloseBtn" title="关闭" aria-label="关闭">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m6 6 12 12M18 6 6 18"/>
+                </svg>
+              </button>
+            </div>
+            <dl class="info-list" id="infoList"></dl>
+          </div>
+        </div>
         <div class="preview-empty" id="previewEmpty">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
@@ -152,6 +303,35 @@
 </div>
 
 <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+<!-- 自定义取色盘：色相 + 明度选色，带透明通道 -->
+<div class="color-pop" id="colorPop" hidden role="dialog" aria-label="自定义颜色">
+  <div class="cp-sv" id="cpSv">
+    <span class="cp-thumb" id="cpThumb"></span>
+  </div>
+  <div class="cp-line">
+    <span class="cp-hue-track" aria-hidden="true"></span>
+    <input type="range" class="cp-range" id="cpHue" min="0" max="360" step="1" value="0" aria-label="色相"/>
+  </div>
+  <div class="cp-line">
+    <span class="cp-alpha-track" aria-hidden="true"></span>
+    <input type="range" class="cp-range" id="cpAlpha" min="5" max="100" step="1" value="100" aria-label="不透明度"/>
+  </div>
+  <div class="cp-foot">
+    <input type="text" class="cp-hex" id="cpHex" value="#E5484D" maxlength="7" spellcheck="false" aria-label="颜色值"/>
+    <span class="cp-alpha-text" id="cpAlphaText">100%</span>
+    <button type="button" class="cp-done" id="cpDone">完成</button>
+  </div>
+</div>
+
+<!-- 载入遮罩：大文件解析在主线程同步执行，先给出明确的等待反馈 -->
+<div class="busy" id="busyOverlay" hidden role="status" aria-live="polite">
+  <div class="busy-card">
+    <span class="busy-spinner" aria-hidden="true"></span>
+    <p class="busy-text" id="busyText">正在载入 PDF…</p>
+    <p class="busy-sub" id="busySub">文件只在本地解析，不会上传</p>
+  </div>
+</div>
 
 <script src="./app.js"></script>
 </body>
