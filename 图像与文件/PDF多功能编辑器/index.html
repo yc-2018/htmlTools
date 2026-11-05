@@ -228,20 +228,24 @@
             <button type="button" class="annot-tool" data-tool="ellipse">椭圆</button>
             <button type="button" class="annot-tool" data-tool="note">注释</button>
             <button type="button" class="annot-tool" data-tool="text">文字</button>
+            <button type="button" class="annot-tool" data-tool="underline">划线</button>
+            <button type="button" class="annot-tool" data-tool="highlight">高亮</button>
             <button type="button" class="annot-tool" data-tool="eraser">橡皮</button>
           </div>
-          <div class="annot-colors" id="annotColors">
-            <button type="button" class="annot-color is-active" data-color="#E5484D" style="--c:#E5484D" aria-label="红色"></button>
-            <button type="button" class="annot-color" data-color="#211C2B" style="--c:#211C2B" aria-label="黑色"></button>
-            <button type="button" class="annot-color" data-color="#2F6FEB" style="--c:#2F6FEB" aria-label="蓝色"></button>
-            <button type="button" class="annot-color" data-color="#F5A524" style="--c:#F5A524" aria-label="黄色"></button>
-            <button type="button" class="annot-color-custom" id="annotCustomBtn" title="自定义颜色" aria-label="自定义颜色" aria-expanded="false">
-              <span class="annot-custom-dot" id="annotCustomDot"></span>
-            </button>
-          </div>
-          <div class="annot-widths" id="annotWidths">
-            <span class="annot-size" id="annotSize"><i class="annot-dot" id="annotDot"></i><span id="annotSizeText">4 px</span></span>
-            <input type="range" class="annot-range" id="annotWidthRange" min="1" max="16" step="1" value="4" aria-label="笔画粗细"/>
+          <div class="annot-style" id="annotStyle">
+            <div class="annot-colors" id="annotColors">
+              <button type="button" class="annot-color is-active" data-color="#E5484D" style="--c:#E5484D" aria-label="红色"></button>
+              <button type="button" class="annot-color" data-color="#211C2B" style="--c:#211C2B" aria-label="黑色"></button>
+              <button type="button" class="annot-color" data-color="#2F6FEB" style="--c:#2F6FEB" aria-label="蓝色"></button>
+              <button type="button" class="annot-color" data-color="#F5A524" style="--c:#F5A524" aria-label="黄色"></button>
+              <button type="button" class="annot-color-custom" id="annotCustomBtn" title="自定义颜色" aria-label="自定义颜色" aria-expanded="false">
+                <span class="annot-custom-dot" id="annotCustomDot"></span>
+              </button>
+            </div>
+            <div class="annot-widths" id="annotWidths">
+              <span class="annot-size" id="annotSize"><i class="annot-dot" id="annotDot"></i><span id="annotSizeText">4 px</span></span>
+              <input type="range" class="annot-range" id="annotWidthRange" min="1" max="16" step="1" value="4" aria-label="笔画粗细"/>
+            </div>
           </div>
           <div class="annot-actions">
             <button type="button" class="annot-icon" id="annotUndoBtn" title="撤销笔画" aria-label="撤销笔画" disabled>

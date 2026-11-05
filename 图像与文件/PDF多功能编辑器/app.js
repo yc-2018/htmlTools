@@ -207,6 +207,10 @@ function showPreviewError(message) {
 }
 
 function cancelRenderTask(host) {
+  if (host._textTask) {
+    try { host._textTask.cancel(); } catch (error) { /* 忽略取消异常 */ }
+    host._textTask = null;
+  }
   if (!host._task) return;
   try { host._task.cancel(); } catch (error) { /* 忽略取消异常 */ }
   host._task = null;
@@ -336,8 +340,12 @@ async function paintTextLayer(shell, page, viewport, token) {
     const content = await page.getTextContent();
     if (token !== pdfView.token || !shell.isConnected) return;
     layer.textContent = '';
-    layer.style.width = viewport.width + 'px';
-    layer.style.height = viewport.height + 'px';
+    // 这个版本的文字层字号写成 calc(var(--scale-factor) * Npx)，缩放比例得由我们给
+    layer.style.setProperty('--scale-factor', String(viewport.scale));
+    // 文字层按未旋转的页面摆放，页面转了要让整层转回来才和位图对齐
+    const rotated = ((viewport.rotation || 0) % 360 + 360) % 360;
+    if (rotated) layer.dataset.rotate = String(rotated);
+    else delete layer.dataset.rotate;
     shell._textTask = lib.renderTextLayer({textContentSource: content, container: layer, viewport});
     await shell._textTask.promise;
     shell._textTask = null;
@@ -611,18 +619,21 @@ let annotPage = 0;
 let annotColorTouched = false;
 
 // 每种工具记住自己的粗细（CSS 像素）和不透明度，荧光笔单独一套范围
-const annotWidths = {pen: 4, marker: 18, text: 14, eraser: 16};
-const annotAlphas = {pen: 1, marker: 0.32, text: 1, eraser: 1};
+const annotWidths = {pen: 4, marker: 18, text: 14, eraser: 16, underline: 2, highlight: 8};
+const annotAlphas = {pen: 1, marker: 0.32, text: 1, eraser: 1, underline: 1, highlight: 0.35};
 const PEN_WIDTH_RANGE = {min: 1, max: 16};
 const MARKER_WIDTH_RANGE = {min: 6, max: 36};
 const TEXT_SIZE_RANGE = {min: 8, max: 32};
 const ERASER_WIDTH_RANGE = {min: 6, max: 44};
+const UNDERLINE_WIDTH_RANGE = {min: 1, max: 8};
 // 每笔画一个递增序号，擦除后撤销时按它插回原来的层级
 let annotSeq = 0;
 
 // 荧光笔默认半透明宽笔头，笔画之间不叠加出深色接缝
 const MARKER_ALPHA = 0.32;
 const MARKER_COLOR = '#F5A524';
+// 画笔（也就划线）的默认色
+const PEN_COLOR = '#E5484D';
 // 注释便签字号固定；文字工具的字号走滑杆，单位是 PDF 点
 const NOTE_SIZE = 11;
 const NOTE_MAX_WIDTH = 190;
@@ -631,7 +642,10 @@ const TEXT_FONT = '"Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif';
 const isFreehand = (tool) => tool === 'ink' || tool === 'marker';
 // 注释与文字不是路径，走文字排版渲染
 const isBlockTool = (tool) => tool === 'note' || tool === 'text';
-const widthKey = (tool) => (tool === 'marker' || tool === 'text' || tool === 'eraser' ? tool : 'pen');
+// 划线与高亮作用于选中的文字，靠文字层选字触发，不在页面上起笔
+const isTextMark = (tool) => tool === 'underline' || tool === 'highlight';
+const WIDTH_TOOLS = new Set(['marker', 'text', 'eraser', 'underline', 'highlight']);
+const widthKey = (tool) => (WIDTH_TOOLS.has(tool) ? tool : 'pen');
 
 function toggleAnnotate() {
   if (!pdfView.doc) {
@@ -651,7 +665,7 @@ function toggleAnnotate() {
     closeNoteList();
     pdfView.shells.forEach(redrawAnnot);
   } else {
-    toast('标注模式：在页面上拖动画图', 'ok');
+    toast(isTextMark(annotStyle.tool) ? '标注模式：拖选文字即可划线 / 高亮' : '标注模式：在页面上拖动画图', 'ok');
   }
   syncAnnotCursor();
 }
@@ -907,6 +921,18 @@ function strokeHitsPoint(stroke, point, radius) {
     const gapY = Math.max(box.y - point.y, 0, point.y - box.y - box.height);
     return Math.hypot(gapX, gapY) <= radius;
   }
+  // 划线和高亮按行四边形判断：高亮整块都能点中，下划线只认线附近
+  if (isTextMark(stroke.type)) {
+    const reach = radius + Math.max(0, stroke.width || 0) / 2;
+    const quads = stroke.quads || [];
+    if (stroke.type === 'underline') {
+      return quads.some((quad) => {
+        const [start, end] = underlineEnds(quad);
+        return segmentDistance(point, start, end) <= reach;
+      });
+    }
+    return quads.some((quad) => quadHitsPoint(quad, point, radius));
+  }
 
   const points = stroke.points || [];
   if (!points.length) return false;
@@ -1136,10 +1162,222 @@ function collectBlocks() {
   return items.sort((a, b) => a.page - b.page);
 }
 
+/* ---------- 划线 / 高亮：作用于选中的文字 ---------- */
+// 选中范围先落到文字层的行矩形，再逐点转成 PDF 坐标，页面旋转后也能贴合原文
+function textMarkQuads(shell, range) {
+  const shellRect = shell.getBoundingClientRect();
+  const rects = [...range.getClientRects()].filter((rect) => rect.width > 1 && rect.height > 1);
+  return rects.map((rect) => [
+    [rect.left, rect.top],
+    [rect.right, rect.top],
+    [rect.right, rect.bottom],
+    [rect.left, rect.bottom]
+  ].map(([clientX, clientY]) => {
+    const [x, y] = shell._viewport.convertToPdfPoint(clientX - shellRect.left, clientY - shellRect.top);
+    return {x, y};
+  }));
+}
+
+// pdf.js 把中文拆成逐字（含标点）的 span，相邻矩形经常互相重叠或首尾相接，
+// 逐块落笔会叠出深色接缝、划线也会重复描边，所以先按行合并成整段
+function mergeTextQuads(quads) {
+  if (quads.length < 2) return quads;
+
+  const first = quads[0];
+  const unit = (from, to) => {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = Math.hypot(dx, dy) || 1;
+    return {x: dx / length, y: dy / length};
+  };
+  const origin = first[0];
+  const along = unit(first[0], first[1]); // 行方向
+  const down = unit(first[0], first[3]); // 行高方向
+  const project = (point) => {
+    const dx = point.x - origin.x;
+    const dy = point.y - origin.y;
+    return {s: dx * along.x + dy * along.y, t: dx * down.x + dy * down.y};
+  };
+
+  // 统一投到「沿行 / 跨行」两个轴上比较，旋转过的页面也一样
+  const boxes = quads.map((quad) => {
+    const mapped = quad.map(project);
+    const horizontal = mapped.map((item) => item.s);
+    const vertical = mapped.map((item) => item.t);
+    return {
+      sMin: Math.min(...horizontal),
+      sMax: Math.max(...horizontal),
+      tMin: Math.min(...vertical),
+      tMax: Math.max(...vertical)
+    };
+  });
+
+  // 先按行分组：纵向重合超过三成五就算同一行（标点、上标的框会矮一截，门槛不能太高）
+  const rows = [];
+  boxes.forEach((box) => {
+    const height = box.tMax - box.tMin;
+    const row = rows.find((item) => {
+      const overlap = Math.min(item.tMax, box.tMax) - Math.max(item.tMin, box.tMin);
+      return overlap > Math.min(height, item.tMax - item.tMin) * 0.35;
+    });
+    if (!row) {
+      rows.push({tMin: box.tMin, tMax: box.tMax, boxes: [box]});
+      return;
+    }
+    row.boxes.push(box);
+    row.tMin = Math.min(row.tMin, box.tMin);
+    row.tMax = Math.max(row.tMax, box.tMax);
+  });
+
+  // 行内把相接的块并成一段；行高统一，标点那种小框也不会凹一块
+  const merged = [];
+  rows.forEach((row) => {
+    const spans = [];
+    row.boxes
+      .slice()
+      .sort((a, b) => a.sMin - b.sMin)
+      .forEach((box) => {
+        const last = spans[spans.length - 1];
+        if (last && box.sMin <= last.sMax + 0.6) {
+          last.sMax = Math.max(last.sMax, box.sMax);
+          return;
+        }
+        spans.push({sMin: box.sMin, sMax: box.sMax});
+      });
+    spans.forEach((span) => merged.push({
+      sMin: span.sMin,
+      sMax: span.sMax,
+      tMin: row.tMin,
+      tMax: row.tMax
+    }));
+  });
+
+  const point = (s, t) => ({
+    x: origin.x + along.x * s + down.x * t,
+    y: origin.y + along.y * s + down.y * t
+  });
+  return merged.map((box) => [
+    point(box.sMin, box.tMin),
+    point(box.sMax, box.tMin),
+    point(box.sMax, box.tMax),
+    point(box.sMin, box.tMax)
+  ]);
+}
+
+// 把当前选中的文字记成一条标注；没有选区或者选区不在页面上就什么都不做
+function applyTextMark() {
+  if (!pdfView.annotating || !isTextMark(annotStyle.tool)) return false;
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return false;
+
+  const range = selection.getRangeAt(0);
+  const node = range.commonAncestorContainer;
+  const element = node.nodeType === 1 ? node : node.parentElement;
+  const layer = element ? element.closest('.text-layer') : null;
+  if (!layer) return false;
+  const shell = layer.closest('.viewer-page');
+  if (!shell || !shell._viewport) return false;
+
+  const quads = mergeTextQuads(textMarkQuads(shell, range));
+  if (!quads.length) return false;
+
+  const page = Number(shell.dataset.page);
+  const scale = pdfView.scale || 1;
+  addStroke({
+    page,
+    stroke: {
+      type: annotStyle.tool,
+      seq: ++annotSeq,
+      color: annotStyle.color,
+      // 下划线用滑杆的粗细，高亮整行铺色用不到；CSS 像素换算成 PDF 点
+      width: Math.max(0.6, annotStyle.width / scale),
+      alpha: annotStyle.tool === 'highlight' ? annotStyle.alpha : 1,
+      quads
+    }
+  });
+  annotRedo.length = 0;
+  refreshAnnotPage(page);
+  updateAnnotHistory();
+  // 应用完就收掉选区，连续拖选不会重复叠加
+  selection.removeAllRanges();
+  toast(annotStyle.tool === 'highlight' ? '已高亮选中的文字' : '已给选中的文字划线', 'ok');
+  return true;
+}
+
+// 下划线贴着基线，别落在行框最底（行距也算在里面，会显得太低）
+const UNDERLINE_LIFT = 0.18;
+
+// 四边形顺序是左上、右上、右下、左下；把底边沿两侧往上收一点
+function underlineEnds(quad) {
+  const lift = (bottom, top) => ({
+    x: bottom.x + (top.x - bottom.x) * UNDERLINE_LIFT,
+    y: bottom.y + (top.y - bottom.y) * UNDERLINE_LIFT
+  });
+  return [lift(quad[3], quad[0]), lift(quad[2], quad[1])];
+}
+
+// 划线与高亮的画法：按行画四边形，旋转页面下也不跑位
+function drawTextMark(ctx, stroke, viewport, scale) {
+  const quads = stroke.quads || [];
+  if (!quads.length) return;
+  ctx.save();
+  ctx.globalAlpha = stroke.alpha == null ? 1 : stroke.alpha;
+
+  if (stroke.type === 'highlight') {
+    ctx.fillStyle = stroke.color;
+    // 整条标注一次填充：子路径重叠的部分只上一次色，不会出现深一块浅一块
+    ctx.beginPath();
+    quads.forEach((quad) => {
+      const points = quad.map((point) => viewport.convertToViewportPoint(point.x, point.y));
+      ctx.moveTo(points[0][0], points[0][1]);
+      for (let index = 1; index < points.length; index++) ctx.lineTo(points[index][0], points[index][1]);
+      ctx.closePath();
+    });
+    ctx.fill();
+  } else {
+    ctx.strokeStyle = stroke.color;
+    ctx.lineWidth = Math.max(0.5, stroke.width * scale);
+    ctx.lineCap = 'butt';
+    quads.forEach((quad) => {
+      const [start, end] = underlineEnds(quad);
+      const [x1, y1] = viewport.convertToViewportPoint(start.x, start.y);
+      const [x2, y2] = viewport.convertToViewportPoint(end.x, end.y);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    });
+  }
+  ctx.restore();
+}
+
+// 点在四边形内部，或者离边线不超过 radius，就算命中（橡皮用）
+function quadHitsPoint(quad, point, radius) {
+  if (!quad || quad.length < 3) return false;
+  let inside = false;
+  for (let index = 0, previous = quad.length - 1; index < quad.length; previous = index++) {
+    const a = quad[index];
+    const b = quad[previous];
+    if ((a.y > point.y) !== (b.y > point.y)
+      && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) {
+      inside = !inside;
+    }
+  }
+  if (inside) return true;
+  for (let index = 0; index < quad.length; index++) {
+    if (segmentDistance(point, quad[index], quad[(index + 1) % quad.length]) <= radius) return true;
+  }
+  return false;
+}
+
 function drawStroke(ctx, stroke, viewport, scale) {
   // 注释便签与页面文字不是路径，走文字渲染
   if (isBlockTool(stroke.type)) {
     drawTextStroke(ctx, stroke, viewport, scale);
+    return;
+  }
+  if (isTextMark(stroke.type)) {
+    drawTextMark(ctx, stroke, viewport, scale);
     return;
   }
 
@@ -1668,14 +1906,21 @@ function syncWidthControl() {
   const marker = tool === 'marker';
   const text = tool === 'text';
   const eraser = tool === 'eraser';
-  const range = marker ? MARKER_WIDTH_RANGE : text ? TEXT_SIZE_RANGE : eraser ? ERASER_WIDTH_RANGE : PEN_WIDTH_RANGE;
+  const underline = tool === 'underline';
+  const highlight = tool === 'highlight';
+  const range = marker ? MARKER_WIDTH_RANGE
+    : text ? TEXT_SIZE_RANGE
+      : eraser ? ERASER_WIDTH_RANGE
+        : underline ? UNDERLINE_WIDTH_RANGE : PEN_WIDTH_RANGE;
   const input = $('annotWidthRange');
   input.min = String(range.min);
   input.max = String(range.max);
   input.value = String(annotStyle.width);
-  // 便签字号固定，滑杆不参与
-  input.disabled = tool === 'note';
-  input.title = marker ? '荧光笔粗细' : text ? '文字字号' : eraser ? '橡皮大小' : '笔画粗细';
+  // 便签字号固定、高亮整行铺色，滑杆都不参与
+  input.disabled = tool === 'note' || highlight;
+  input.title = marker ? '荧光笔粗细'
+    : text ? '文字字号'
+      : eraser ? '橡皮大小' : underline ? '下划线粗细' : highlight ? '整行高亮' : '笔画粗细';
   // 橡皮不落色，颜色一排暂时不可用
   $('annotColors').classList.toggle('is-muted', eraser);
   syncAnnotSizeLabel();
@@ -1686,13 +1931,14 @@ function syncWidthControl() {
 function syncAnnotSizeLabel() {
   const tool = annotStyle.tool;
   const note = tool === 'note';
+  const highlight = tool === 'highlight';
   $('annotSizeText').textContent = note
     ? '固定 ' + NOTE_SIZE + ' pt'
-    : annotStyle.width + (tool === 'text' ? ' pt' : ' px');
+    : highlight ? '整行' : annotStyle.width + (tool === 'text' ? ' pt' : ' px');
   const dot = $('annotDot');
-  // 便签没有笔头、橡皮不落色，圆点都没有意义
-  dot.hidden = note || tool === 'eraser';
-  if (note || tool === 'eraser') return;
+  // 便签没有笔头、橡皮不落色、高亮整行铺色，圆点都没有意义
+  dot.hidden = note || highlight || tool === 'eraser';
+  if (note || highlight || tool === 'eraser') return;
   const size = Math.min(20, Math.max(4, annotStyle.width));
   dot.style.width = size + 'px';
   dot.style.height = size + 'px';
@@ -1709,6 +1955,8 @@ function syncAnnotCursor() {
   $('viewerScroll').classList.toggle('is-freetool', freehand);
   $('viewerScroll').classList.toggle('is-erasertool', eraser);
   $('viewerScroll').classList.toggle('is-texttool', pdfView.annotating && annotStyle.tool === 'text');
+  // 划线 / 高亮要让文字层接指针，标注画布这时候退到后面
+  $('viewerScroll').classList.toggle('is-textmarktool', pdfView.annotating && isTextMark(annotStyle.tool));
   if (!show) {
     cursor.hidden = true;
     return;
@@ -1777,10 +2025,14 @@ function resetAnnotTools() {
   annotWidths.marker = 18;
   annotWidths.text = 14;
   annotWidths.eraser = 16;
+  annotWidths.underline = 2;
+  annotWidths.highlight = 8;
   annotAlphas.pen = 1;
   annotAlphas.marker = MARKER_ALPHA;
   annotAlphas.text = 1;
   annotAlphas.eraser = 1;
+  annotAlphas.underline = 1;
+  annotAlphas.highlight = 0.35;
   annotStyle.width = annotWidths.pen;
   annotStyle.alpha = annotAlphas.pen;
   annotColorTouched = false;
@@ -1808,6 +2060,8 @@ function bindAnnotEvents() {
     }
     const shell = event.target.closest('.viewer-page');
     if (!shell || !shell._viewport) return;
+    // 划线 / 高亮靠选字触发，这一下留给文字层
+    if (isTextMark(annotStyle.tool)) return;
     event.preventDefault();
 
     // 注释 / 文字：点已有内容就编辑，点空白处新建
@@ -1880,8 +2134,24 @@ function bindAnnotEvents() {
     $('annotTools').querySelectorAll('.annot-tool').forEach((item) => {
       item.classList.toggle('is-active', item === btn);
     });
-    // 头一次切到荧光笔顺带给黄色；用户自己选过颜色就不再干预
-    if (annotStyle.tool === 'marker' && !annotColorTouched) selectAnnotColor(MARKER_COLOR);
+    // 头一次切到荧光笔 / 高亮顺带给黄色；用户自己选过颜色就不再干预
+    if ((annotStyle.tool === 'marker' || annotStyle.tool === 'highlight') && !annotColorTouched) {
+      selectAnnotColor(MARKER_COLOR);
+    }
+    // 划线回到默认的红，不然会沿用它前面高亮用的黄色
+    if (annotStyle.tool === 'underline' && !annotColorTouched) selectAnnotColor(PEN_COLOR);
+    if (isTextMark(annotStyle.tool)) {
+      toast(annotStyle.tool === 'highlight' ? '拖选页面上的文字即可高亮' : '拖选页面上的文字即可划线', 'ok');
+    }
+  });
+
+  // 划线 / 高亮：拖选结束松手时把选中的文字落成标注
+  document.addEventListener('pointerup', (event) => {
+    if (!pdfView.annotating || !isTextMark(annotStyle.tool)) return;
+    // 只在页面区域内松手才算，点工具栏时不拿旧选区去落笔
+    if (!event.target || event.target.nodeType !== 1 || !scroll.contains(event.target)) return;
+    // 等浏览器把选区定下来再读，直接读到的还是拖选前的状态
+    setTimeout(() => { applyTextMark(); }, 0);
   });
 
   $('annotColors').addEventListener('click', (event) => {
@@ -2531,6 +2801,10 @@ async function drawStrokeOnPage(page, stroke) {
     await drawTextOnPage(page, stroke);
     return;
   }
+  if (isTextMark(stroke.type)) {
+    drawTextMarkOnPage(page, stroke);
+    return;
+  }
 
   const {r, g, b} = hexToRgb(stroke.color);
   const color = PDFLib.rgb(r, g, b);
@@ -2627,6 +2901,49 @@ function drawSegments(page, points, thickness, color) {
       lineCap: PDFLib.LineCapStyle.Round
     });
   }
+}
+
+// 划线 / 高亮导出：每行四边形一笔落定，页面旋转过也是贴着原文的
+function drawTextMarkOnPage(page, stroke) {
+  const quads = stroke.quads || [];
+  if (!quads.length) return;
+
+  const {r, g, b} = hexToRgb(stroke.color);
+  const color = PDFLib.rgb(r, g, b);
+  const alpha = stroke.alpha == null ? 1 : stroke.alpha;
+  const faded = alpha < 0.999;
+
+  if (stroke.type === 'underline') {
+    const thickness = Math.max(0.5, stroke.width);
+    quads.forEach((quad) => {
+      const [start, end] = underlineEnds(quad);
+      page.drawLine({
+        start,
+        end,
+        thickness,
+        color,
+        lineCap: PDFLib.LineCapStyle.Butt,
+        ...(faded ? {opacity: alpha} : {})
+      });
+    });
+    return;
+  }
+
+  // 高亮：半透明填充走 ExtGState，所有行合成一次填充，重叠处不会叠深
+  const operators = faded
+    ? [PDFLib.pushGraphicsState(), PDFLib.setGraphicsState(ensureAlphaState(page, alpha))]
+    : [];
+  operators.push(PDFLib.setFillingRgbColor(r, g, b));
+  quads.forEach((quad) => {
+    operators.push(PDFLib.moveTo(quad[0].x, quad[0].y));
+    for (let index = 1; index < quad.length; index++) {
+      operators.push(PDFLib.lineTo(quad[index].x, quad[index].y));
+    }
+    operators.push(PDFLib.closePath());
+  });
+  operators.push(PDFLib.fill());
+  if (faded) operators.push(PDFLib.popGraphicsState());
+  page.pushOperators(...operators);
 }
 
 // 半透明描边需要 ExtGState：同一页同一透明度只注册一次

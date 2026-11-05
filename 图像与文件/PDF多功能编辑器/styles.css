@@ -858,13 +858,50 @@ input[type="file"]::file-selector-button:hover { border-color: var(--accent); co
   box-shadow: 0 8px 20px -12px rgba(33, 28, 43, .6);
 }
 .viewer-page canvas { display: block; width: 100%; height: 100%; }
+
+/* 透明文字层：字本身是画在位图上的，这层只负责选中和复制 */
+.text-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 0;
+  cursor: text;
+  user-select: text;
+}
+/* pdf.js 的文字层按未旋转的页面坐标摆放，页面转了这里跟着转回来 */
+.text-layer[data-rotate="90"] { transform: rotate(90deg) translateY(-100%); }
+.text-layer[data-rotate="180"] { transform: rotate(180deg) translate(-100%, -100%); }
+.text-layer[data-rotate="270"] { transform: rotate(270deg) translate(-100%, 0); }
+.text-layer span,
+.text-layer br {
+  position: absolute;
+  white-space: pre;
+  color: transparent;
+  transform-origin: 0% 0%;
+  cursor: text;
+}
+.text-layer span.markedContent { top: 0; height: 0; }
+.text-layer ::selection { background: rgba(47, 111, 235, .28); }
+.text-layer br::selection { background: transparent; }
+
 .annot-canvas { position: absolute; inset: 0; pointer-events: none; }
 .viewer-scroll.is-annotating .annot-canvas { pointer-events: auto; cursor: crosshair; }
 /* 画笔/荧光笔用自绘的笔头预览代替系统光标 */
 .viewer-scroll.is-annotating.is-freetool .annot-canvas { cursor: none; }
 .viewer-scroll.is-annotating.is-erasertool .annot-canvas { cursor: none; }
 .viewer-scroll.is-annotating.is-texttool .annot-canvas { cursor: text; }
+/* 划线 / 高亮靠拖选文字触发，标注画布这时候不拦指针 */
+.viewer-scroll.is-annotating.is-textmarktool .annot-canvas { pointer-events: none; cursor: text; }
+/* 标注模式下系统滚动和缩放交给脚本处理 */
 .viewer-scroll.is-annotating .viewer-page { touch-action: none; }
+/* 选字要交给浏览器，触屏上不能禁用默认手势 */
+.viewer-scroll.is-annotating.is-textmarktool .viewer-page { touch-action: auto; }
 
 /* 跟随鼠标的笔头预览，大小就是实际落笔的粗细 */
 .annot-cursor {
