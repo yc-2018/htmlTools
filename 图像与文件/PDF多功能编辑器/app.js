@@ -129,7 +129,7 @@ function setViewerStatus(message) {
   box.hidden = !message;
 }
 
-async function renderPreview(pdfBytes) {
+async function renderPreview(pdfBytes, options) {
   const lib = window.pdfjsLib;
   if (!lib) throw new Error('PDF 渲染引擎未加载');
 
@@ -139,8 +139,12 @@ async function renderPreview(pdfBytes) {
   await ensurePdfWorker();
   lib.GlobalWorkerOptions.workerSrc = PDF_WORKER_SRC;
 
-  // 页面结构变了，之前画的标注对不上页码，直接清空
-  if (annotations.size) {
+  // 增删页后有页码对照表，就按它把标注搬到新页码；
+  // 历史回退已经还原过标注快照，原样保留；换文件才清空
+  const pageMap = options && options.pageMap;
+  if (pageMap) {
+    remapAnnotations(pageMap);
+  } else if (!(options && options.keepAnnotations) && annotations.size) {
     clearAnnotations();
     toast('页面已改动，标注已清空', 'err');
   }
@@ -255,10 +259,14 @@ async function layoutPreview() {
 
     const canvas = document.createElement('canvas');
     canvas.className = 'pdf-canvas';
+    // 页面位图上面再叠一层透明文字，选中/复制靠它
+    const textLayer = document.createElement('div');
+    textLayer.className = 'text-layer';
     const annotCanvas = document.createElement('canvas');
     annotCanvas.className = 'annot-canvas';
-    shell.append(canvas, annotCanvas);
+    shell.append(canvas, textLayer, annotCanvas);
     shell._canvas = canvas;
+    shell._text = textLayer;
     shell._annot = annotCanvas;
 
     container.appendChild(shell);
@@ -305,6 +313,9 @@ async function renderShell(shell) {
     shell._task = null;
     if (token !== pdfView.token || !shell.isConnected) return;
 
+    await paintTextLayer(shell, page, viewport, token);
+    if (token !== pdfView.token || !shell.isConnected) return;
+
     shell.dataset.state = 'done';
     redrawAnnot(shell);
   } catch (error) {
@@ -313,6 +324,27 @@ async function renderShell(shell) {
     console.error(error);
     shell.textContent = '第 ' + shell.dataset.page + ' 页渲染失败';
     shell.dataset.state = 'error';
+  }
+}
+
+// PDF 里的文字本来就画在位图上，这里再叠一层透明文字，才能选中、复制和双击取词
+async function paintTextLayer(shell, page, viewport, token) {
+  const lib = window.pdfjsLib;
+  const layer = shell._text;
+  if (!layer || !lib || typeof lib.renderTextLayer !== 'function') return;
+  try {
+    const content = await page.getTextContent();
+    if (token !== pdfView.token || !shell.isConnected) return;
+    layer.textContent = '';
+    layer.style.width = viewport.width + 'px';
+    layer.style.height = viewport.height + 'px';
+    shell._textTask = lib.renderTextLayer({textContentSource: content, container: layer, viewport});
+    await shell._textTask.promise;
+    shell._textTask = null;
+  } catch (error) {
+    shell._textTask = null;
+    // 文字层只是锦上添花，失败不影响看图
+    if (token === pdfView.token) console.warn('文字层渲染失败', error);
   }
 }
 
@@ -579,16 +611,27 @@ let annotPage = 0;
 let annotColorTouched = false;
 
 // 每种工具记住自己的粗细（CSS 像素）和不透明度，荧光笔单独一套范围
-const annotWidths = {pen: 4, marker: 18};
-const annotAlphas = {pen: 1, marker: 0.32};
+const annotWidths = {pen: 4, marker: 18, text: 14, eraser: 16};
+const annotAlphas = {pen: 1, marker: 0.32, text: 1, eraser: 1};
 const PEN_WIDTH_RANGE = {min: 1, max: 16};
 const MARKER_WIDTH_RANGE = {min: 6, max: 36};
+const TEXT_SIZE_RANGE = {min: 8, max: 32};
+const ERASER_WIDTH_RANGE = {min: 6, max: 44};
+// 每笔画一个递增序号，擦除后撤销时按它插回原来的层级
+let annotSeq = 0;
 
 // 荧光笔默认半透明宽笔头，笔画之间不叠加出深色接缝
 const MARKER_ALPHA = 0.32;
 const MARKER_COLOR = '#F5A524';
+// 注释便签字号固定；文字工具的字号走滑杆，单位是 PDF 点
+const NOTE_SIZE = 11;
+const NOTE_MAX_WIDTH = 190;
+const TEXT_MAX_WIDTH = 260;
+const TEXT_FONT = '"Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif';
 const isFreehand = (tool) => tool === 'ink' || tool === 'marker';
-const widthKey = (tool) => (tool === 'marker' ? 'marker' : 'pen');
+// 注释与文字不是路径，走文字排版渲染
+const isBlockTool = (tool) => tool === 'note' || tool === 'text';
+const widthKey = (tool) => (tool === 'marker' || tool === 'text' || tool === 'eraser' ? tool : 'pen');
 
 function toggleAnnotate() {
   if (!pdfView.doc) {
@@ -602,7 +645,10 @@ function toggleAnnotate() {
 
   if (!pdfView.annotating) {
     annotStroke = null;
+    eraseSession = null;
     closeColorPop();
+    closeNoteEditor(false);
+    closeNoteList();
     pdfView.shells.forEach(redrawAnnot);
   } else {
     toast('标注模式：在页面上拖动画图', 'ok');
@@ -615,10 +661,66 @@ function clearAnnotations() {
   annotOrder.length = 0;
   annotRedo.length = 0;
   annotStroke = null;
+  eraseSession = null;
   pdfView.shells.forEach((shell) => {
     if (shell._annot) redrawAnnot(shell);
   });
   updateAnnotHistory();
+}
+
+// 增删页后按新页码搬标注：pageMap[i] 是新第 i+1 页对应的旧页码，0 表示新插入的页
+function remapAnnotations(pageMap) {
+  const next = new Map();
+  pageMap.forEach((oldPage, index) => {
+    const strokes = oldPage ? annotations.get(oldPage) : null;
+    if (strokes && strokes.length) next.set(index + 1, strokes);
+  });
+  annotations.clear();
+  next.forEach((strokes, page) => annotations.set(page, strokes));
+
+  // 撤销栈里记的还是旧页码，一并换算；对应页被删掉的记录直接丢掉
+  const pageOf = (oldPage) => {
+    const index = pageMap.indexOf(oldPage);
+    return index < 0 ? 0 : index + 1;
+  };
+  const rewrite = (entry) => {
+    if (!entry.erase) {
+      const page = pageOf(entry.page);
+      if (!page) return null;
+      entry.page = page;
+      return entry;
+    }
+    const items = [];
+    entry.items.forEach((item) => {
+      const page = pageOf(item.page);
+      if (page) items.push({page, stroke: item.stroke});
+    });
+    if (!items.length) return null;
+    entry.items = items;
+    entry.pages = [...new Set(items.map((item) => item.page))];
+    return entry;
+  };
+  [annotOrder, annotRedo].forEach((stack) => {
+    const kept = stack.map(rewrite).filter(Boolean);
+    stack.length = 0;
+    kept.forEach((entry) => stack.push(entry));
+  });
+
+  // 跳转高亮的块要是被删掉了，就把高亮一起清掉
+  if (flashNote && ![...next.values()].some((strokes) => strokes.includes(flashNote))) flashNote = null;
+  annotPage = 0;
+  annotStroke = null;
+  updateAnnotHistory();
+  refreshNoteList();
+}
+
+// 插入整页后的页码对应关系，和 remapAnnotations 用的 pageMap 同格式
+function pageMapAfterInsert(totalPages, insertIndex, count) {
+  const map = [];
+  for (let page = 1; page <= insertIndex; page += 1) map.push(page);
+  for (let index = 0; index < count; index += 1) map.push(0);
+  for (let page = insertIndex + 1; page <= totalPages; page += 1) map.push(page);
+  return map;
 }
 
 function annotPoint(shell, event) {
@@ -632,6 +734,7 @@ function startStroke(shell, event) {
   annotPage = Number(shell.dataset.page);
   annotStroke = {
     type: annotStyle.tool,
+    seq: ++annotSeq,
     color: annotStyle.color,
     width: Math.max(0.5, annotStyle.width / pdfView.scale), // CSS 像素转 PDF 点
     alpha: annotStyle.alpha,
@@ -682,11 +785,51 @@ function addStroke(entry) {
 }
 
 function removeStroke(entry) {
-  const list = annotations.get(entry.page);
+  detachStroke(entry.page, entry.stroke);
+}
+
+function detachStroke(page, stroke) {
+  const list = annotations.get(page);
   if (!list) return;
-  const index = list.lastIndexOf(entry.stroke);
+  const index = list.lastIndexOf(stroke);
   if (index >= 0) list.splice(index, 1);
-  if (!list.length) annotations.delete(entry.page);
+  if (!list.length) annotations.delete(page);
+  if (flashNote === stroke) flashNote = null;
+}
+
+// 按序号插回去，撤销擦除后层级才不会乱
+function attachStroke(page, stroke) {
+  if (!annotations.has(page)) annotations.set(page, []);
+  const list = annotations.get(page);
+  let at = list.length;
+  for (let index = 0; index < list.length; index++) {
+    if ((list[index].seq || 0) > (stroke.seq || 0)) {
+      at = index;
+      break;
+    }
+  }
+  list.splice(at, 0, stroke);
+}
+
+// 一次擦除（或删除）记成一条可撤销的记录，items 里是被拿掉的笔画
+function pushEraseOp(items) {
+  if (!items.length) return;
+  const pages = [...new Set(items.map((item) => item.page))];
+  annotOrder.push({erase: true, pages, items});
+  annotRedo.length = 0;
+  pages.forEach(refreshAnnotPage);
+  updateAnnotHistory();
+  refreshNoteList();
+}
+
+function applyErase(op) {
+  op.items.forEach((item) => detachStroke(item.page, item.stroke));
+  op.pages.forEach(refreshAnnotPage);
+}
+
+function restoreErase(op) {
+  op.items.forEach((item) => attachStroke(item.page, item.stroke));
+  op.pages.forEach(refreshAnnotPage);
 }
 
 function updateAnnotHistory() {
@@ -699,20 +842,34 @@ function undoAnnotation() {
   if (!last) return;
 
   annotRedo.push(last);
-  removeStroke(last);
-  refreshAnnotPage(last.page);
+  if (last.erase) {
+    restoreErase(last);
+    toast('已撤销擦除');
+  } else {
+    removeStroke(last);
+    refreshAnnotPage(last.page);
+    toast('已撤销一笔标注');
+  }
   updateAnnotHistory();
-  toast('已撤销一笔标注');
+  refreshNoteList();
 }
 
 function redoAnnotation() {
   const last = annotRedo.pop();
   if (!last) return;
 
-  addStroke(last);
-  refreshAnnotPage(last.page);
+  if (last.erase) {
+    annotOrder.push(last);
+    applyErase(last);
+    toast('已重新擦除');
+  } else {
+    // addStroke 会自己压进 annotOrder
+    addStroke(last);
+    refreshAnnotPage(last.page);
+    toast('已恢复一笔标注');
+  }
   updateAnnotHistory();
-  toast('已恢复一笔标注');
+  refreshNoteList();
 }
 
 function clearPageAnnotations() {
@@ -723,21 +880,269 @@ function clearPageAnnotations() {
     return;
   }
 
-  annotations.delete(page);
-  for (let index = annotOrder.length - 1; index >= 0; index--) {
-    if (annotOrder[index].page === page) annotOrder.splice(index, 1);
-  }
-  // 清空本页后，这一页被撤销的笔画也不能再前进回来
-  for (let index = annotRedo.length - 1; index >= 0; index--) {
-    if (annotRedo[index].page === page) annotRedo.splice(index, 1);
-  }
-
-  refreshAnnotPage(page);
-  updateAnnotHistory();
+  const items = list.map((stroke) => ({page, stroke}));
+  // 清空也记成一次擦除，误点了还能撤销回来
+  applyErase({items, pages: [page]});
+  pushEraseOp(items);
   toast('已清空第 ' + page + ' 页的标注');
 }
 
+/* ---------- 橡皮擦：按笔画整体擦掉，按住拖动可以连续擦 ---------- */
+let eraseSession = null; // 一次按下到抬起的擦除记录
+
+function segmentDistance(point, start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = dx * dx + dy * dy;
+  if (!length) return Math.hypot(point.x - start.x, point.y - start.y);
+  const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / length));
+  return Math.hypot(point.x - (start.x + dx * t), point.y - (start.y + dy * t));
+}
+
+// 笔画任何一部分落在橡皮圆圈里就算命中
+function strokeHitsPoint(stroke, point, radius) {
+  if (isBlockTool(stroke.type)) {
+    const box = textBlockBox(stroke);
+    const gapX = Math.max(box.x - point.x, 0, point.x - box.x - box.width);
+    const gapY = Math.max(box.y - point.y, 0, point.y - box.y - box.height);
+    return Math.hypot(gapX, gapY) <= radius;
+  }
+
+  const points = stroke.points || [];
+  if (!points.length) return false;
+  // 粗笔画多给半个笔宽，细笔尖也擦得中
+  const reach = radius + Math.max(0, stroke.width || 0) / 2;
+  if (isFreehand(stroke.type)) {
+    if (points.length === 1) return Math.hypot(point.x - points[0].x, point.y - points[0].y) <= reach;
+    for (let index = 1; index < points.length; index += 1) {
+      if (segmentDistance(point, points[index - 1], points[index]) <= reach) return true;
+    }
+    return false;
+  }
+
+  const [first, second] = points;
+  if (!second) return false;
+  if (stroke.type === 'line') return segmentDistance(point, first, second) <= reach;
+
+  const left = Math.min(first.x, second.x);
+  const right = Math.max(first.x, second.x);
+  const top = Math.min(first.y, second.y);
+  const bottom = Math.max(first.y, second.y);
+  if (stroke.type === 'rect') {
+    return segmentDistance(point, {x: left, y: top}, {x: right, y: top}) <= reach
+      || segmentDistance(point, {x: right, y: top}, {x: right, y: bottom}) <= reach
+      || segmentDistance(point, {x: right, y: bottom}, {x: left, y: bottom}) <= reach
+      || segmentDistance(point, {x: left, y: bottom}, {x: left, y: top}) <= reach;
+  }
+
+  // 椭圆沿边界采样，精度够用
+  const cx = (left + right) / 2;
+  const cy = (top + bottom) / 2;
+  const rx = (right - left) / 2;
+  const ry = (bottom - top) / 2;
+  const steps = 64;
+  let previous = {x: cx + rx, y: cy};
+  for (let index = 1; index <= steps; index += 1) {
+    const angle = (index / steps) * Math.PI * 2;
+    const next = {x: cx + rx * Math.cos(angle), y: cy + ry * Math.sin(angle)};
+    if (segmentDistance(point, previous, next) <= reach) return true;
+    previous = next;
+  }
+  return false;
+}
+
+// 橡皮半径按屏幕像素给，换算成 PDF 点后和笔画同坐标系比较
+function eraseRadius() {
+  return Math.max(3, annotStyle.width / 2) / (pdfView.scale || 1);
+}
+
+function eraseAt(shell, event) {
+  const page = Number(shell.dataset.page);
+  const list = annotations.get(page);
+  if (!list || !list.length) return false;
+  const point = annotPoint(shell, event);
+  const radius = eraseRadius();
+  // 倒序遍历：压在上面的笔画先被擦掉
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    const stroke = list[index];
+    if (!strokeHitsPoint(stroke, point, radius)) continue;
+    if (!eraseSession) eraseSession = {items: []};
+    eraseSession.items.push({page, stroke});
+    detachStroke(page, stroke);
+    return true;
+  }
+  return false;
+}
+
+function finishErase() {
+  const session = eraseSession;
+  eraseSession = null;
+  if (!session || !session.items.length) return;
+  pushEraseOp(session.items);
+  toast('已擦除 ' + session.items.length + ' 处标注');
+}
+
+/* ---------- 注释（便签）与页面文字的文字排版 ---------- */
+const measureCtx = document.createElement('canvas').getContext('2d');
+// 注释列表跳转后短暂高亮的块
+let flashNote = null;
+
+// 逐字累加宽度折行；遇到空格优先在此断开，英文单词不会从中间被切断
+function wrapText(ctx, text, maxWidth) {
+  const lines = [];
+  String(text || '').split(/\r?\n/).forEach((paragraph) => {
+    if (!paragraph) {
+      lines.push('');
+      return;
+    }
+    let line = '';
+    for (const char of paragraph) {
+      const next = line + char;
+      if (line && ctx.measureText(next).width > maxWidth) {
+        const space = line.lastIndexOf(' ');
+        if (space > 0 && /[A-Za-z0-9]/.test(char)) {
+          lines.push(line.slice(0, space));
+          line = line.slice(space + 1) + char;
+        } else {
+          lines.push(line);
+          line = char;
+        }
+      } else {
+        line = next;
+      }
+    }
+    lines.push(line);
+  });
+  return lines;
+}
+
+// 按 PDF 点排版；pxPerPt 只影响渲染精度，不改变导出尺寸
+function textBlockMetrics(stroke, pxPerPt) {
+  const note = stroke.type === 'note';
+  const fontPx = Math.max(1, stroke.size * pxPerPt);
+  const limit = (note ? NOTE_MAX_WIDTH : TEXT_MAX_WIDTH) * pxPerPt;
+  const ctx = measureCtx;
+  ctx.font = '500 ' + fontPx + 'px ' + TEXT_FONT;
+  const lines = wrapText(ctx, stroke.text, limit);
+  let textWidth = 0;
+  lines.forEach((line) => {
+    textWidth = Math.max(textWidth, ctx.measureText(line).width);
+  });
+  const lineHeight = fontPx * 1.45;
+  const padX = note ? 6 * pxPerPt : 0;
+  const padY = note ? 5 * pxPerPt : 0;
+  const bar = note ? 3 * pxPerPt : 0;
+  return {
+    note,
+    lines,
+    fontPx,
+    lineHeight,
+    padX,
+    padY,
+    bar,
+    width: textWidth + padX * 2 + bar,
+    height: Math.max(lineHeight, lines.length * lineHeight) + padY * 2
+  };
+}
+
+function roundRectPath(ctx, x, y, width, height, radius) {
+  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+}
+
+// 预览、缩略图、演示、导出位图共用这一套画法，保证所见即所得
+function paintTextBlock(ctx, stroke, x, y, pxPerPt) {
+  const box = textBlockMetrics(stroke, pxPerPt);
+
+  ctx.save();
+  ctx.textBaseline = 'top';
+  ctx.font = '500 ' + box.fontPx + 'px ' + TEXT_FONT;
+
+  if (box.note) {
+    ctx.beginPath();
+    roundRectPath(ctx, x, y, box.width, box.height, 4 * pxPerPt);
+    ctx.fillStyle = colorWithAlpha(stroke.color, .13);
+    ctx.fill();
+    // 左侧色条裁进圆角里，卡片边角才干净
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = colorWithAlpha(stroke.color, .92);
+    ctx.fillRect(x, y, box.bar, box.height);
+    ctx.restore();
+    ctx.fillStyle = '#211C2B';
+  } else {
+    ctx.fillStyle = colorWithAlpha(stroke.color, stroke.alpha);
+  }
+
+  const textX = x + box.padX + box.bar;
+  const textY = y + box.padY;
+  box.lines.forEach((line, index) => {
+    ctx.fillText(line, textX, textY + index * box.lineHeight);
+  });
+  ctx.restore();
+  return box;
+}
+
+function drawTextStroke(ctx, stroke, viewport, scale) {
+  const [x, y] = viewport.convertToViewportPoint(stroke.x, stroke.y);
+  paintTextBlock(ctx, stroke, x, y, scale);
+}
+
+// PDF 空间下的外框（左下角 + 宽高），用于命中判断与高亮
+function textBlockBox(stroke) {
+  const box = textBlockMetrics(stroke, 1);
+  return {x: stroke.x, y: stroke.y - box.height, width: box.width, height: box.height};
+}
+
+// 贴着页面边缘点下去时把块整体拉回页面内，导出才不会被裁掉
+function fitBlockToPage(pageNumber, stroke) {
+  const shell = pdfView.shells[pageNumber - 1];
+  if (!shell || !shell._viewport || !pdfView.scale) return;
+  const pageWidth = shell._viewport.width / pdfView.scale;
+  const pageHeight = shell._viewport.height / pdfView.scale;
+  const box = textBlockMetrics(stroke, 1);
+  const margin = 2;
+  stroke.x = Math.min(Math.max(margin, stroke.x), Math.max(margin, pageWidth - box.width - margin));
+  stroke.y = Math.min(Math.max(box.height + margin, stroke.y), Math.max(box.height + margin, pageHeight - margin));
+}
+
+function hitTextBlock(pageNumber, point) {
+  const list = annotations.get(pageNumber) || [];
+  for (let index = list.length - 1; index >= 0; index--) {
+    const stroke = list[index];
+    if (!isBlockTool(stroke.type)) continue;
+    const box = textBlockBox(stroke);
+    // 外扩 2pt，小字也好点中
+    if (point.x >= box.x - 2 && point.x <= box.x + box.width + 2
+      && point.y >= box.y - 2 && point.y <= box.y + box.height + 2) {
+      return stroke;
+    }
+  }
+  return null;
+}
+
+function collectBlocks() {
+  const items = [];
+  annotations.forEach((strokes, page) => {
+    strokes.forEach((stroke) => {
+      if (isBlockTool(stroke.type)) items.push({page, stroke});
+    });
+  });
+  return items.sort((a, b) => a.page - b.page);
+}
+
 function drawStroke(ctx, stroke, viewport, scale) {
+  // 注释便签与页面文字不是路径，走文字渲染
+  if (isBlockTool(stroke.type)) {
+    drawTextStroke(ctx, stroke, viewport, scale);
+    return;
+  }
+
   const points = stroke.points.map((point) => viewport.convertToViewportPoint(point.x, point.y));
   if (!points.length) return;
 
@@ -797,6 +1202,19 @@ function redrawAnnot(shell) {
   const pageNumber = Number(shell.dataset.page);
   (annotations.get(pageNumber) || []).forEach((stroke) => drawStroke(ctx, stroke, viewport, pdfView.scale));
   if (annotStroke && annotPage === pageNumber) drawStroke(ctx, annotStroke, viewport, pdfView.scale);
+
+  // 从注释列表跳过来的块用虚线圈一下，方便在页面上找到
+  if (flashNote && isBlockTool(flashNote.type) && (annotations.get(pageNumber) || []).includes(flashNote)) {
+    const box = textBlockBox(flashNote);
+    const [left, top] = viewport.convertToViewportPoint(box.x, box.y + box.height);
+    const [right, bottom] = viewport.convertToViewportPoint(box.x + box.width, box.y);
+    ctx.save();
+    ctx.strokeStyle = '#7048E8';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.strokeRect(left - 3, top - 3, right - left + 6, bottom - top + 6);
+    ctx.restore();
+  }
 }
 
 // 标注变了：主视图重画叠加层，缩略图重渲染一页（缩略图把笔画画在同一张位图上）
@@ -1001,23 +1419,280 @@ function bindColorPop() {
   window.addEventListener('scroll', closeColorPop, true);
 }
 
+/* ---------- 注释（便签）与页面文字的编辑 ---------- */
+let noteEdit = null;           // 正在编辑的块：{page, stroke|null, tool, x, y, size}
+let noteSuppressClick = false; // 点浮层外面关掉编辑框时，别把这一下再当成新建
+
+function positionNoteEditor(clientX, clientY) {
+  const box = $('noteEditor');
+  const width = box.offsetWidth;
+  const height = box.offsetHeight;
+  const left = Math.min(Math.max(8, clientX + 12), window.innerWidth - width - 8);
+  let top = clientY + 10;
+  if (top + height > window.innerHeight - 8) top = Math.max(8, clientY - height - 10);
+  box.style.left = Math.round(left) + 'px';
+  box.style.top = Math.round(top) + 'px';
+}
+
+function syncNoteSizes(size) {
+  $('neSizes').querySelectorAll('.ne-size').forEach((item) => {
+    item.classList.toggle('is-active', Number(item.dataset.size) === size);
+  });
+}
+
+function openNoteEditor(shell, stroke, point, clientX, clientY) {
+  const page = Number(shell.dataset.page);
+  // 记下点击位置，输入法把视口顶起来后要靠它重新贴回去
+  noteEdit = stroke
+    ? {page, stroke, tool: stroke.type, size: stroke.size, anchorX: clientX, anchorY: clientY}
+    : {page, stroke: null, tool: annotStyle.tool, x: point.x, y: point.y, size: annotStyle.width, anchorX: clientX, anchorY: clientY};
+
+  $('neTitle').textContent = stroke
+    ? (stroke.type === 'note' ? '编辑注释' : '编辑文字')
+    : (noteEdit.tool === 'note' ? '新建注释' : '新建文字');
+  $('neText').value = stroke ? stroke.text : '';
+  // 便签字号固定，只有文字工具给字号档位
+  $('neSizes').hidden = noteEdit.tool !== 'text';
+  syncNoteSizes(noteEdit.tool === 'text' ? noteEdit.size : 0);
+  $('neDelete').hidden = !stroke;
+  $('noteEditor').hidden = false;
+  positionNoteEditor(clientX, clientY);
+  requestAnimationFrame(() => $('neText').focus());
+}
+
+function closeNoteEditor(commit) {
+  const state = noteEdit;
+  if (!state) return;
+  noteEdit = null;
+  $('noteEditor').hidden = true;
+  if (commit) commitNote(state);
+}
+
+// 内容为空就当作删除；编辑已有块时保留原有颜色，新建时用当前画笔色
+function commitNote(state) {
+  const text = $('neText').value.replace(/\s+$/, '');
+  if (!text.trim()) {
+    if (state.stroke) {
+      deleteBlock(state.page, state.stroke);
+      toast('已删除该条注释');
+    }
+    refreshNoteList();
+    return;
+  }
+
+  if (state.stroke) {
+    state.stroke.text = text;
+    if (state.stroke.type === 'text') {
+      state.stroke.size = state.size;
+      annotWidths.text = state.size;
+      annotStyle.width = state.size;
+      syncWidthControl();
+    }
+    fitBlockToPage(state.page, state.stroke);
+    refreshAnnotPage(state.page);
+  } else {
+    const stroke = {
+      type: state.tool,
+      seq: ++annotSeq,
+      x: state.x,
+      y: state.y,
+      text,
+      size: state.tool === 'note' ? NOTE_SIZE : state.size,
+      color: annotStyle.color,
+      alpha: annotStyle.alpha
+    };
+    if (state.tool === 'text') {
+      annotWidths.text = state.size;
+      annotStyle.width = state.size;
+      syncWidthControl();
+    }
+    fitBlockToPage(state.page, stroke);
+    addStroke({page: state.page, stroke});
+    annotRedo.length = 0;
+    refreshAnnotPage(state.page);
+    updateAnnotHistory();
+    toast(state.tool === 'note' ? '已添加注释' : '已添加文字', 'ok');
+  }
+  refreshNoteList();
+}
+
+// 删除一个便签/文字也记成擦除记录，删错了还能撤销回来
+function deleteBlock(page, stroke) {
+  const list = annotations.get(page);
+  if (!list || !list.includes(stroke)) return;
+  const items = [{page, stroke}];
+  applyErase({items, pages: [page]});
+  pushEraseOp(items);
+}
+
+function bindNoteEditor() {
+  $('neSave').addEventListener('click', () => closeNoteEditor(true));
+  $('neCancel').addEventListener('click', () => closeNoteEditor(false));
+  $('neDelete').addEventListener('click', () => {
+    const state = noteEdit;
+    if (!state || !state.stroke) return;
+    noteEdit = null;
+    $('noteEditor').hidden = true;
+    deleteBlock(state.page, state.stroke);
+    refreshNoteList();
+    toast('已删除该条注释');
+  });
+
+  $('neSizes').addEventListener('click', (event) => {
+    const btn = event.target.closest('.ne-size');
+    if (!btn || !noteEdit) return;
+    noteEdit.size = Number(btn.dataset.size);
+    syncNoteSizes(noteEdit.size);
+  });
+
+  $('neText').addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeNoteEditor(false);
+    } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      closeNoteEditor(true);
+    }
+  });
+
+  // 点浮层外面按保存处理；捕获阶段先关掉，免得这一下又在页面上新建一条
+  document.addEventListener('pointerdown', (event) => {
+    if (!noteEdit || $('noteEditor').contains(event.target)) return;
+    noteSuppressClick = true;
+    closeNoteEditor(true);
+    setTimeout(() => { noteSuppressClick = false; }, 0);
+  }, true);
+
+  // 输入法弹出会触发 resize，只重新贴位置，别把刚写的字一起丢掉
+  window.addEventListener('resize', () => {
+    if (noteEdit) positionNoteEditor(noteEdit.anchorX, noteEdit.anchorY);
+  });
+  // 页面本身滚动了就取消编辑；textarea 内部滚动不算
+  window.addEventListener('scroll', (event) => {
+    if (!noteEdit || $('noteEditor').contains(event.target)) return;
+    closeNoteEditor(false);
+  }, true);
+}
+
+/* ---------- 注释列表 ---------- */
+function renderNoteList() {
+  const list = $('noteList');
+  list.textContent = '';
+  const items = collectBlocks();
+  if (!items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'note-empty';
+    empty.textContent = '还没有注释或文字，用标注栏里的「注释」「文字」工具添加';
+    list.appendChild(empty);
+    return;
+  }
+
+  items.forEach(({page, stroke}) => {
+    const row = document.createElement('div');
+    row.className = 'note-item';
+
+    const jump = document.createElement('button');
+    jump.type = 'button';
+    jump.className = 'note-jump';
+    const badge = document.createElement('span');
+    badge.className = 'note-badge';
+    badge.textContent = 'P' + page;
+    const text = document.createElement('span');
+    text.className = 'note-text';
+    text.textContent = stroke.text;
+    const kind = document.createElement('span');
+    kind.className = 'note-kind';
+    kind.textContent = stroke.type === 'note' ? '注释' : '文字';
+    jump.append(badge, text, kind);
+    jump.addEventListener('click', () => {
+      closeNoteList();
+      scrollToPage(page, true);
+      flashNoteBlock(page, stroke);
+    });
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'note-del';
+    del.title = '删除';
+    del.setAttribute('aria-label', '删除');
+    del.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"'
+      + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + '<path d="M4 7h16M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/>'
+      + '<path d="M9 7V4h6v3"/></svg>';
+    del.addEventListener('click', () => {
+      deleteBlock(page, stroke);
+      renderNoteList();
+      toast('已删除该条注释');
+    });
+
+    row.append(jump, del);
+    list.appendChild(row);
+  });
+}
+
+function refreshNoteList() {
+  if (!$('notePanel').hidden) renderNoteList();
+}
+
+function showNoteList() {
+  renderNoteList();
+  $('notePanel').hidden = false;
+}
+
+function closeNoteList() {
+  $('notePanel').hidden = true;
+}
+
+function flashNoteBlock(page, stroke) {
+  flashNote = stroke;
+  refreshAnnotPage(page);
+  setTimeout(() => {
+    if (flashNote !== stroke) return;
+    flashNote = null;
+    refreshAnnotPage(page);
+  }, 1600);
+}
+
+function bindNoteList() {
+  $('annotListBtn').addEventListener('click', showNoteList);
+  $('noteCloseBtn').addEventListener('click', closeNoteList);
+  $('notePanel').addEventListener('click', (event) => {
+    if (event.target === $('notePanel')) closeNoteList();
+  });
+}
+
 // 滑块的范围随工具变化：荧光笔要粗得多；数值同步显示在滑块左边
 function syncWidthControl() {
-  const marker = annotStyle.tool === 'marker';
-  const range = marker ? MARKER_WIDTH_RANGE : PEN_WIDTH_RANGE;
+  const tool = annotStyle.tool;
+  const marker = tool === 'marker';
+  const text = tool === 'text';
+  const eraser = tool === 'eraser';
+  const range = marker ? MARKER_WIDTH_RANGE : text ? TEXT_SIZE_RANGE : eraser ? ERASER_WIDTH_RANGE : PEN_WIDTH_RANGE;
   const input = $('annotWidthRange');
   input.min = String(range.min);
   input.max = String(range.max);
   input.value = String(annotStyle.width);
-  input.title = marker ? '荧光笔粗细' : '笔画粗细';
+  // 便签字号固定，滑杆不参与
+  input.disabled = tool === 'note';
+  input.title = marker ? '荧光笔粗细' : text ? '文字字号' : eraser ? '橡皮大小' : '笔画粗细';
+  // 橡皮不落色，颜色一排暂时不可用
+  $('annotColors').classList.toggle('is-muted', eraser);
   syncAnnotSizeLabel();
   syncAnnotCursor();
 }
 
 // 滑杆左边：数值 + 一个按实际大小缩放的小圆点
 function syncAnnotSizeLabel() {
-  $('annotSizeText').textContent = annotStyle.width + ' px';
+  const tool = annotStyle.tool;
+  const note = tool === 'note';
+  $('annotSizeText').textContent = note
+    ? '固定 ' + NOTE_SIZE + ' pt'
+    : annotStyle.width + (tool === 'text' ? ' pt' : ' px');
   const dot = $('annotDot');
+  // 便签没有笔头、橡皮不落色，圆点都没有意义
+  dot.hidden = note || tool === 'eraser';
+  if (note || tool === 'eraser') return;
   const size = Math.min(20, Math.max(4, annotStyle.width));
   dot.style.width = size + 'px';
   dot.style.height = size + 'px';
@@ -1025,22 +1700,33 @@ function syncAnnotSizeLabel() {
   dot.style.background = colorWithAlpha(annotStyle.color, Math.max(0.45, Math.min(0.85, annotStyle.alpha)));
 }
 
-// 鼠标笔头预览：直径就是落笔粗细，颜色/透明度跟当前设置一致
+// 鼠标笔头预览：直径就是落笔粗细，颜色/透明度跟当前设置一致；橡皮则显示擦除范围
 function syncAnnotCursor() {
   const cursor = $('annotCursor');
+  const eraser = pdfView.annotating && annotStyle.tool === 'eraser';
   const freehand = pdfView.annotating && isFreehand(annotStyle.tool);
+  const show = freehand || eraser;
   $('viewerScroll').classList.toggle('is-freetool', freehand);
-  if (!freehand) {
+  $('viewerScroll').classList.toggle('is-erasertool', eraser);
+  $('viewerScroll').classList.toggle('is-texttool', pdfView.annotating && annotStyle.tool === 'text');
+  if (!show) {
     cursor.hidden = true;
     return;
   }
 
   // 直径就是落笔粗细（box-sizing: border-box，含边框）
   const size = Math.max(3, annotStyle.width);
-  // 半透明笔画用真实透明度，实心笔画压淡一点以便看清底下的内容
-  const fill = annotStyle.alpha >= 0.99 ? 0.18 : Math.max(0.12, annotStyle.alpha);
   cursor.style.width = size + 'px';
   cursor.style.height = size + 'px';
+  if (eraser) {
+    // 橡皮画成灰色空心圈，看得清要擦掉的笔画
+    cursor.style.borderWidth = '1.5px';
+    cursor.style.color = '#8A8298';
+    cursor.style.background = 'rgba(255, 255, 255, .45)';
+    return;
+  }
+  // 半透明笔画用真实透明度，实心笔画压淡一点以便看清底下的内容
+  const fill = annotStyle.alpha >= 0.99 ? 0.18 : Math.max(0.12, annotStyle.alpha);
   cursor.style.borderWidth = (size >= 14 ? 2 : 1) + 'px';
   cursor.style.color = annotStyle.color;
   cursor.style.background = colorWithAlpha(annotStyle.color, fill);
@@ -1050,7 +1736,8 @@ function moveAnnotCursor(event) {
   const cursor = $('annotCursor');
   if (cursor.hidden) {
     // 拖到窗口外松手时可能收不到 pointerup，这里兜底恢复预览
-    if (annotStroke || !pdfView.annotating || !isFreehand(annotStyle.tool)) return;
+    if (annotStroke || eraseSession || !pdfView.annotating) return;
+    if (!isFreehand(annotStyle.tool) && annotStyle.tool !== 'eraser') return;
     cursor.hidden = false;
   }
 
@@ -1064,7 +1751,8 @@ function moveAnnotCursor(event) {
 
 function showAnnotCursor(show) {
   const cursor = $('annotCursor');
-  if (show && pdfView.annotating && isFreehand(annotStyle.tool)) {
+  const showable = pdfView.annotating && (isFreehand(annotStyle.tool) || annotStyle.tool === 'eraser');
+  if (show && showable) {
     cursor.hidden = false;
     cursor.style.visibility = 'visible';
   } else {
@@ -1087,12 +1775,20 @@ function resetAnnotTools() {
   annotStyle.tool = 'ink';
   annotWidths.pen = 4;
   annotWidths.marker = 18;
+  annotWidths.text = 14;
+  annotWidths.eraser = 16;
   annotAlphas.pen = 1;
   annotAlphas.marker = MARKER_ALPHA;
+  annotAlphas.text = 1;
+  annotAlphas.eraser = 1;
   annotStyle.width = annotWidths.pen;
   annotStyle.alpha = annotAlphas.pen;
   annotColorTouched = false;
+  annotStroke = null;
+  eraseSession = null;
   closeColorPop();
+  closeNoteEditor(false);
+  closeNoteList();
   syncWidthControl();
   selectAnnotColor('#E5484D');
   $('annotTools').querySelectorAll('.annot-tool').forEach((item) => {
@@ -1105,9 +1801,32 @@ function bindAnnotEvents() {
 
   scroll.addEventListener('pointerdown', (event) => {
     if (!pdfView.annotating || !pdfView.doc || event.button !== 0) return;
+    // 刚点浮层外面关掉编辑框，这一下不再当成新建
+    if (noteSuppressClick) {
+      noteSuppressClick = false;
+      return;
+    }
     const shell = event.target.closest('.viewer-page');
     if (!shell || !shell._viewport) return;
     event.preventDefault();
+
+    // 注释 / 文字：点已有内容就编辑，点空白处新建
+    if (isBlockTool(annotStyle.tool)) {
+      const point = annotPoint(shell, event);
+      const hit = hitTextBlock(Number(shell.dataset.page), point);
+      openNoteEditor(shell, hit, point, event.clientX, event.clientY);
+      return;
+    }
+
+    // 橡皮：按一下就擦，按住拖动可以连着擦
+    if (annotStyle.tool === 'eraser') {
+      annotPage = Number(shell.dataset.page);
+      try { scroll.setPointerCapture(event.pointerId); } catch (error) { /* 忽略捕获失败 */ }
+      eraseSession = {items: []};
+      if (eraseAt(shell, event)) redrawAnnot(shell);
+      return;
+    }
+
     try { scroll.setPointerCapture(event.pointerId); } catch (error) { /* 忽略捕获失败 */ }
     // 落笔时收起笔头预览，免得挡住正在画的线
     showAnnotCursor(false);
@@ -1116,6 +1835,16 @@ function bindAnnotEvents() {
 
   scroll.addEventListener('pointermove', (event) => {
     moveAnnotCursor(event);
+    // 擦除时指针被捕获，按坐标找当前落在哪一页
+    if (eraseSession) {
+      const host = document.elementFromPoint(event.clientX, event.clientY);
+      const shell = host ? host.closest('.viewer-page') : null;
+      if (shell && shell._viewport) {
+        event.preventDefault();
+        if (eraseAt(shell, event)) redrawAnnot(shell);
+      }
+      return;
+    }
     if (!annotStroke) return;
     const shell = pdfView.shells[annotPage - 1];
     if (!shell) return;
@@ -1124,6 +1853,8 @@ function bindAnnotEvents() {
   });
 
   const finish = (event) => {
+    // 一次擦除在抬手时统一入栈，撤销一次就能整段还原
+    if (eraseSession) finishErase();
     if (!annotStroke) return;
     const shell = pdfView.shells[annotPage - 1];
     if (shell) finishStroke(shell);
@@ -1266,6 +1997,8 @@ $('infoPanel').addEventListener('click', (event) => {
 });
 bindAnnotEvents();
 bindColorPop();
+bindNoteEditor();
+bindNoteList();
 syncWidthControl();
 updateAnnotHistory();
 
@@ -1307,13 +2040,41 @@ window.addEventListener('resize', () => {
 });
 
 /* ---------- 回退 / 前进 ---------- */
-function recordHistory(bytes, label) {
+function recordHistory(bytes, label, previousAnnotations) {
   // 从历史中间继续操作时，丢弃后面的重做分支
   if (historyIndex < history.length - 1) history.length = historyIndex + 1;
-  history.push({bytes, label});
+  // 操作前的标注属于上一版：补记进上一版快照，回退时才能看到当时的画面
+  if (previousAnnotations && history[historyIndex]) history[historyIndex].annotations = previousAnnotations;
+  // 新快照记下这一版页面对齐后的标注
+  history.push({bytes, label, annotations: snapshotAnnotations()});
   historyIndex = history.length - 1;
   trimHistory();
   updateHistoryUI();
+}
+
+// 标注是纯数据，复制一份，历史快照和当前编辑互不影响
+function cloneStrokes(strokes) {
+  return JSON.parse(JSON.stringify(strokes));
+}
+
+function snapshotAnnotations() {
+  const copy = new Map();
+  annotations.forEach((strokes, page) => {
+    copy.set(page, cloneStrokes(strokes));
+  });
+  return copy;
+}
+
+function restoreAnnotations(snapshot) {
+  annotations.clear();
+  if (snapshot) snapshot.forEach((strokes, page) => annotations.set(page, cloneStrokes(strokes)));
+  annotPage = 0;
+  annotStroke = null;
+  flashNote = null;
+  annotOrder.length = 0;
+  annotRedo.length = 0;
+  updateAnnotHistory();
+  refreshNoteList();
 }
 
 // 超出步数或字节预算时，丢弃最早的快照（至少保留一份）
@@ -1345,7 +2106,9 @@ async function goToHistory(target, message) {
   navigating = true;
   updateHistoryUI();
   try {
-    await loadAndDisplayPdf(history[target].bytes);
+    // 先还原这一版的标注快照，再让预览按原页码重画
+    restoreAnnotations(history[target].annotations);
+    await loadAndDisplayPdf(history[target].bytes, undefined, {keepAnnotations: true});
     historyIndex = target;
     toast(message + '：' + history[target].label, 'ok');
   } catch (error) {
@@ -1442,6 +2205,8 @@ async function loadMainFile(file) {
   try {
     await setBusy('正在读取文件…', hint);
     const bytes = await file.arrayBuffer();
+    // 换文件时上一份文档的标注没有意义，静默清掉
+    if (annotations.size) clearAnnotations();
     await loadAndDisplayPdf(bytes, hint);
     loadedFileName = file.name;
     history.length = 0;
@@ -1467,7 +2232,7 @@ function formatSize(bytes) {
   return Math.max(1, Math.round(bytes / 1024)) + ' KB';
 }
 
-async function loadAndDisplayPdf(pdfBytes, hint) {
+async function loadAndDisplayPdf(pdfBytes, hint, options) {
   await setBusy('正在解析 PDF 结构…', hint);
   pdfDoc = await PDFLib.PDFDocument.load(pdfBytes);
   const totalPages = pdfDoc.getPageCount();
@@ -1484,7 +2249,7 @@ async function loadAndDisplayPdf(pdfBytes, hint) {
   // 自绘预览渲染失败不影响导出，只提示错误
   try {
     await setBusy('正在生成预览…', '共 ' + totalPages + ' 页');
-    await renderPreview(pdfBytes);
+    await renderPreview(pdfBytes, options);
   } catch (error) {
     console.error(error);
     showPreviewError('预览渲染失败：' + error.message);
@@ -1568,6 +2333,16 @@ async function deletePages(button) {
       const totalPages = pdfDoc.getPageCount();
       const pagesToDelete = parsePageRanges(pageRangeStr, totalPages);
 
+      // 删页前的标注状态属于上一版，回退时要用
+      const beforeAnnotations = snapshotAnnotations();
+
+      // 删除前先记下"新第几页 = 旧第几页"，重建预览时按它把标注搬过去
+      const removed = new Set(pagesToDelete);
+      const pageMap = [];
+      for (let page = 1; page <= totalPages; page += 1) {
+        if (!removed.has(page)) pageMap.push(page);
+      }
+
       // 按降序删除，避免索引位移
       const sortedPages = [...pagesToDelete].sort((a, b) => b - a);
       for (const pageNum of sortedPages) {
@@ -1575,10 +2350,10 @@ async function deletePages(button) {
       }
 
       const bytes = await pdfDoc.save();
-      await loadAndDisplayPdf(bytes);
-      recordHistory(bytes, `删除 ${describePages(pagesToDelete)} 页`);
+      await loadAndDisplayPdf(bytes, undefined, {pageMap});
+      recordHistory(bytes, `删除 ${describePages(pagesToDelete)} 页`, beforeAnnotations);
       $('pageNumbersInput').value = '';
-      toast(`成功删除页面: ${describePages(pagesToDelete)}`, 'ok');
+      toast(`成功删除页面: ${describePages(pagesToDelete)}` + (annotations.size ? '，原有标注已按页保留' : ''), 'ok');
     } catch (error) {
       toast('删除页面失败: ' + error.message, 'err');
     }
@@ -1610,6 +2385,8 @@ async function insertPdf(button) {
     try {
       const insertPdfBytes = await insertPdfFile.arrayBuffer();
       const insertPdfDoc = await PDFLib.PDFDocument.load(insertPdfBytes);
+      // 插入前的标注状态属于上一版，回退时要用
+      const beforeAnnotations = snapshotAnnotations();
 
       // 计算插入位置的索引
       let insertIndex = targetPage - 1;
@@ -1621,9 +2398,10 @@ async function insertPdf(button) {
       }
 
       const bytes = await pdfDoc.save();
-      await loadAndDisplayPdf(bytes);
-      recordHistory(bytes, `插入 PDF ${copiedPages.length} 页`);
-      toast(`成功在第${targetPage}页${position === 'before' ? '前' : '后'}插入了 ${copiedPages.length} 页`, 'ok');
+      await loadAndDisplayPdf(bytes, undefined, {pageMap: pageMapAfterInsert(totalPages, insertIndex, copiedPages.length)});
+      recordHistory(bytes, `插入 PDF ${copiedPages.length} 页`, beforeAnnotations);
+      toast(`成功在第${targetPage}页${position === 'before' ? '前' : '后'}插入了 ${copiedPages.length} 页`
+        + (annotations.size ? '，原有标注已按页保留' : ''), 'ok');
     } catch (error) {
       toast('插入 PDF 失败: ' + error.message, 'err');
     }
@@ -1659,6 +2437,8 @@ async function insertImage(button) {
   await withBusy(button, async () => {
     try {
       const imageBytes = await insertImageFile.arrayBuffer();
+      // 插入前的标注状态属于上一版，回退时要用
+      const beforeAnnotations = snapshotAnnotations();
 
       // 新建一个只放图片的 PDF，再整页复制进主文档
       const imagePdfDoc = await PDFLib.PDFDocument.create();
@@ -1695,9 +2475,10 @@ async function insertImage(button) {
       }
 
       const bytes = await pdfDoc.save();
-      await loadAndDisplayPdf(bytes);
-      recordHistory(bytes, '插入图片');
-      toast(`成功在第${targetPage}页${position === 'before' ? '前' : '后'}插入了图片`, 'ok');
+      await loadAndDisplayPdf(bytes, undefined, {pageMap: pageMapAfterInsert(totalPages, insertIndex, copiedPages.length)});
+      recordHistory(bytes, '插入图片', beforeAnnotations);
+      toast(`成功在第${targetPage}页${position === 'before' ? '前' : '后'}插入了图片`
+        + (annotations.size ? '，原有标注已按页保留' : ''), 'ok');
     } catch (error) {
       toast('插入图片失败: ' + error.message, 'err');
     }
@@ -1744,7 +2525,13 @@ function colorWithAlpha(hex, alpha) {
   return 'rgba(' + Math.round(r * 255) + ', ' + Math.round(g * 255) + ', ' + Math.round(b * 255) + ', ' + alpha + ')';
 }
 
-function drawStrokeOnPage(page, stroke) {
+async function drawStrokeOnPage(page, stroke) {
+  // 注释与文字按位图落笔：pdf-lib 的内置字体不支持中文
+  if (isBlockTool(stroke.type)) {
+    await drawTextOnPage(page, stroke);
+    return;
+  }
+
   const {r, g, b} = hexToRgb(stroke.color);
   const color = PDFLib.rgb(r, g, b);
   const thickness = Math.max(0.5, stroke.width);
@@ -1802,6 +2589,32 @@ function drawStrokeOnPage(page, stroke) {
       ...(faded ? {borderOpacity: alpha} : {})
     });
   }
+}
+
+const TEXT_EXPORT_SCALE = 3;
+
+// 注释与文字渲染成透明 PNG 再贴回页面，中文和换行都不用担心字体编码
+async function drawTextOnPage(page, stroke) {
+  const box = textBlockMetrics(stroke, TEXT_EXPORT_SCALE);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.ceil(box.width));
+  canvas.height = Math.max(1, Math.ceil(box.height));
+  paintTextBlock(canvas.getContext('2d'), stroke, 0, 0, TEXT_EXPORT_SCALE);
+
+  const bytes = await new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('文字位图生成失败'));
+        return;
+      }
+      blob.arrayBuffer().then(resolve, reject);
+    }, 'image/png');
+  });
+
+  const image = await page.doc.embedPng(bytes);
+  const width = canvas.width / TEXT_EXPORT_SCALE;
+  const height = canvas.height / TEXT_EXPORT_SCALE;
+  page.drawImage(image, {x: stroke.x, y: stroke.y - height, width, height});
 }
 
 function drawSegments(page, points, thickness, color) {
@@ -1877,7 +2690,7 @@ async function buildExportBytes() {
   for (const [pageNumber, strokes] of annotations) {
     const page = copy.getPage(pageNumber - 1);
     if (!page) continue;
-    strokes.forEach((stroke) => drawStrokeOnPage(page, stroke));
+    for (const stroke of strokes) await drawStrokeOnPage(page, stroke);
   }
   return copy.save();
 }

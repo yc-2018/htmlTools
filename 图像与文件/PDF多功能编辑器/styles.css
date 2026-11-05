@@ -13,6 +13,8 @@
   --ok: #2E7D55;
   --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
   --sans: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  /* 取色盘色域的右端色相，脚本按当前颜色覆盖 */
+  --hue-color: #FF0000;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -431,6 +433,8 @@ input[type="file"]::file-selector-button:hover { border-color: var(--accent); co
 .annot-tools,
 .annot-widths,
 .annot-actions { display: flex; align-items: center; gap: 4px; }
+/* 窄屏放不下就换行，按钮本身不许被压得文字折行 */
+.annot-tools { flex-wrap: wrap; min-width: 0; }
 .annot-tool,
 .annot-actions button {
   padding: 4px 9px;
@@ -440,6 +444,7 @@ input[type="file"]::file-selector-button:hover { border-color: var(--accent); co
   color: var(--ink-soft);
   font: inherit;
   font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
   transition: border-color .15s, color .15s, background .15s;
 }
@@ -484,6 +489,8 @@ input[type="file"]::file-selector-button:hover { border-color: var(--accent); co
   cursor: pointer;
 }
 .annot-colors { display: flex; align-items: center; gap: 7px; }
+/* 橡皮不落色，整排调淡并且不可点 */
+.annot-colors.is-muted { opacity: .4; pointer-events: none; }
 .annot-color {
   width: 18px;
   height: 18px;
@@ -629,6 +636,150 @@ input[type="file"]::file-selector-button:hover { border-color: var(--accent); co
 }
 .cp-done:hover { background: var(--accent-deep); }
 
+/* ---------- 注释 / 文字编辑 ---------- */
+.note-editor {
+  position: fixed;
+  z-index: 58;
+  display: grid;
+  gap: 8px;
+  width: 264px;
+  padding: 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 20px 44px -20px rgba(33, 28, 43, .5);
+}
+.note-editor[hidden] { display: none; }
+.ne-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ne-title { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.ne-sizes { display: flex; gap: 3px; }
+.ne-sizes[hidden] { display: none; }
+.ne-size {
+  min-width: 26px;
+  padding: 2px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.ne-size:hover { border-color: #C6AEE2; color: var(--accent); }
+.ne-size.is-active { border-color: var(--accent); background: var(--accent-tint); color: var(--accent); font-weight: 600; }
+#neText {
+  width: 100%;
+  min-height: 62px;
+  max-height: 180px;
+  padding: 7px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.55;
+  resize: vertical;
+  outline: none;
+}
+#neText:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+.ne-foot { display: flex; align-items: center; gap: 6px; }
+.ne-hint { flex: 1; min-width: 0; font-size: 11px; color: var(--ink-soft); }
+.ne-foot button {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ne-del { border: 1px solid #E7C4C1; background: #fff; color: #B03024; }
+.ne-del:hover { background: #FBEDEC; }
+.ne-del[hidden] { display: none; }
+.ne-cancel { border: 1px solid var(--line-2); background: #fff; color: var(--ink-soft); }
+.ne-cancel:hover { border-color: #C6AEE2; color: var(--accent); }
+.ne-save { border: 1px solid var(--accent); background: var(--accent); color: #fff; }
+.ne-save:hover { background: var(--accent-deep); }
+
+/* ---------- 注释列表 ---------- */
+.note-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 56;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(33, 28, 43, .34);
+}
+.note-panel[hidden] { display: none; }
+.note-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(100%, 420px);
+  max-height: min(70vh, 520px);
+  padding: 14px 16px 16px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 24px 60px -30px rgba(20, 16, 30, .85);
+}
+.note-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.note-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.note-list { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+.note-item { display: flex; align-items: stretch; gap: 4px; }
+.note-jump {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.note-jump:hover { border-color: #C6AEE2; background: #FBF8FF; }
+.note-badge {
+  flex: none;
+  min-width: 30px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: center;
+}
+.note-kind { flex: none; font-size: 11px; color: var(--ink-soft); }
+.note-text {
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.note-del {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.note-del:hover { border-color: #E7C4C1; background: #FBEDEC; color: #B03024; }
+.note-del svg { width: 14px; height: 14px; }
+.note-empty { padding: 18px 10px; color: var(--ink-soft); font-size: 12.5px; text-align: center; }
+
 /* ---------- 左侧页面缩略图 ---------- */
 .viewer-thumbs {
   flex: none;
@@ -711,6 +862,8 @@ input[type="file"]::file-selector-button:hover { border-color: var(--accent); co
 .viewer-scroll.is-annotating .annot-canvas { pointer-events: auto; cursor: crosshair; }
 /* 画笔/荧光笔用自绘的笔头预览代替系统光标 */
 .viewer-scroll.is-annotating.is-freetool .annot-canvas { cursor: none; }
+.viewer-scroll.is-annotating.is-erasertool .annot-canvas { cursor: none; }
+.viewer-scroll.is-annotating.is-texttool .annot-canvas { cursor: text; }
 .viewer-scroll.is-annotating .viewer-page { touch-action: none; }
 
 /* 跟随鼠标的笔头预览，大小就是实际落笔的粗细 */

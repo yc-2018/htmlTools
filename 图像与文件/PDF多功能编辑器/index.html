@@ -226,6 +226,9 @@
             <button type="button" class="annot-tool" data-tool="line">直线</button>
             <button type="button" class="annot-tool" data-tool="rect">矩形</button>
             <button type="button" class="annot-tool" data-tool="ellipse">椭圆</button>
+            <button type="button" class="annot-tool" data-tool="note">注释</button>
+            <button type="button" class="annot-tool" data-tool="text">文字</button>
+            <button type="button" class="annot-tool" data-tool="eraser">橡皮</button>
           </div>
           <div class="annot-colors" id="annotColors">
             <button type="button" class="annot-color is-active" data-color="#E5484D" style="--c:#E5484D" aria-label="红色"></button>
@@ -254,6 +257,12 @@
               </svg>
             </button>
             <button type="button" id="annotClearBtn">清空本页</button>
+            <button type="button" class="annot-icon" id="annotListBtn" title="注释列表" aria-label="注释列表">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M8 6h12M8 12h12M8 18h8"/>
+                <path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>
+              </svg>
+            </button>
           </div>
         </div>
         <div class="viewer-body" id="viewerBody" hidden>
@@ -321,6 +330,40 @@
     <input type="text" class="cp-hex" id="cpHex" value="#E5484D" maxlength="7" spellcheck="false" aria-label="颜色值"/>
     <span class="cp-alpha-text" id="cpAlphaText">100%</span>
     <button type="button" class="cp-done" id="cpDone">完成</button>
+  </div>
+</div>
+
+<!-- 注释 / 文字编辑浮层：贴着点击位置打开 -->
+<div class="note-editor" id="noteEditor" hidden role="dialog" aria-label="编辑注释">
+  <div class="ne-head">
+    <span class="ne-title" id="neTitle">新建注释</span>
+    <div class="ne-sizes" id="neSizes" hidden>
+      <button type="button" class="ne-size" data-size="10">小</button>
+      <button type="button" class="ne-size" data-size="14">中</button>
+      <button type="button" class="ne-size" data-size="20">大</button>
+    </div>
+  </div>
+  <textarea id="neText" rows="3" placeholder="写点什么…" spellcheck="false" aria-label="注释内容"></textarea>
+  <div class="ne-foot">
+    <button type="button" class="ne-del" id="neDelete" hidden>删除</button>
+    <span class="ne-hint">Ctrl + Enter 保存</span>
+    <button type="button" class="ne-cancel" id="neCancel">取消</button>
+    <button type="button" class="ne-save" id="neSave">保存</button>
+  </div>
+</div>
+
+<!-- 注释列表：便签与页面文字都在这里，可跳转或删除 -->
+<div class="note-panel" id="notePanel" hidden role="dialog" aria-modal="true" aria-label="注释列表">
+  <div class="note-card">
+    <div class="note-head">
+      <h3>注释与文字</h3>
+      <button type="button" class="icon-btn" id="noteCloseBtn" title="关闭" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m6 6 12 12M18 6 6 18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="note-list" id="noteList"></div>
   </div>
 </div>
 
