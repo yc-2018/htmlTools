@@ -22,7 +22,7 @@
 
 body {
   margin: 0;
-  padding: 26px 20px 44px;
+  padding: 26px 20px 20px;
   min-height: 100vh;
   color: var(--ink);
   font-family: var(--sans);
@@ -35,13 +35,13 @@ body {
 
 .app { max-width: 1180px; margin: 0 auto; }
 
-/* ---------- 顶栏 ---------- */
+/* ---------- 顶栏（放在左栏顶部，不再单独占一整行） ---------- */
 .top {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 0 2px 18px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 0 2px;
 }
 .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .logo {
@@ -62,7 +62,7 @@ body {
 .brand h1 { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -.2px; }
 .tagline { margin: 2px 0 0; font-size: 12.5px; color: var(--ink-soft); }
 
-.top-side { display: flex; align-items: center; gap: 14px; flex: none; }
+.top-side { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex: none; }
 .stat { display: flex; align-items: baseline; gap: 3px; font-size: 12px; color: var(--ink-soft); }
 .stat b {
   font-family: var(--mono);
@@ -292,11 +292,21 @@ input[type="file"]::file-selector-button:hover { border-color: var(--accent); co
 .btn-block { display: block; width: 100%; }
 
 /* ---------- 预览 ---------- */
-.preview-card { position: sticky; top: 20px; }
+/* 卡片按视口高度铺满：上方留 body 的 26px，下方留 20px，
+   预览区用 flex 吃掉剩余空间，底部不会再空一块，也不会顶出窗口 */
+.preview-card {
+  position: sticky;
+  top: 20px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 46px);
+  height: calc(100dvh - 46px);
+}
 .card-head {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: none;
   margin-bottom: 12px;
 }
 .card-head .card-title { margin: 0; flex: none; }
@@ -334,7 +344,8 @@ input[type="file"]::file-selector-button:hover { border-color: var(--accent); co
   position: relative;
   display: flex;
   flex-direction: column;
-  height: clamp(420px, calc(100vh - 240px), 820px);
+  flex: 1 1 auto;
+  min-height: 120px;
   border: 1px solid var(--line-2);
   border-radius: 9px;
   overflow: hidden;
@@ -1141,12 +1152,17 @@ input[type="file"]::file-selector-button:hover { border-color: var(--accent); co
 /* ---------- 响应式 ---------- */
 @media (max-width: 900px) {
   .workspace { grid-template-columns: 1fr; }
-  .preview-card { position: static; }
-  .preview { height: 64vh; min-height: 360px; }
+  /* 单列时预览不再跟窗口绑定，按固定比例给一块高度 */
+  .preview-card {
+    position: static;
+    display: block;
+    height: auto;
+  }
+  .preview { height: 64vh; height: 64dvh; min-height: 360px; }
 }
 @media (max-width: 560px) {
   body { padding: 18px 12px 36px; }
-  .top { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .top { gap: 12px; }
   .top-side { width: 100%; justify-content: space-between; }
   .brand h1 { font-size: 17px; }
   .card { padding: 12px 13px 14px; }

@@ -16,23 +16,23 @@
 
 <body>
 <div class="app">
-  <header class="top">
-    <div class="brand">
-      <span class="logo" aria-hidden="true">PDF</span>
-      <div>
-        <h1>PDF 多功能编辑器</h1>
-        <p class="tagline">删页 · 插 PDF · 插图片，全部在本地浏览器完成</p>
-      </div>
-    </div>
-    <div class="top-side">
-      <div class="stat"><b id="currentTotalPages">0</b><span>页</span></div>
-      <a class="ghost-btn" href="./压缩/index.html">PDF 压缩 →</a>
-    </div>
-  </header>
-
   <main class="workspace">
-    <!-- 左栏：步骤 -->
+    <!-- 左栏：标题 + 步骤 -->
     <div class="col-left">
+      <header class="top">
+        <div class="brand">
+          <span class="logo" aria-hidden="true">PDF</span>
+          <div>
+            <h1>PDF 多功能编辑器</h1>
+            <p class="tagline">删页 · 插 PDF · 插图片，全部在本地浏览器完成</p>
+          </div>
+        </div>
+        <div class="top-side">
+          <div class="stat"><b id="currentTotalPages">0</b><span>页</span></div>
+          <a class="ghost-btn" href="./压缩/index.html">PDF 压缩 →</a>
+        </div>
+      </header>
+
       <section class="card">
         <h2 class="card-title"><i>1</i>上传主 PDF</h2>
         <label class="drop" id="dropZone">
@@ -232,7 +232,7 @@
             <button type="button" class="annot-tool" data-tool="highlight">高亮</button>
             <button type="button" class="annot-tool" data-tool="eraser">橡皮</button>
           </div>
-          <div class="annot-style" id="annotStyle">
+          <div class="annot-style">
             <div class="annot-colors" id="annotColors">
               <button type="button" class="annot-color is-active" data-color="#E5484D" style="--c:#E5484D" aria-label="红色"></button>
               <button type="button" class="annot-color" data-color="#211C2B" style="--c:#211C2B" aria-label="黑色"></button>
