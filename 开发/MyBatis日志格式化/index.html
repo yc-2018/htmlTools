@@ -1,0 +1,2237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>MyBatis SQL 日志格式化 - 仰晨工具集</title>
+  <meta name="description" content="纯前端 MyBatis SQL 日志格式化工具：粘贴 Preparing / Parameters 日志，自动替换占位符、美化 SQL 并高亮显示。">
+  <meta name="keywords" content="MyBatis,SQL,日志格式化,Preparing,Parameters,在线工具">
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #141519;
+      --panel: #1f2127;
+      --panel-2: #24272e;
+      --editor: #15171b;
+      --line: #2c3038;
+      --line-strong: #3b414c;
+      --fg: #d7dae2;
+      --muted: #9097a5;
+      --muted-2: #6f7684;
+      --accent: #4d9df6;
+      --accent-strong: #6cb0ff;
+      --accent-soft: rgba(77, 157, 246, .12);
+      --green: #7ddba3;
+      --orange: #e8b56a;
+      --red: #ff8585;
+      --purple: #c9a2ff;
+      --cyan: #66c9d6;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 24px 60px -34px rgba(0, 0, 0, .95);
+      --font-ui: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", system-ui, -apple-system, "Segoe UI", sans-serif;
+      --font-mono: "JetBrains Mono", "Cascadia Code", "Cascadia Mono", "SF Mono", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    html {
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--fg);
+      font: 14px/1.6 var(--font-ui);
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background:
+        radial-gradient(900px 480px at 12% -8%, rgba(77, 157, 246, .15), transparent 62%),
+        radial-gradient(760px 420px at 92% 0%, rgba(123, 97, 255, .10), transparent 58%),
+        linear-gradient(180deg, #15161b 0%, #111216 72%);
+    }
+
+    ::selection {
+      background: rgba(77, 157, 246, .32);
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: #3a404b transparent;
+    }
+
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #343a44;
+      border: 2px solid transparent;
+      border-radius: 8px;
+      background-clip: content-box;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background-color: #464d59;
+    }
+
+    .wrap {
+      width: 100%;
+      margin: 0 auto;
+      padding: 30px 32px 26px;
+    }
+
+    /* ---------- 顶部 ---------- */
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 22px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      flex: none;
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      color: #d5e9ff;
+      background: linear-gradient(145deg, #2d72c4, #1c4d88);
+      border: 1px solid rgba(255, 255, 255, .16);
+      box-shadow: 0 12px 26px -14px rgba(77, 157, 246, .95), inset 0 1px 0 rgba(255, 255, 255, .18);
+    }
+
+    .brand-mark svg {
+      width: 25px;
+      height: 25px;
+    }
+
+    .brand-title-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(20px, 2.5vw, 26px);
+      font-weight: 700;
+      letter-spacing: .01em;
+      text-wrap: balance;
+    }
+
+    .badge {
+      padding: 2px 8px;
+      border: 1px solid rgba(125, 219, 163, .28);
+      border-radius: 999px;
+      background: rgba(125, 219, 163, .09);
+      color: var(--green);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .02em;
+      white-space: nowrap;
+    }
+
+    .brand p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .brand p code {
+      padding: 1px 5px;
+      border-radius: 5px;
+      background: var(--accent-soft);
+      color: #9cc7f5;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex: none;
+      padding-top: 3px;
+    }
+
+    .kbd-hint {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--muted-2);
+      font-size: 12px;
+    }
+
+    kbd {
+      display: inline-block;
+      padding: 1px 5px;
+      border: 1px solid var(--line-strong);
+      border-bottom-width: 2px;
+      border-radius: 5px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1.5;
+      white-space: nowrap;
+    }
+
+    .home-link {
+      padding: 7px 11px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: var(--muted);
+      font-size: 12.5px;
+      text-decoration: none;
+      transition: color .18s ease, border-color .18s ease, background .18s ease;
+    }
+
+    .home-link:hover {
+      color: var(--fg);
+      border-color: var(--line-strong);
+      background: var(--panel-2);
+    }
+
+    /* ---------- 面板 ---------- */
+    main {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .panel {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: linear-gradient(180deg, var(--panel), #1c1e23);
+      box-shadow: var(--shadow);
+      transition: border-color .18s ease, box-shadow .18s ease;
+    }
+
+    .input-panel:focus-within {
+      border-color: rgba(77, 157, 246, .55);
+      box-shadow: 0 0 0 3px rgba(77, 157, 246, .10), var(--shadow);
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, .015);
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .dot {
+      flex: none;
+      width: 9px;
+      height: 9px;
+      border-radius: 3px;
+      background: var(--accent);
+      box-shadow: 0 0 12px rgba(77, 157, 246, .75);
+    }
+
+    .dot-out {
+      background: var(--green);
+      box-shadow: 0 0 12px rgba(125, 219, 163, .6);
+    }
+
+    .panel-sub {
+      color: var(--muted-2);
+      font: 500 12px/1 var(--font-mono);
+      white-space: nowrap;
+    }
+
+    .panel-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: none;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--panel-2);
+      color: var(--fg);
+      font: 600 13px/1 var(--font-ui);
+      cursor: pointer;
+      transition: color .18s ease, background .18s ease, border-color .18s ease, filter .18s ease, opacity .18s ease;
+    }
+
+    .btn:hover {
+      border-color: var(--line-strong);
+      background: #2a2e36;
+    }
+
+    .btn:disabled {
+      opacity: .38;
+      cursor: not-allowed;
+    }
+
+    .btn.ghost {
+      padding: 7px 10px;
+      border-color: transparent;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .btn.ghost:hover:not(:disabled) {
+      border-color: var(--line);
+      background: var(--panel-2);
+      color: var(--fg);
+    }
+
+    .btn.primary {
+      padding: 11px 22px;
+      border-color: #5aa7ff;
+      background: linear-gradient(180deg, #5aa7ff, #3f8ee6);
+      color: #fff;
+      font-size: 14px;
+      box-shadow: 0 10px 26px -12px rgba(77, 157, 246, .9);
+    }
+
+    .btn.primary:hover {
+      filter: brightness(1.06);
+    }
+
+    .btn.primary kbd {
+      border-color: rgba(255, 255, 255, .38);
+      background: rgba(255, 255, 255, .10);
+      color: rgba(255, 255, 255, .86);
+    }
+
+    /* ---------- 输入 ---------- */
+    .editor-wrap {
+      display: flex;
+      align-items: stretch;
+      position: relative;
+      background: var(--editor);
+    }
+
+    .log-gutter {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: 52px;
+      overflow: hidden;
+      padding: 14px 0 16px;
+      background: var(--editor);
+      color: #555c69;
+      cursor: default;
+      user-select: none;
+    }
+
+    .log-gutter-line {
+      padding-right: 14px;
+      color: #555c69;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .log-mirror {
+      position: absolute;
+      top: 0;
+      left: -10000px;
+      visibility: hidden;
+      pointer-events: none;
+      margin: 0;
+      padding: 0;
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      word-break: normal;
+    }
+
+    #logInput {
+      display: block;
+      flex: 1 1 auto;
+      width: auto;
+      min-width: 0;
+      height: clamp(170px, 26vh, 250px);
+      min-height: 140px;
+      max-height: 56vh;
+      margin: 0;
+      padding: 14px 16px 16px 68px;
+      resize: vertical;
+      border: 0;
+      outline: none;
+      background: transparent;
+      color: var(--fg);
+      caret-color: var(--accent);
+      font: 13px/1.75 var(--font-mono);
+      tab-size: 2;
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+    }
+
+    #logInput::placeholder {
+      color: #565d6a;
+    }
+
+    .panel-foot {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 16px;
+      border-top: 1px solid var(--line);
+      background: rgba(255, 255, 255, .012);
+      color: var(--muted-2);
+      font-size: 12px;
+    }
+
+    .panel-foot span {
+      min-width: 0;
+    }
+
+    #inputHint {
+      font-family: var(--font-mono);
+      white-space: nowrap;
+    }
+
+    /* ---------- 操作条 ---------- */
+    .action-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(180deg, #20232a, #1c1e23);
+      box-shadow: var(--shadow);
+    }
+
+    .action-main {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px 20px;
+    }
+
+    .options {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px 18px;
+    }
+
+    .check {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .check:hover {
+      color: var(--fg);
+    }
+
+    .check input {
+      appearance: none;
+      -webkit-appearance: none;
+      display: grid;
+      place-items: center;
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      border: 1px solid var(--line-strong);
+      border-radius: 5px;
+      background: #17191d;
+      cursor: pointer;
+      transition: background .15s ease, border-color .15s ease;
+    }
+
+    .check input:checked {
+      border-color: var(--accent);
+      background: var(--accent);
+    }
+
+    .check input:checked::after {
+      content: "";
+      width: 8px;
+      height: 4px;
+      border-left: 2px solid #fff;
+      border-bottom: 2px solid #fff;
+      transform: translateY(-1px) rotate(-45deg);
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid rgba(125, 219, 163, .22);
+      border-radius: 10px;
+      background: rgba(125, 219, 163, .07);
+      color: var(--green);
+      font-size: 13px;
+      animation: status-in .18s ease;
+    }
+
+    @keyframes status-in {
+      from { opacity: 0; transform: translateY(-3px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .status-bar.warn {
+      border-color: rgba(232, 181, 106, .26);
+      background: rgba(232, 181, 106, .07);
+      color: var(--orange);
+    }
+
+    .status-bar.error {
+      border-color: rgba(255, 133, 133, .26);
+      background: rgba(255, 133, 133, .07);
+      color: var(--red);
+    }
+
+    .status-icon {
+      flex: none;
+      width: 18px;
+      height: 18px;
+      margin-top: 1px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--green);
+      color: #10231a;
+      font: 700 11px/1 var(--font-ui);
+    }
+
+    .status-bar.warn .status-icon {
+      background: var(--orange);
+      color: #251a08;
+    }
+
+    .status-bar.error .status-icon {
+      background: var(--red);
+      color: #2a0d0d;
+    }
+
+    .status-body {
+      min-width: 0;
+    }
+
+    .status-msg {
+      font-weight: 500;
+      line-height: 1.5;
+    }
+
+    .status-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .meta-chip {
+      padding: 2px 7px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, .035);
+      font-family: var(--font-mono);
+      overflow-wrap: anywhere;
+    }
+
+    .meta-chip.meta-warn {
+      border-color: rgba(232, 181, 106, .25);
+      background: rgba(232, 181, 106, .06);
+      color: var(--orange);
+    }
+
+    /* ---------- 输出 ---------- */
+    .code-view {
+      position: relative;
+      min-height: clamp(220px, 32vh, 360px);
+      max-height: 62vh;
+      overflow: auto;
+      background: var(--editor);
+    }
+
+    .result-empty {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 24px;
+      color: var(--muted-2);
+      text-align: center;
+    }
+
+    .result-empty svg {
+      width: 50px;
+      height: 50px;
+      margin-bottom: 4px;
+      color: #3c4451;
+    }
+
+    .result-empty strong {
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .result-empty span {
+      max-width: 360px;
+      font-size: 12.5px;
+      line-height: 1.7;
+    }
+
+    .result-empty kbd {
+      margin: 0 2px;
+    }
+
+    .code {
+      margin: 0;
+      padding: 10px 0 18px;
+      color: #c9cdd6;
+      font: 13px/1.7 var(--font-mono);
+      tab-size: 2;
+    }
+
+    .code-line {
+      display: flex;
+      min-height: 22px;
+    }
+
+    .code-line:hover {
+      background: rgba(255, 255, 255, .022);
+    }
+
+    .ln {
+      position: sticky;
+      left: 0;
+      flex: 0 0 52px;
+      padding-right: 14px;
+      background: var(--editor);
+      color: #555c69;
+      text-align: right;
+      user-select: none;
+    }
+
+    .lc {
+      padding-right: 22px;
+      white-space: pre;
+    }
+
+    .tok-kw { color: #6ea8fe; font-weight: 600; }
+    .tok-str { color: #98c379; }
+    .tok-num { color: #e5a663; }
+    .tok-com { color: #6b7280; font-style: italic; }
+    .tok-lit { color: var(--purple); }
+    .tok-ident { color: var(--cyan); }
+    .tok-fn { color: #56b6c2; }
+    .tok-param {
+      padding: 0 2px;
+      border-radius: 3px;
+      background: rgba(255, 123, 114, .14);
+      color: #ff7b72;
+      font-weight: 700;
+    }
+
+    /* ---------- 帮助 ---------- */
+    .help {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, .012);
+    }
+
+    .help summary {
+      padding: 13px 18px;
+      color: var(--muted);
+      font-size: 13px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .help summary:hover {
+      color: var(--fg);
+    }
+
+    .help-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+      gap: 20px;
+      padding: 2px 18px 18px;
+    }
+
+    .help h3 {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .04em;
+    }
+
+    .snippet {
+      margin: 0;
+      padding: 11px 12px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--editor);
+      color: #9aa2b1;
+      font: 12px/1.75 var(--font-mono);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .help ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      color: var(--muted);
+      font-size: 12.5px;
+      line-height: 1.8;
+    }
+
+    .help li {
+      position: relative;
+      padding-left: 15px;
+    }
+
+    .help li::before {
+      content: "";
+      position: absolute;
+      left: 2px;
+      top: .72em;
+      width: 4px;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--line-strong);
+    }
+
+    .help code {
+      color: #9cc7f5;
+      font-family: var(--font-mono);
+      font-size: .94em;
+    }
+
+    .foot {
+      padding: 18px 0 0;
+      color: #5b6270;
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 26px;
+      z-index: 50;
+      padding: 9px 16px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      background: #2a2e36;
+      box-shadow: var(--shadow);
+      color: var(--fg);
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 12px);
+      transition: opacity .2s ease, transform .2s ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    @media (max-width: 760px) {
+      .wrap {
+        padding: 18px 12px 20px;
+      }
+
+      .topbar {
+        flex-direction: column;
+        gap: 14px;
+        margin-bottom: 16px;
+      }
+
+      .topbar-right {
+        width: 100%;
+        justify-content: space-between;
+        padding-top: 0;
+      }
+
+      .brand-mark {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+      }
+
+      .brand p {
+        font-size: 12.5px;
+      }
+
+      .action-main {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .btn.primary {
+        width: 100%;
+      }
+
+      .options {
+        justify-content: space-between;
+      }
+
+      .panel-head {
+        flex-wrap: wrap;
+        padding: 10px 12px;
+      }
+
+      .panel-actions .btn {
+        padding: 7px 9px;
+      }
+
+      #logInput {
+        padding: 12px 12px 12px 54px;
+        font-size: 12.5px;
+      }
+
+      .log-gutter {
+        width: 42px;
+        padding: 12px 0;
+      }
+
+      .log-gutter-line {
+        padding-right: 9px;
+      }
+
+      .panel-foot {
+        padding: 8px 12px;
+        font-size: 11.5px;
+      }
+
+      #inputHint {
+        display: none;
+      }
+
+      .help-body {
+        grid-template-columns: 1fr;
+      }
+
+      .code {
+        font-size: 12px;
+      }
+
+      .ln {
+        flex-basis: 42px;
+        padding-right: 9px;
+      }
+
+      .lc {
+        padding-right: 14px;
+      }
+    }
+
+    @media (max-width: 380px) {
+      .brand {
+        gap: 10px;
+      }
+
+      .brand-mark {
+        width: 38px;
+        height: 38px;
+        border-radius: 11px;
+      }
+
+      .brand-mark svg {
+        width: 21px;
+        height: 21px;
+      }
+
+      h1 {
+        font-size: 18px;
+      }
+
+      .badge {
+        padding: 2px 7px;
+        font-size: 10.5px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: .01ms !important;
+        transition-duration: .01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <ellipse cx="12" cy="5" rx="7" ry="3"></ellipse>
+          <path d="M5 5v7c0 1.66 3.13 3 7 3s7-1.34 7-3V5"></path>
+          <path d="M5 12v7c0 1.66 3.13 3 7 3s7-1.34 7-3v-7"></path>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-title-row">
+          <h1>MyBatis SQL 日志格式化</h1>
+          <span class="badge">本地处理 · 不上传</span>
+        </div>
+        <p>粘贴 <code>Preparing</code> / <code>Parameters</code> 日志，自动替换占位符并美化 SQL</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="kbd-hint">格式化 <kbd><span class="mod-key">Ctrl</span></kbd><kbd>Enter</kbd></span>
+      <a class="home-link" href="/index.html">返回工具集</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel input-panel" aria-labelledby="inputTitle">
+      <div class="panel-head">
+        <div class="panel-title" id="inputTitle">
+          <span class="dot" aria-hidden="true"></span>
+          输入日志
+          <span class="panel-sub" id="inCount">0 行</span>
+        </div>
+        <div class="panel-actions">
+          <button type="button" class="btn ghost" id="btnSample">填入示例</button>
+          <button type="button" class="btn ghost" id="btnClear">清空</button>
+        </div>
+      </div>
+      <div class="editor-wrap">
+        <div class="log-gutter" id="logGutter" aria-hidden="true"></div>
+        <textarea id="logInput" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="MyBatis 日志输入" placeholder="在这里粘贴 MyBatis 日志，例如：&#10;==&gt;  Preparing: SELECT * FROM t_user WHERE id = ?&#10;==&gt; Parameters: 1(Long)"></textarea>
+        <div class="log-mirror" id="logMirror" aria-hidden="true"></div>
+      </div>
+      <div class="panel-foot">
+        <span>支持一次粘贴多条 SQL，时间戳与日志前缀会被自动忽略</span>
+        <span id="inputHint"><span class="mod-key">Ctrl</span> + Enter 快速格式化</span>
+      </div>
+    </section>
+
+    <section class="action-panel" aria-label="格式化操作">
+      <div class="action-main">
+        <button type="button" class="btn primary" id="btnFormat">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"></path>
+          </svg>
+          格式化 SQL
+          <kbd><span class="mod-key">Ctrl</span> ↵</kbd>
+        </button>
+        <div class="options">
+          <label class="check"><input type="checkbox" id="optPretty" checked><span>美化排版</span></label>
+          <label class="check"><input type="checkbox" id="optUpper" checked><span>关键字大写</span></label>
+        </div>
+      </div>
+      <div class="status-bar" id="statusBar" hidden aria-live="polite">
+        <span class="status-icon" id="statusIcon" aria-hidden="true"></span>
+        <div class="status-body">
+          <div class="status-msg" id="statusMsg"></div>
+          <div class="status-meta" id="statusMeta" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel output-panel" aria-labelledby="outputTitle">
+      <div class="panel-head">
+        <div class="panel-title" id="outputTitle">
+          <span class="dot dot-out" aria-hidden="true"></span>
+          格式化结果
+          <span class="panel-sub" id="outCount"></span>
+        </div>
+        <div class="panel-actions">
+          <button type="button" class="btn ghost" id="btnCopy" disabled>复制</button>
+          <button type="button" class="btn ghost" id="btnDownload" disabled>下载 .sql</button>
+        </div>
+      </div>
+      <div class="code-view" id="codeView">
+        <div class="result-empty" id="resultEmpty">
+          <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="6" y="9" width="36" height="30" rx="5"></rect>
+            <path d="M12 18l7 6-7 6"></path>
+            <path d="M23 30h11"></path>
+          </svg>
+          <strong>格式化结果会显示在这里</strong>
+          <span>粘贴 MyBatis 日志后点击「格式化 SQL」，也可以直接按 <kbd><span class="mod-key">Ctrl</span></kbd> + <kbd>Enter</kbd></span>
+        </div>
+        <pre class="code" id="codeOutput" hidden aria-label="格式化后的 SQL"></pre>
+      </div>
+    </section>
+  </main>
+
+  <details class="help">
+    <summary>使用说明 · 支持哪些日志格式？</summary>
+    <div class="help-body">
+      <div>
+        <h3>输入示例</h3>
+<pre class="snippet">[2024-05-01 08:30:00.123] [DEBUG] com.example.mapper.UserMapper.selectUsers.debug(42) - ==&gt;  Preparing: SELECT id, username FROM t_user WHERE status = ? AND username LIKE ? LIMIT ?
+[2024-05-01 08:30:00.124] [DEBUG] com.example.mapper.UserMapper.selectUsers.debug(42) - ==&gt; Parameters: 1(Integer), %张%(String), 10(Integer)
+[2024-05-01 08:30:00.125] [DEBUG] com.example.mapper.UserMapper.selectUsers.debug(42) - &lt;==      Total: 3</pre>
+      </div>
+      <div>
+        <h3>转换规则</h3>
+        <ul>
+          <li>识别 <code>==&gt; Preparing:</code> 与 <code>==&gt; Parameters:</code> 成对日志，可一次粘贴多条 SQL。</li>
+          <li>兼容 Spring Boot、Logback 等常见时间戳与日志前缀，只提取 SQL 部分。</li>
+          <li>String 与日期加单引号并转义 <code>'</code>；<code>null</code> → <code>NULL</code>；数字与布尔值原样输出。</li>
+          <li>保留 <code>Total</code> / <code>Updates</code> 行数，显示在结果摘要中。</li>
+          <li>所有内容只在浏览器本地处理，日志不会上传到任何服务器。</li>
+        </ul>
+      </div>
+    </div>
+  </details>
+
+  <footer class="foot">仰晨工具集 · MyBatis SQL 日志格式化</footer>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  var SAMPLE = [
+    '[2024-05-01 08:30:00.123] [DEBUG] com.example.mapper.UserMapper.selectUsers.debug(42) - ==>  Preparing: SELECT id, username, email, created_at FROM t_user WHERE status = ? AND deleted = ? AND username LIKE ? ORDER BY created_at DESC LIMIT ?',
+    '[2024-05-01 08:30:00.124] [DEBUG] com.example.mapper.UserMapper.selectUsers.debug(42) - ==> Parameters: 1(Integer), 0(Integer), %张%(String), 10(Integer)',
+    '[2024-05-01 08:30:00.125] [DEBUG] com.example.mapper.UserMapper.selectUsers.debug(42) - <==      Total: 3'
+  ].join('\n');
+
+  var PREPARING_RE = /==>\s*Preparing\s*:\s?/i;
+  var PARAMETERS_RE = /==>\s*Parameters\s*:\s?/i;
+  var RESULT_RE = /<==\s*(Total|Updates)\s*:\s*([\d,]+)/i;
+  var IGNORED_MARKER_RE = /(?:==>|<==)\s*(?:Types|RowCount|Columns|Batch)\s*:/i;
+  var LOG_PREFIX_RE = /^\s*(?:\[[^\]]*\]\s*)*(?:\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}|\d{2}:\d{2}:\d{2})/;
+  var LOG_LEVEL_RE = /\b(?:TRACE|DEBUG|INFO|WARN|ERROR)\b/;
+
+  var STRING_TYPES = /^(?:string|nstring|clob|nclob|char|character|varchar|nvarchar|text|citext)$/;
+  var NUMBER_TYPES = /^(?:byte|short|integer|int|long|float|double|biginteger|bigdecimal|number|decimal|numeric|real|smallint|tinyint)$/;
+  var DATE_TYPES = /^(?:date|time|timestamp|datetime|localdate|localtime|localdatetime|offsetdatetime|zoneddatetime|instant|year|yearmonth)$/;
+  var BOOLEAN_TYPES = /^(?:boolean|bool)$/;
+  var BYTE_TYPES = /^(?:byte\[\]|bytes)$/;
+  var NUMBER_RE = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
+  var UPPER_KEYWORDS = new Set((
+    'SELECT FROM WHERE AND OR NOT NULL IS IN LIKE BETWEEN EXISTS JOIN LEFT RIGHT INNER OUTER FULL CROSS NATURAL ' +
+    'ON USING GROUP BY ORDER HAVING LIMIT OFFSET UNION EXCEPT INTERSECT ALL DISTINCT AS INSERT INTO VALUES UPDATE ' +
+    'SET DELETE RETURNING WINDOW FETCH WITH ASC DESC CASE WHEN THEN ELSE END TRUE FALSE FOR SHARE'
+  ).split(' '));
+
+  var SINGLE_BREAK = new Set([
+    'SELECT', 'FROM', 'WHERE', 'GROUP', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET', 'UNION', 'EXCEPT',
+    'INTERSECT', 'INSERT', 'UPDATE', 'DELETE', 'VALUES', 'SET', 'RETURNING', 'WINDOW', 'FETCH',
+    'WITH', 'JOIN', 'ON', 'USING', 'AND', 'OR'
+  ]);
+
+  var JOIN_PREFIXES = new Set(['LEFT', 'RIGHT', 'INNER', 'FULL', 'CROSS', 'NATURAL', 'OUTER']);
+  var EXTRA_INDENT_WORDS = new Set(['AND', 'OR', 'ON', 'USING']);
+  var SPACE_BEFORE_PAREN = new Set([
+    'IN', 'EXISTS', 'VALUES', 'NOT', 'AND', 'OR', 'WHERE', 'ON', 'BY', 'AS', 'FROM', 'JOIN',
+    'USING', 'SELECT', 'SET', 'THEN', 'ELSE', 'WHEN', 'HAVING', 'LIMIT', 'OFFSET', 'UNION', 'ALL', 'DISTINCT'
+  ]);
+  var UNARY_CONTEXT_WORDS = new Set([
+    'SELECT', 'WHERE', 'AND', 'OR', 'ON', 'WHEN', 'THEN', 'ELSE', 'BY', 'LIMIT', 'OFFSET',
+    'SET', 'VALUES', 'RETURNING', 'NOT', 'IS', 'IN', 'LIKE', 'BETWEEN'
+  ]);
+
+  var TYPE_RE = /\(((?:[a-z][\w$]*\.)*[A-Z][\w$]*(?:\[\])?|(?:byte|short|int|long|float|double|boolean|char)\[\])\)/g;
+  var WORD_START_RE = /[A-Za-z_$\u00C0-\uFFFF]/;
+  var WORD_RE = /^[A-Za-z_$\u00C0-\uFFFF][\w$\u00C0-\uFFFF]*/;
+  var NUM_RE = /^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/;
+
+  // ------------------------------------------------------------------
+  // 参数解析与替换
+  // ------------------------------------------------------------------
+  function quoteValue(value) {
+    return "'" + String(value).replace(/'/g, "''") + "'";
+  }
+
+  function makeParam(raw, type) {
+    var typeName = String(type || '').replace(/^.*\./, '');
+    var lowerType = typeName.toLowerCase();
+    var trimmed = raw.trim();
+    var sql;
+    var isBytes = false;
+
+    if (/^null$/i.test(trimmed)) {
+      sql = STRING_TYPES.test(lowerType) ? quoteValue(raw) : 'NULL';
+    } else if (BYTE_TYPES.test(lowerType)) {
+      sql = "'<byte[]>'";
+      isBytes = true;
+    } else if (STRING_TYPES.test(lowerType)) {
+      sql = quoteValue(raw);
+    } else if (NUMBER_TYPES.test(lowerType)) {
+      sql = NUMBER_RE.test(trimmed) ? trimmed : quoteValue(raw);
+    } else if (BOOLEAN_TYPES.test(lowerType)) {
+      sql = /^true$/i.test(trimmed) ? 'TRUE' : /^false$/i.test(trimmed) ? 'FALSE' : quoteValue(raw);
+    } else if (DATE_TYPES.test(lowerType)) {
+      sql = quoteValue(trimmed);
+    } else if (NUMBER_RE.test(trimmed)) {
+      sql = trimmed;
+    } else if (/^(?:true|false)$/i.test(trimmed)) {
+      sql = trimmed.toUpperCase();
+    } else {
+      sql = quoteValue(raw);
+    }
+
+    return { raw: raw, type: typeName, sql: sql, isBytes: isBytes };
+  }
+
+  function parseUntyped(text) {
+    var parts = [];
+    var buf = '';
+    var depth = 0;
+    var quote = null;
+
+    for (var i = 0; i < text.length; i += 1) {
+      var ch = text[i];
+      if (quote) {
+        buf += ch;
+        if (ch === quote) quote = null;
+        continue;
+      }
+      if (ch === "'" || ch === '"') {
+        quote = ch;
+        buf += ch;
+        continue;
+      }
+      if (ch === '(') depth += 1;
+      if (ch === ')') depth = Math.max(0, depth - 1);
+      if (ch === ',' && depth === 0) {
+        parts.push(buf);
+        buf = '';
+        continue;
+      }
+      buf += ch;
+    }
+    parts.push(buf);
+
+    return parts
+      .map(function (part) { return part.trim(); })
+      .filter(function (part) { return part !== ''; })
+      .map(function (part) { return makeParam(part, ''); });
+  }
+
+  function parseParams(text) {
+    var params = [];
+    var s = String(text || '').trim();
+    if (!s) return params;
+
+    var pos = 0;
+    var guard = 0;
+
+    while (pos < s.length && guard < 5000) {
+      guard += 1;
+      while (pos < s.length && (s[pos] === ',' || /\s/.test(s[pos]))) pos += 1;
+      if (pos >= s.length) break;
+
+      var rest = s.slice(pos);
+      var nullLead = /^null(?=\s*(?:,|$))/i.exec(rest);
+      if (nullLead) {
+        params.push(makeParam('null', ''));
+        pos += nullLead[0].length;
+        continue;
+      }
+
+      // 参数值里也可能出现括号和逗号，因此向后寻找“后面紧跟分隔符/结尾”的类型标记
+      TYPE_RE.lastIndex = pos;
+      var match = null;
+      var candidate;
+      while ((candidate = TYPE_RE.exec(s)) !== null) {
+        var after = s.slice(candidate.index + candidate[0].length);
+        if (/^\s*(?:,|$)/.test(after)) {
+          match = candidate;
+          break;
+        }
+      }
+
+      if (!match) {
+        parseUntyped(s.slice(pos)).forEach(function (param) { params.push(param); });
+        break;
+      }
+
+      params.push(makeParam(s.slice(pos, match.index), match[1]));
+      pos = match.index + match[0].length;
+    }
+
+    return params;
+  }
+
+  function skipQuoted(sql, start) {
+    var quote = sql[start];
+    var i = start + 1;
+    while (i < sql.length) {
+      var ch = sql[i];
+      if (ch === '\\' && (quote === "'" || quote === '"')) {
+        i += 2;
+        continue;
+      }
+      if (ch === quote) {
+        if (sql[i + 1] === quote) {
+          i += 2;
+          continue;
+        }
+        return i + 1;
+      }
+      i += 1;
+    }
+    return sql.length;
+  }
+
+  function bindParams(sql, params) {
+    var out = '';
+    var i = 0;
+    var used = 0;
+    var placeholders = 0;
+    var n = sql.length;
+
+    while (i < n) {
+      var ch = sql[i];
+      if (ch === "'" || ch === '"' || ch === '`') {
+        var endQuote = skipQuoted(sql, i);
+        out += sql.slice(i, endQuote);
+        i = endQuote;
+        continue;
+      }
+      if (ch === '-' && sql[i + 1] === '-') {
+        var lineEnd = sql.indexOf('\n', i);
+        if (lineEnd === -1) lineEnd = n;
+        out += sql.slice(i, lineEnd);
+        i = lineEnd;
+        continue;
+      }
+      if (ch === '/' && sql[i + 1] === '*') {
+        var close = sql.indexOf('*/', i + 2);
+        var commentEnd = close === -1 ? n : close + 2;
+        out += sql.slice(i, commentEnd);
+        i = commentEnd;
+        continue;
+      }
+      if (ch === '?') {
+        placeholders += 1;
+        if (used < params.length) {
+          out += params[used].sql;
+          used += 1;
+        } else {
+          out += '?';
+        }
+        i += 1;
+        continue;
+      }
+      out += ch;
+      i += 1;
+    }
+
+    return { sql: out, used: used, placeholders: placeholders };
+  }
+
+  // ------------------------------------------------------------------
+  // 日志解析
+  // ------------------------------------------------------------------
+  function extractSource(prefix) {
+    var m = /([\w.$]+)\.(?:debug|trace|info|warn|error)\(\d+\)/i.exec(prefix)
+      || /([\w.$]+)\s*:\s*$/.exec(prefix);
+    return m ? m[1] : '';
+  }
+
+  function sourceLabel(source) {
+    if (!source) return '';
+    var parts = source.split('.');
+    return parts.length > 2 ? parts.slice(-2).join('.') : source;
+  }
+
+  function looksLikeNewLogLine(line) {
+    return LOG_PREFIX_RE.test(line) && LOG_LEVEL_RE.test(line);
+  }
+
+  function parseLog(text) {
+    var lines = String(text || '').split(/\r?\n/);
+    var statements = [];
+    var cur = null;
+    var hasPreparing = false;
+    var hasParamsWithoutSql = false;
+    var sawMarker = false;
+
+    function pushCur() {
+      if (cur && cur.sql.trim()) statements.push(cur);
+      cur = null;
+    }
+
+    for (var i = 0; i < lines.length; i += 1) {
+      var line = lines[i];
+      var m = PREPARING_RE.exec(line);
+
+      if (m) {
+        hasPreparing = true;
+        sawMarker = true;
+        pushCur();
+        cur = {
+          sql: line.slice(m.index + m[0].length),
+          paramsText: null,
+          params: [],
+          result: null,
+          source: extractSource(line.slice(0, m.index)),
+          fallback: false
+        };
+        continue;
+      }
+
+      m = PARAMETERS_RE.exec(line);
+      if (m) {
+        sawMarker = true;
+        if (!cur) {
+          hasParamsWithoutSql = true;
+          continue;
+        }
+        if (cur.paramsText !== null) {
+          hasParamsWithoutSql = true;
+          continue;
+        }
+        cur.paramsText = line.slice(m.index + m[0].length);
+        cur.params = parseParams(cur.paramsText);
+        continue;
+      }
+
+      m = RESULT_RE.exec(line);
+      if (m) {
+        sawMarker = true;
+        if (cur) {
+          cur.result = {
+            kind: m[1].toLowerCase() === 'updates' ? 'Updates' : 'Total',
+            value: m[2]
+          };
+        }
+        continue;
+      }
+
+      if (IGNORED_MARKER_RE.test(line)) {
+        sawMarker = true;
+        continue;
+      }
+
+      // Preparing 与 Parameters 之间的多行 SQL 续行
+      if (cur && cur.paramsText === null && line.trim() && !looksLikeNewLogLine(line)) {
+        cur.sql += '\n' + line;
+      }
+    }
+
+    pushCur();
+
+    if (!hasPreparing) {
+      if (!sawMarker && String(text || '').trim()) {
+        return {
+          statements: [{
+            sql: text,
+            paramsText: null,
+            params: [],
+            result: null,
+            source: '',
+            fallback: true
+          }],
+          fallback: true,
+          hasPreparing: false,
+          hasParamsWithoutSql: false
+        };
+      }
+      return {
+        statements: [],
+        fallback: false,
+        hasPreparing: false,
+        hasParamsWithoutSql: hasParamsWithoutSql
+      };
+    }
+
+    return {
+      statements: statements,
+      fallback: false,
+      hasPreparing: true,
+      hasParamsWithoutSql: hasParamsWithoutSql
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // SQL 分词与格式化
+  // ------------------------------------------------------------------
+  function tokenizeSql(sql) {
+    var tokens = [];
+    var i = 0;
+    var n = sql.length;
+
+    while (i < n) {
+      var ch = sql[i];
+      if (/\s/.test(ch)) {
+        i += 1;
+        continue;
+      }
+
+      var start = i;
+
+      if (ch === "'" || ch === '"' || ch === '`') {
+        i = skipQuoted(sql, i);
+        tokens.push({
+          type: ch === "'" ? 'str' : 'ident',
+          value: sql.slice(start, i),
+          start: start,
+          end: i
+        });
+        continue;
+      }
+
+      if (ch === '-' && sql[i + 1] === '-') {
+        var lineEnd = sql.indexOf('\n', i);
+        if (lineEnd === -1) lineEnd = n;
+        tokens.push({
+          type: 'comment',
+          line: true,
+          value: sql.slice(start, lineEnd).replace(/\s+$/, ''),
+          start: start,
+          end: lineEnd
+        });
+        i = lineEnd;
+        continue;
+      }
+
+      if (ch === '/' && sql[i + 1] === '*') {
+        var close = sql.indexOf('*/', i + 2);
+        i = close === -1 ? n : close + 2;
+        tokens.push({
+          type: 'comment',
+          line: false,
+          value: sql.slice(start, i),
+          start: start,
+          end: i
+        });
+        continue;
+      }
+
+      if (/[0-9]/.test(ch) || (ch === '.' && /[0-9]/.test(sql[i + 1] || ''))) {
+        var num = NUM_RE.exec(sql.slice(i));
+        i += num[0].length;
+        tokens.push({ type: 'num', value: num[0], start: start, end: i });
+        continue;
+      }
+
+      if (WORD_START_RE.test(ch)) {
+        var word = WORD_RE.exec(sql.slice(i));
+        i += word[0].length;
+        tokens.push({
+          type: 'word',
+          value: word[0],
+          upper: word[0].toUpperCase(),
+          start: start,
+          end: i
+        });
+        continue;
+      }
+
+      var three = sql.slice(i, i + 3);
+      if (three === '<=>') {
+        i += 3;
+        tokens.push({ type: 'op', value: '<=>', start: start, end: i });
+        continue;
+      }
+
+      var two = sql.slice(i, i + 2);
+      if (two === '<=' || two === '>=' || two === '<>' || two === '!=' || two === '||' || two === '&&') {
+        i += 2;
+        tokens.push({ type: 'op', value: two, start: start, end: i });
+        continue;
+      }
+      if (two === '::') {
+        i += 2;
+        tokens.push({ type: 'punct', value: '::', start: start, end: i });
+        continue;
+      }
+
+      if ('=<>+-*/%!'.indexOf(ch) !== -1) {
+        i += 1;
+        tokens.push({ type: 'op', value: ch, start: start, end: i });
+        continue;
+      }
+
+      i += 1;
+      tokens.push({ type: 'punct', value: ch, start: start, end: i });
+    }
+
+    return tokens;
+  }
+
+  function prevWord(tokens, index) {
+    var j = index - 1;
+    while (j >= 0 && tokens[j].type === 'comment') j -= 1;
+    return j >= 0 && tokens[j].type === 'word' ? tokens[j] : null;
+  }
+
+  function startsJoin(tokens, index) {
+    var words = 0;
+    for (var j = index + 1; j < tokens.length && words < 2; j += 1) {
+      if (tokens[j].type === 'comment') continue;
+      if (tokens[j].type !== 'word') return false;
+      words += 1;
+      if (tokens[j].upper === 'JOIN') return true;
+      if (tokens[j].upper !== 'OUTER') return false;
+    }
+    return false;
+  }
+
+  function suppressBreak(tokens, index, word) {
+    var prev = prevWord(tokens, index);
+    if (!prev) return false;
+    if (word === 'JOIN' && (JOIN_PREFIXES.has(prev.upper) || prev.upper === 'OUTER')) return true;
+    if (word === 'FROM' && prev.upper === 'DELETE') return true;
+    if (word === 'UPDATE' && prev.upper === 'FOR') return true;
+    return false;
+  }
+
+  function isUnaryContext(prev) {
+    if (!prev) return true;
+    if (prev.type === 'op') return true;
+    if (prev.type === 'punct' && (prev.value === '(' || prev.value === ',' || prev.value === '[')) return true;
+    return prev.type === 'word' && UNARY_CONTEXT_WORDS.has(prev.upper);
+  }
+
+  function needsSpace(prev, tok, afterUnary) {
+    if (!prev) return false;
+    if (afterUnary) return false;
+
+    if (tok.type === 'punct') {
+      if (tok.value === ',' || tok.value === ';' || tok.value === ')' || tok.value === ']' || tok.value === '.') return false;
+      if (tok.value === '::') return false;
+      if (tok.value === '(') {
+        return prev.type === 'word' && SPACE_BEFORE_PAREN.has(prev.upper);
+      }
+    }
+
+    if (prev.type === 'punct') {
+      if (prev.value === '(' || prev.value === '[' || prev.value === '.') return false;
+      if (prev.value === '::') return false;
+    }
+
+    return true;
+  }
+
+  function displayToken(tok, uppercase) {
+    if (tok.type === 'word') {
+      return uppercase && UPPER_KEYWORDS.has(tok.upper) ? tok.upper : tok.value;
+    }
+    if (tok.type === 'comment' && !tok.line) {
+      return tok.value.replace(/\s*\n\s*/g, ' ');
+    }
+    return tok.value;
+  }
+
+  function formatSql(sql, uppercase) {
+    var tokens = tokenizeSql(sql);
+    if (!tokens.length) return '';
+
+    var lines = [];
+    var line = '';
+    var prev = null;
+    var afterUnary = false;
+    var parens = [];
+
+    function flushLine() {
+      if (line.trim()) lines.push(line.replace(/\s+$/, ''));
+      line = '';
+      prev = null;
+      afterUnary = false;
+    }
+
+    function breakLine(extra) {
+      if (line.trim()) lines.push(line.replace(/\s+$/, ''));
+      if (parens.length) parens[parens.length - 1].multiline = true;
+      line = '  '.repeat(parens.length) + (extra ? '  ' : '');
+      prev = null;
+      afterUnary = false;
+    }
+
+    for (var i = 0; i < tokens.length; i += 1) {
+      var tok = tokens[i];
+      var extra = -1;
+
+      if (tok.type === 'word') {
+        var upper = tok.upper;
+        if (upper === 'SELECT' && parens.length) {
+          parens[parens.length - 1].hasSelect = true;
+        }
+        if (JOIN_PREFIXES.has(upper) && startsJoin(tokens, i)) {
+          extra = 0;
+        } else if (SINGLE_BREAK.has(upper) && !suppressBreak(tokens, i, upper)) {
+          extra = EXTRA_INDENT_WORDS.has(upper) ? 2 : 0;
+        }
+      }
+
+      // 函数括号内的 FROM / AND 不参与换行，只有子查询（括号内出现过 SELECT）才排版
+      if (extra >= 0 && parens.length && !parens[parens.length - 1].hasSelect) {
+        extra = -1;
+      }
+      if (extra >= 0) breakLine(extra);
+
+      if (tok.type === 'punct' && tok.value === ')' && parens.length) {
+        var group = parens.pop();
+        if (group.multiline) {
+          if (line.trim()) lines.push(line.replace(/\s+$/, ''));
+          line = '  '.repeat(parens.length) + ')';
+          prev = tok;
+          afterUnary = false;
+          continue;
+        }
+      }
+
+      var unary = tok.type === 'op' && (tok.value === '-' || tok.value === '+') && isUnaryContext(prev);
+      if (needsSpace(prev, tok, afterUnary)) line += ' ';
+      line += displayToken(tok, uppercase);
+
+      if (tok.type === 'punct' && tok.value === '(') {
+        parens.push({ multiline: false, hasSelect: false });
+      }
+
+      if (tok.type === 'comment' && tok.line) {
+        if (line.trim()) lines.push(line.replace(/\s+$/, ''));
+        line = '  '.repeat(parens.length);
+        prev = null;
+        afterUnary = false;
+        continue;
+      }
+
+      if (tok.type === 'punct' && tok.value === ';') {
+        flushLine();
+        continue;
+      }
+
+      afterUnary = unary;
+      prev = tok;
+    }
+
+    if (line.trim()) lines.push(line.replace(/\s+$/, ''));
+
+    var text = lines.join('\n').trim();
+    if (text && !text.endsWith(';')) text += ';';
+    return text;
+  }
+
+  function uppercaseOnly(sql) {
+    var tokens = tokenizeSql(sql);
+    var out = '';
+    var last = 0;
+
+    for (var i = 0; i < tokens.length; i += 1) {
+      var tok = tokens[i];
+      out += sql.slice(last, tok.start);
+      if (tok.type === 'word' && UPPER_KEYWORDS.has(tok.upper)) {
+        out += tok.upper;
+      } else {
+        out += sql.slice(tok.start, tok.end);
+      }
+      last = tok.end;
+    }
+
+    out += sql.slice(last);
+    return out.trim();
+  }
+
+  // ------------------------------------------------------------------
+  // 结果高亮
+  // ------------------------------------------------------------------
+  var HL_KEYWORDS = new Set(Array.from(UPPER_KEYWORDS).concat([
+    'WINDOW', 'FETCH', 'RETURNING', 'EXCEPT', 'INTERSECT', 'NATURAL', 'SHARE'
+  ]));
+
+  function esc(text) {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function scanQuoteInLine(line, start) {
+    var quote = line[start];
+    var j = start + 1;
+    while (j < line.length) {
+      var ch = line[j];
+      if (ch === '\\' && (quote === "'" || quote === '"')) {
+        j += 2;
+        continue;
+      }
+      if (ch === quote) {
+        if (line[j + 1] === quote) {
+          j += 2;
+          continue;
+        }
+        return { end: j + 1, closed: true };
+      }
+      j += 1;
+    }
+    return { end: line.length, closed: false };
+  }
+
+  function highlightLines(text) {
+    var state = { quote: null, block: false };
+
+    return text.split('\n').map(function (line, index) {
+      var html = '';
+      var plain = '';
+
+      function flushPlain() {
+        if (plain) {
+          html += esc(plain);
+          plain = '';
+        }
+      }
+
+      function add(cls, value) {
+        flushPlain();
+        html += '<span class="' + cls + '">' + esc(value) + '</span>';
+      }
+
+      var i = 0;
+      while (i < line.length) {
+        if (state.block) {
+          var blockEnd = line.indexOf('*/', i);
+          if (blockEnd === -1) {
+            add('tok-com', line.slice(i));
+            i = line.length;
+          } else {
+            add('tok-com', line.slice(i, blockEnd + 2));
+            i = blockEnd + 2;
+            state.block = false;
+          }
+          continue;
+        }
+
+        if (state.quote) {
+          var q = state.quote;
+          var quoteEnd = i;
+          var closed = false;
+          while (quoteEnd < line.length) {
+            var qc = line[quoteEnd];
+            if (qc === '\\') {
+              quoteEnd += 2;
+              continue;
+            }
+            if (qc === q) {
+              if (line[quoteEnd + 1] === q) {
+                quoteEnd += 2;
+                continue;
+              }
+              quoteEnd += 1;
+              closed = true;
+              break;
+            }
+            quoteEnd += 1;
+          }
+          add(q === "'" ? 'tok-str' : 'tok-ident', line.slice(i, quoteEnd));
+          i = quoteEnd;
+          if (closed) state.quote = null;
+          continue;
+        }
+
+        var ch = line[i];
+
+        if (ch === '-' && line[i + 1] === '-') {
+          add('tok-com', line.slice(i));
+          i = line.length;
+          continue;
+        }
+
+        if (ch === '/' && line[i + 1] === '*') {
+          var close = line.indexOf('*/', i + 2);
+          if (close === -1) {
+            add('tok-com', line.slice(i));
+            state.block = true;
+            i = line.length;
+          } else {
+            add('tok-com', line.slice(i, close + 2));
+            i = close + 2;
+          }
+          continue;
+        }
+
+        if (ch === "'" || ch === '"' || ch === '`') {
+          var scan = scanQuoteInLine(line, i);
+          add(ch === "'" ? 'tok-str' : 'tok-ident', line.slice(i, scan.end));
+          i = scan.end;
+          if (!scan.closed) state.quote = ch;
+          continue;
+        }
+
+        if (ch === '?') {
+          add('tok-param', '?');
+          i += 1;
+          continue;
+        }
+
+        if (/[0-9]/.test(ch) || (ch === '.' && /[0-9]/.test(line[i + 1] || ''))) {
+          var num = NUM_RE.exec(line.slice(i));
+          if (num) {
+            add('tok-num', num[0]);
+            i += num[0].length;
+            continue;
+          }
+        }
+
+        if (WORD_START_RE.test(ch)) {
+          var word = WORD_RE.exec(line.slice(i))[0];
+          var wordUpper = word.toUpperCase();
+          var cls = '';
+
+          if (wordUpper === 'NULL' || wordUpper === 'TRUE' || wordUpper === 'FALSE') {
+            cls = 'tok-lit';
+          } else if (HL_KEYWORDS.has(wordUpper)) {
+            cls = 'tok-kw';
+          } else {
+            var k = i + word.length;
+            while (k < line.length && /\s/.test(line[k])) k += 1;
+            if (line[k] === '(') cls = 'tok-fn';
+          }
+
+          if (cls) add(cls, word);
+          else plain += word;
+          i += word.length;
+          continue;
+        }
+
+        plain += ch;
+        i += 1;
+      }
+
+      flushPlain();
+      return '<div class="code-line"><span class="ln" aria-hidden="true">' + (index + 1) +
+        '</span><span class="lc">' + (html || ' ') + '</span></div>';
+    }).join('');
+  }
+
+  // ------------------------------------------------------------------
+  // 页面逻辑
+  // ------------------------------------------------------------------
+  var inputEl = $('logInput');
+  var logGutter = $('logGutter');
+  var logMirror = $('logMirror');
+  var codeEl = $('codeOutput');
+  var emptyEl = $('resultEmpty');
+  var statusBar = $('statusBar');
+  var statusIcon = $('statusIcon');
+  var statusMsg = $('statusMsg');
+  var statusMeta = $('statusMeta');
+  var inCount = $('inCount');
+  var outCount = $('outCount');
+  var btnCopy = $('btnCopy');
+  var btnDownload = $('btnDownload');
+  var optPretty = $('optPretty');
+  var optUpper = $('optUpper');
+  var toastEl = $('toast');
+
+  var currentOutput = '';
+  var toastTimer = 0;
+  var gutterRaf = 0;
+
+  function updateInputMeta() {
+    var value = inputEl.value;
+    var lines = value ? value.split('\n').length : 0;
+    inCount.textContent = lines + ' 行';
+  }
+
+  function updateLogGutter() {
+    gutterRaf = 0;
+
+    var lines = inputEl.value ? inputEl.value.split('\n') : [];
+    var gutter = logGutter;
+    var mirror = logMirror;
+
+    if (!lines.length) {
+      gutter.textContent = '';
+      mirror.textContent = '';
+      return;
+    }
+
+    var styles = window.getComputedStyle(inputEl);
+    var lineHeight = parseFloat(styles.lineHeight) || 22;
+    var rect = inputEl.getBoundingClientRect();
+    var borderX = parseFloat(styles.borderLeftWidth) + parseFloat(styles.borderRightWidth);
+    var padX = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
+    var scrollbar = Math.max(0, inputEl.offsetWidth - inputEl.clientWidth - Math.round(borderX));
+    var width = Math.max(1, rect.width - borderX - padX - scrollbar);
+
+    mirror.style.fontFamily = styles.fontFamily;
+    mirror.style.fontSize = styles.fontSize;
+    mirror.style.fontWeight = styles.fontWeight;
+    mirror.style.fontStyle = styles.fontStyle;
+    mirror.style.lineHeight = styles.lineHeight;
+    mirror.style.letterSpacing = styles.letterSpacing;
+    mirror.style.wordSpacing = styles.wordSpacing;
+    mirror.style.textTransform = styles.textTransform;
+    mirror.style.tabSize = styles.tabSize;
+    mirror.style.width = width + 'px';
+
+    while (mirror.children.length > lines.length) mirror.removeChild(mirror.lastChild);
+    while (mirror.children.length < lines.length) mirror.appendChild(document.createElement('div'));
+
+    for (var i = 0; i < lines.length; i += 1) {
+      mirror.children[i].textContent = lines[i] || '\u200b';
+    }
+
+    var heights = [];
+    for (var j = 0; j < lines.length; j += 1) {
+      heights.push(mirror.children[j].getBoundingClientRect().height || lineHeight);
+    }
+
+    while (gutter.children.length > lines.length) gutter.removeChild(gutter.lastChild);
+    while (gutter.children.length < lines.length) {
+      var row = document.createElement('div');
+      row.className = 'log-gutter-line';
+      gutter.appendChild(row);
+    }
+
+    gutter.style.lineHeight = lineHeight + 'px';
+    for (var k = 0; k < lines.length; k += 1) {
+      var item = gutter.children[k];
+      var label = String(k + 1);
+      if (item.textContent !== label) item.textContent = label;
+      item.style.height = heights[k] + 'px';
+    }
+
+    gutter.scrollTop = inputEl.scrollTop;
+  }
+
+  function scheduleGutter() {
+    if (gutterRaf) return;
+    gutterRaf = window.requestAnimationFrame(updateLogGutter);
+  }
+
+  function setStatus(kind, message, items) {
+    statusBar.hidden = false;
+    statusBar.className = 'status-bar' + (kind === 'success' ? '' : ' ' + kind);
+    statusIcon.textContent = kind === 'success' ? '✓' : kind === 'warn' ? '!' : '×';
+    statusMsg.textContent = message;
+
+    statusMeta.textContent = '';
+    var list = items || [];
+    statusMeta.hidden = list.length === 0;
+    list.forEach(function (item) {
+      var chip = document.createElement('span');
+      var isObject = typeof item === 'object' && item !== null;
+      chip.className = 'meta-chip' + (isObject && item.warn ? ' meta-warn' : '');
+      chip.textContent = isObject ? item.text : item;
+      statusMeta.appendChild(chip);
+    });
+  }
+
+  function hideStatus() {
+    statusBar.hidden = true;
+  }
+
+  function renderOutput(text) {
+    currentOutput = text;
+    emptyEl.hidden = true;
+    codeEl.hidden = false;
+    codeEl.innerHTML = highlightLines(text);
+    outCount.textContent = text.split('\n').length + ' 行';
+    btnCopy.disabled = false;
+    btnDownload.disabled = false;
+  }
+
+  function clearOutput() {
+    currentOutput = '';
+    codeEl.hidden = true;
+    codeEl.textContent = '';
+    emptyEl.hidden = false;
+    outCount.textContent = '';
+    btnCopy.disabled = true;
+    btnDownload.disabled = true;
+  }
+
+  function doFormat() {
+    var raw = inputEl.value;
+
+    if (!raw.trim()) {
+      clearOutput();
+      setStatus('error', '请先粘贴 MyBatis 的 Preparing / Parameters 日志');
+      inputEl.focus();
+      return;
+    }
+
+    var parsed = parseLog(raw);
+
+    if (!parsed.statements.length) {
+      clearOutput();
+      if (parsed.hasParamsWithoutSql) {
+        setStatus('error', '只找到了 Parameters，没有找到对应的 Preparing 日志');
+      } else {
+        setStatus('error', '没有找到可格式化的 SQL，请检查日志内容');
+      }
+      return;
+    }
+
+    var pretty = optPretty.checked;
+    var upper = optUpper.checked;
+    var outputs = [];
+    var details = [];
+    var paramsTotal = 0;
+    var usedTotal = 0;
+    var placeholdersTotal = 0;
+    var byteCount = 0;
+
+    parsed.statements.forEach(function (statement, index) {
+      var bound = bindParams(statement.sql, statement.params);
+      var text = bound.sql.trim();
+      if (!text) return;
+
+      if (pretty) {
+        text = formatSql(text, upper);
+      } else if (upper) {
+        text = uppercaseOnly(text);
+      }
+
+      text = text.trim();
+      if (!text) return;
+
+      paramsTotal += statement.params.length;
+      usedTotal += bound.used;
+      placeholdersTotal += bound.placeholders;
+      statement.params.forEach(function (param) {
+        if (param.isBytes) byteCount += 1;
+      });
+
+      outputs.push(text);
+
+      var parts = [];
+      var source = sourceLabel(statement.source);
+      parts.push('#' + (index + 1) + (source ? ' ' + source : ''));
+      parts.push(statement.params.length + ' 个参数');
+      if (statement.result) parts.push(statement.result.kind + ' ' + statement.result.value);
+      details.push(parts.join(' · '));
+    });
+
+    if (!outputs.length) {
+      clearOutput();
+      setStatus('error', '日志里的 SQL 是空的，没有可格式化的内容');
+      return;
+    }
+
+    var warnings = [];
+    if (parsed.fallback) warnings.push('未识别到 MyBatis 标记，已按普通 SQL 处理');
+    if (parsed.hasParamsWithoutSql) warnings.push('发现 Parameters 但缺少对应的 Preparing');
+
+    var missing = Math.max(0, placeholdersTotal - usedTotal);
+    if (missing) warnings.push(missing + ' 个 ? 没有对应参数');
+
+    var extra = Math.max(0, paramsTotal - usedTotal);
+    if (extra) warnings.push(extra + ' 个参数未被使用');
+
+    if (byteCount) warnings.push(byteCount + ' 个 byte[] 参数以占位符显示');
+
+    renderOutput(outputs.join('\n\n'));
+
+    var meta = details.slice();
+    warnings.forEach(function (warning) {
+      meta.push({ text: warning, warn: true });
+    });
+
+    setStatus(
+      warnings.length ? 'warn' : 'success',
+      '已生成 ' + outputs.length + ' 条 SQL，替换 ' + usedTotal + ' 个参数',
+      meta
+    );
+  }
+
+  function showToast(message) {
+    toastEl.textContent = message;
+    toastEl.classList.add('show');
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(function () {
+      toastEl.classList.remove('show');
+    }, 1800);
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).then(function () {
+        return true;
+      }, function () {
+        return fallbackCopy(text);
+      });
+    }
+    return Promise.resolve(fallbackCopy(text));
+  }
+
+  function fallbackCopy(text) {
+    var temp = document.createElement('textarea');
+    temp.value = text;
+    temp.setAttribute('readonly', '');
+    temp.style.position = 'fixed';
+    temp.style.opacity = '0';
+    document.body.appendChild(temp);
+    temp.select();
+    var ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch (error) {
+      ok = false;
+    }
+    document.body.removeChild(temp);
+    return ok;
+  }
+
+  function downloadSql() {
+    var blob = new Blob([currentOutput + '\n'], { type: 'text/plain;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    var now = new Date();
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    link.href = url;
+    link.download = 'mybatis-sql-' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) +
+      '-' + pad(now.getHours()) + pad(now.getMinutes()) + '.sql';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    showToast('已下载 SQL 文件');
+  }
+
+  $('btnFormat').addEventListener('click', doFormat);
+
+  $('btnSample').addEventListener('click', function () {
+    inputEl.value = SAMPLE;
+    updateInputMeta();
+    scheduleGutter();
+    doFormat();
+    inputEl.focus();
+  });
+
+  $('btnClear').addEventListener('click', function () {
+    inputEl.value = '';
+    updateInputMeta();
+    scheduleGutter();
+    clearOutput();
+    hideStatus();
+    inputEl.focus();
+  });
+
+  btnCopy.addEventListener('click', function () {
+    if (!currentOutput) return;
+    copyText(currentOutput).then(function (ok) {
+      showToast(ok ? '已复制 SQL' : '复制失败，请手动选择文本');
+    });
+  });
+
+  btnDownload.addEventListener('click', downloadSql);
+
+  [optPretty, optUpper].forEach(function (checkbox) {
+    checkbox.addEventListener('change', function () {
+      if (inputEl.value.trim() && currentOutput) doFormat();
+    });
+  });
+
+  inputEl.addEventListener('input', function () {
+    updateInputMeta();
+    scheduleGutter();
+  });
+
+  inputEl.addEventListener('scroll', function () {
+    logGutter.scrollTop = inputEl.scrollTop;
+  });
+
+  inputEl.addEventListener('keydown', function (event) {
+    if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      var start = inputEl.selectionStart;
+      var end = inputEl.selectionEnd;
+      inputEl.value = inputEl.value.slice(0, start) + '  ' + inputEl.value.slice(end);
+      inputEl.selectionStart = inputEl.selectionEnd = start + 2;
+      updateInputMeta();
+      scheduleGutter();
+    }
+  });
+
+  logGutter.addEventListener('mousedown', function (event) {
+    event.preventDefault();
+    inputEl.focus();
+  });
+
+  if (window.ResizeObserver) {
+    new ResizeObserver(scheduleGutter).observe(inputEl);
+  } else {
+    window.addEventListener('resize', scheduleGutter);
+  }
+
+  document.addEventListener('keydown', function (event) {
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      event.preventDefault();
+      doFormat();
+    }
+  });
+
+  var isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '');
+  Array.prototype.forEach.call(document.querySelectorAll('.mod-key'), function (el) {
+    el.textContent = isMac ? '⌘' : 'Ctrl';
+  });
+
+  inputEl.value = SAMPLE;
+  updateInputMeta();
+  scheduleGutter();
+  doFormat();
+})();
+</script>
+</body>
+</html>
