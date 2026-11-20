@@ -1,0 +1,654 @@
+/* 全局样式重置 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Segoe UI', Arial, sans-serif;
+}
+
+body, html {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 容器：画布铺满窗口，工具胶囊悬浮在画布之上 */
+.whiteboard-container {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background: #eef1f5;
+}
+
+/* 工具按钮样式 */
+.tool-btn {
+  padding: 8px 12px;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #212529;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.tool-btn:hover:not(:disabled) {
+  background: #e9ecef;
+}
+
+.tool-btn.active {
+  background: #28a745;
+  color: white;
+  border-color: #28a745;
+}
+
+/* 图标库容器（不占位） */
+.icon-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* 线条图标：统一描边、跟随按钮文字颜色 */
+.icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 强调按钮（说明弹窗的“知道了”） */
+.tool-btn.primary {
+  background: #28a745;
+  border-color: #28a745;
+  color: #fff;
+  padding: 8px 18px;
+}
+
+.tool-btn.primary:hover {
+  background: #218838;
+}
+
+/* 样式控制区域 */
+.style-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.style-control label {
+  font-size: 14px;
+  color: #495057;
+}
+
+.style-control input[type="color"] {
+  width: 36px;
+  height: 36px;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  background: transparent;
+}
+
+.style-control input[type="range"] {
+  width: 120px;
+  cursor: pointer;
+}
+
+.style-control .value-display {
+  width: 40px;
+  text-align: center;
+  font-size: 14px;
+  color: #495057;
+}
+
+/* 笔画大小预览 */
+.brush-preview {
+  width: 60px;
+  height: 30px;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.brush-preview-dot {
+  background: #000;
+  border-radius: 50%;
+  flex: none;
+  /* 白色笔画时预览点也要看得清 */
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.35);
+}
+
+/* 最近颜色展示 */
+.recent-colors {
+  display: flex;
+  gap: 4px;
+}
+
+.recent-color-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 1px solid #ccc;
+  flex: none;
+}
+
+/* 缩放控制 */
+.zoom-control {
+  gap: 4px;
+}
+
+.zoom-control .tool-btn {
+  padding: 6px 10px;
+}
+
+.zoom-control .value-display {
+  width: 48px;
+  text-align: center;
+  font-size: 13px;
+  color: #495057;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 画布视口：铺满窗口，超出部分直接裁掉 */
+.canvas-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.canvas-viewport canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+}
+
+/* 绘制层（已提交内容） */
+#drawCanvas {
+  z-index: 0;
+}
+
+/* 实时笔画层（绘制中的铅笔笔画） */
+#liveCanvas {
+  z-index: 1;
+}
+
+/* 文本与预览层（文字、选中框、形状预览，同时接收指针事件） */
+#overlayCanvas {
+  z-index: 2;
+  touch-action: none;
+  cursor: none;
+}
+
+/* 自定义画笔光标（屏幕坐标定位，不随缩放/平移改变） */
+.brush-cursor {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 6;
+  display: none;
+  transform: translate(-50%, -50%);
+  left: 0;
+  top: 0;
+  /* 双色描边：内黑外白，白色笔画在白底上也看得清落点 */
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.75), 0 0 0 2px rgba(255, 255, 255, 0.9);
+}
+
+/* 圈内填充：单独一层，羽化只模糊它，描边保持清晰 */
+.brush-cursor-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+/* 调整笔画时的实时数值提示（跟随鼠标） */
+.brush-tip {
+  position: fixed;
+  z-index: 30;
+  padding: 4px 9px;
+  border-radius: 7px;
+  background: rgba(17, 24, 39, 0.86);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.brush-tip[hidden] {
+  display: none;
+}
+
+/* 文本内联编辑器 */
+.text-editor {
+  position: absolute;
+  z-index: 7;
+  display: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #28a745;
+  outline: none;
+  background: rgba(255, 255, 255, 0.92);
+  resize: none;
+  overflow: hidden;
+  white-space: pre;
+  color: #000;
+}
+
+/* 按钮禁用状态 */
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ===== 使用说明弹窗 ===== */
+.help-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: rgba(33, 37, 41, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.help-modal[hidden] {
+  display: none;
+}
+
+.help-card {
+  width: min(720px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.help-head h2 {
+  font-size: 17px;
+  color: #212529;
+}
+
+.help-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #6c757d;
+  cursor: pointer;
+}
+
+.help-close:hover {
+  background: #e9ecef;
+  color: #212529;
+}
+
+.help-body {
+  padding: 6px 18px 14px;
+  overflow: auto;
+  line-height: 1.7;
+  color: #343a40;
+  font-size: 14px;
+}
+
+.help-body section {
+  margin-top: 14px;
+}
+
+.help-body h3 {
+  font-size: 14px;
+  color: #28a745;
+  margin-bottom: 6px;
+}
+
+.help-body ul {
+  padding-left: 20px;
+}
+
+.help-body li + li {
+  margin-top: 4px;
+}
+
+.help-keys {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.help-keys td {
+  padding: 5px 6px;
+  border-bottom: 1px dashed #e9ecef;
+  vertical-align: top;
+}
+
+.help-keys td:first-child {
+  width: 46%;
+  white-space: nowrap;
+  color: #495057;
+}
+
+kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 0 1px;
+  border: 1px solid #ced4da;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #f8f9fa;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: #495057;
+}
+
+.help-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid #e9ecef;
+  background: #f8f9fa;
+}
+
+.help-tip {
+  font-size: 13px;
+  color: #6c757d;
+}
+
+/* ===== 悬浮胶囊（顶部工具栏 / 左侧工具条） ===== */
+.top-capsule,
+.tool-capsule {
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(14px) saturate(180%);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+}
+
+/* 顶部胶囊：样式、编辑与视图控制 */
+.top-capsule {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  /* 绝对定位默认会把可用宽度减半，必须显式指定 max-content 才能单行居中 */
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 6px 12px;
+  border-radius: 999px;
+}
+
+/* 左侧胶囊：竖排绘图工具 */
+.tool-capsule {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 19;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 999px;
+  transition: transform 0.24s ease, opacity 0.24s ease;
+}
+
+/* 收起：向左滑出并变透明，仍可用顶部最左按钮展开 */
+.tool-capsule.is-collapsed {
+  transform: translate(-140%, -50%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.capsule-divider {
+  width: 1px;
+  height: 22px;
+  flex: none;
+  background: rgba(15, 23, 42, 0.1);
+}
+
+/* 胶囊内按钮：无边框，悬浮式高亮 */
+.top-capsule .tool-btn,
+.tool-capsule .tool-btn {
+  border-color: transparent;
+  background: transparent;
+  color: #343a40;
+}
+
+.top-capsule .tool-btn:hover:not(:disabled),
+.tool-capsule .tool-btn:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.07);
+}
+
+.top-capsule .tool-btn.active,
+.tool-capsule .tool-btn.active {
+  background: #28a745;
+  border-color: #28a745;
+  color: #fff;
+}
+
+/* 纯图标按钮（方形圆角） */
+.tool-btn--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0;
+  line-height: 1;
+}
+
+.top-capsule .tool-btn--icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
+.tool-capsule .tool-btn--icon {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+}
+
+/* 侧栏开关：展开时绿色，收起时灰色 */
+.capsule-toggle.is-on {
+  color: #28a745;
+}
+
+/* 胶囊内的样式控件收紧 */
+.top-capsule .style-control {
+  gap: 6px;
+}
+
+.top-capsule .style-control label {
+  font-size: 12px;
+  color: #6c757d;
+}
+
+.top-capsule input[type="range"] {
+  width: 96px;
+}
+
+.top-capsule .value-display {
+  width: 36px;
+  font-size: 12px;
+  color: #495057;
+}
+
+.top-capsule .zoom-control {
+  gap: 2px;
+}
+
+.top-capsule .zoom-control .value-display {
+  width: 46px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 颜色块改圆形色球 */
+.top-capsule input[type="color"] {
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(15, 23, 42, 0.15);
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.top-capsule input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.top-capsule input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 50%;
+}
+
+.top-capsule .recent-colors {
+  gap: 3px;
+}
+
+.top-capsule .recent-color-btn {
+  width: 18px;
+  height: 18px;
+}
+
+.top-capsule .brush-preview {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border-color: rgba(15, 23, 42, 0.15);
+}
+
+/* 窄屏：胶囊收紧，隐藏次级信息 */
+@media (max-width: 900px) {
+  .top-capsule {
+    top: 8px;
+    gap: 4px;
+    padding: 5px 10px;
+    border-radius: 22px;
+  }
+
+  .top-capsule .tool-btn--icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .top-capsule .style-control {
+    gap: 4px;
+  }
+
+  .top-capsule .style-control label {
+    display: none;
+  }
+
+  .top-capsule input[type="range"] {
+    width: 68px;
+  }
+
+  .top-capsule .value-display {
+    width: 30px;
+  }
+
+  .top-capsule .zoom-control .value-display {
+    width: 40px;
+  }
+
+  .top-capsule .recent-colors,
+  .top-capsule .brush-preview {
+    display: none;
+  }
+
+  .tool-capsule {
+    left: 8px;
+    gap: 2px;
+    padding: 4px;
+  }
+
+  .tool-capsule .tool-btn--icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .help-card {
+    border-radius: 8px;
+  }
+
+  .help-keys td:first-child {
+    width: 50%;
+  }
+}
+
+/* 更窄（平板竖屏 / 手机横屏）：继续收紧，尽量保持单行不遮挡画布 */
+@media (max-width: 840px) {
+  .top-capsule {
+    gap: 3px;
+    padding: 4px 8px;
+  }
+
+  .top-capsule .tool-btn--icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .top-capsule .style-control {
+    gap: 3px;
+  }
+
+  .top-capsule input[type="range"] {
+    width: 52px;
+  }
+
+  .top-capsule .value-display {
+    width: 26px;
+    font-size: 11px;
+  }
+
+  .top-capsule .zoom-control .value-display {
+    width: 34px;
+  }
+
+  .top-capsule .capsule-divider {
+    height: 18px;
+  }
+}

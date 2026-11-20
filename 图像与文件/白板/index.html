@@ -6,1374 +6,297 @@
   <title>白板</title>
   <!-- 豆包生成2026.1.2 叫豆包改好多次还是有一个bug：笔画太快到边缘会空一段、形状到边缘会卡住再随便画一下，卡在的形状会消失、橡皮擦划出边缘后会擦不掉 要重新在里面擦-->
   <!-- 2026.1.17 叫Trae实现了文本功能和修复选颜色 拖拽色板历史颜色会全部改变bug-->
-  <style>
-    /* 全局样式重置 */
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      font-family: 'Segoe UI', Arial, sans-serif;
-    }
-
-    body, html {
-      height: 100%;
-      overflow: hidden;
-    }
-
-    /* 容器布局：工具栏+画布 */
-    .whiteboard-container {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-    }
-
-    /* 工具栏样式 */
-    .toolbar {
-      display: flex;
-      align-items: center;
-      gap: 10px; /* 按钮间距10px */
-      padding: 12px 16px;
-      background: #f8f9fa;
-      border-bottom: 1px solid #e9ecef;
-      flex-wrap: wrap;
-      row-gap: 8px;
-    }
-
-    /* 工具按钮样式 - 新增图标容器 */
-    .tool-btn {
-      padding: 8px 12px;
-      border: 1px solid #dee2e6;
-      border-radius: 4px;
-      background: white;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px; /* 图标与文字间距 */
-    }
-
-    .tool-btn:hover {
-      background: #e9ecef; /* hover变色 */
-    }
-
-    .tool-btn.active {
-      background: #28a745; /* 选中态绿色 */
-      color: white;
-      border-color: #28a745;
-    }
-
-    /* 工具图标样式 */
-    .tool-icon {
-      font-size: 16px;
-      display: inline-block;
-      width: 18px;
-      text-align: center;
-    }
-
-    /* 样式控制区域 */
-    .style-control {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .style-control label {
-      font-size: 14px;
-      color: #495057;
-    }
-
-    .style-control input[type="color"] {
-      width: 36px;
-      height: 36px;
-      border: none;
-      cursor: pointer;
-      padding: 0;
-      background: transparent;
-    }
-
-    .style-control input[type="range"] {
-      width: 120px;
-      cursor: pointer;
-    }
-
-    .style-control .value-display {
-      width: 40px;
-      text-align: center;
-      font-size: 14px;
-      color: #495057;
-    }
-
-    /* 笔画大小预览 */
-    .brush-preview {
-      width: 60px;
-      height: 30px;
-      border: 1px solid #dee2e6;
-      border-radius: 4px;
-      background: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .brush-preview-dot {
-      background: #000;
-      border-radius: 50%;
-      /* 动态调整大小 */
-    }
-
-    /* 最近颜色展示 */
-    .recent-colors {
-      display: flex;
-      gap: 4px;
-    }
-
-    .recent-color-btn {
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      cursor: pointer;
-      border: 1px solid #ccc;
-    }
-
-    /* 画布容器（用于缩放） */
-    .canvas-wrapper {
-      flex: 1;
-      position: relative;
-      overflow: auto;
-      background: #eccdcd;
-      cursor: none; /* 隐藏原生光标 */
-    }
-
-    /* 新增：自定义画笔光标 */
-    .brush-cursor {
-      position: absolute;
-      border-radius: 50%;
-      pointer-events: none; /* 不拦截鼠标事件 */
-      z-index: 9999;
-      display: none; /* 默认隐藏 */
-      transform: translate(-50%, -50%); /* 光标中心对齐鼠标 */
-    }
-
-    /* 主画布+临时画布样式 */
-    #mainCanvas, #tempCanvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      transform-origin: 0 0; /* 缩放原点为左上角 */
-    }
-
-    #tempCanvas {
-      pointer-events: none; /* 临时画布不拦截鼠标事件 */
-      z-index: 1;
-    }
-
-    #mainCanvas {
-      z-index: 0;
-      background: white;
-    }
-
-    /* 按钮禁用状态 */
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-  </style>
+  <!-- 2026.11.20 dsv4.1f1017+qoder 重构：三层画布、操作序列撤销（含文字）、Pointer Events、DPR 高清、内联文本编辑、缩放平移 -->
+  <!-- 2026.11.20 拆分 styles.css / app.js；修复文本无法输入；Shift 约束形状、Alt 拖拽调粗细；
+       更换为内联 SVG 图标；新增使用说明面板 -->
+  <!-- 2026.11.20 画布改为视口裁剪的无限画布；顶部/左侧悬浮胶囊布局，左侧工具条可收起；
+       修复空格 + 拖动平移偶尔失效；适应内容按内容包围盒带边距居中；
+       对齐 PS 习惯：Alt + 左键吸色、Alt + 右键左右调笔画大小 / 上下调羽化，新增笔画羽化；
+       适应内容避开悬浮胶囊；笔画粗细上限 100px；画笔光标双色描边 + 调整时实时数值；
+       画布非空时关闭页面提醒；平移拖动改为位移画布元素预览（不重放笔画） -->
+  <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-<div class="whiteboard-container">
-  <!-- 工具栏 -->
-  <div class="toolbar">
-    <!-- 绘图工具按钮 - 图标 -->
-    <button class="tool-btn active" data-tool="pencil">
-      <span class="tool-icon">✏️</span>铅笔
-    </button>
-    <button class="tool-btn" data-tool="line">
-      <span class="tool-icon">📏</span>直线
-    </button>
-    <button class="tool-btn" data-tool="rect">
-      <span class="tool-icon">🟦</span>矩形
-    </button>
-    <button class="tool-btn" data-tool="circle">
-      <span class="tool-icon">🟠</span>圆形
-    </button>
-    <button class="tool-btn" data-tool="ellipse">
-      <span class="tool-icon">🟪</span>椭圆
-    </button>
-    <button class="tool-btn" data-tool="text">
-      <span class="tool-icon">📝</span>文本
-    </button>
-    <button class="tool-btn" data-tool="eraser">
-      <span class="tool-icon">🧽</span>橡皮擦
-    </button>
+  <!-- ===== 图标库（内联 SVG，避免外部依赖） ===== -->
+  <svg class="icon-sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-pencil" viewBox="0 0 24 24">
+      <path d="M16.9 3.1a2.4 2.4 0 0 1 3.4 0l.6.6a2.4 2.4 0 0 1 0 3.4L7.4 20.6 3 21.5l.9-4.4L16.9 3.1z"/>
+      <path d="m15 5 4 4"/>
+    </symbol>
+    <symbol id="i-line" viewBox="0 0 24 24">
+      <path d="M6.2 17.8 17.8 6.2"/>
+      <circle cx="5" cy="19" r="1.7"/>
+      <circle cx="19" cy="5" r="1.7"/>
+    </symbol>
+    <symbol id="i-rect" viewBox="0 0 24 24">
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/>
+    </symbol>
+    <symbol id="i-ellipse" viewBox="0 0 24 24">
+      <ellipse cx="12" cy="12" rx="9.5" ry="6"/>
+    </symbol>
+    <symbol id="i-text" viewBox="0 0 24 24">
+      <path d="M4 7V4.5h16V7"/>
+      <path d="M12 4.5v15"/>
+      <path d="M8.5 19.5h7"/>
+    </symbol>
+    <symbol id="i-eraser" viewBox="0 0 24 24">
+      <path d="M8.9 19.6 3.5 14.2a1.9 1.9 0 0 1 0-2.7l7.7-7.7a1.9 1.9 0 0 1 2.7 0l5.4 5.4a1.9 1.9 0 0 1 0 2.7l-7.7 7.7z"/>
+      <path d="M7.6 10.1 14 16.5"/>
+      <path d="M4 20.5h16"/>
+    </symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24">
+      <path d="M9 14 4 9l5-5"/>
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>
+    </symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24">
+      <path d="m15 14 5-5-5-5"/>
+      <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>
+    </symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24">
+      <path d="M3.5 6.5h17"/>
+      <path d="M9 6.5V4.5h6v2"/>
+      <path d="M18.5 6.5 17.8 19a2 2 0 0 1-2 1.9H8.2a2 2 0 0 1-2-1.9L5.5 6.5"/>
+      <path d="M10 10.5v6M14 10.5v6"/>
+    </symbol>
+    <symbol id="i-save" viewBox="0 0 24 24">
+      <path d="M12 3.5v11"/>
+      <path d="m7.5 10 4.5 4.5 4.5-4.5"/>
+      <path d="M4 20.5h16"/>
+    </symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24">
+      <path d="M12 5.5v13M5.5 12h13"/>
+    </symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24">
+      <path d="M5.5 12h13"/>
+    </symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24">
+      <path d="M4 9.5V4h5.5"/>
+      <path d="M20 14.5V20h-5.5"/>
+      <path d="m4 4 6 6"/>
+      <path d="m20 20-6-6"/>
+    </symbol>
+    <symbol id="i-fit-content" viewBox="0 0 24 24">
+      <rect x="7.5" y="7.5" width="9" height="9" rx="1.5"/>
+      <path d="M4 8V4h4"/>
+      <path d="M20 16v4h-4"/>
+      <path d="M16 4h4v4"/>
+      <path d="M8 20H4v-4"/>
+    </symbol>
+    <symbol id="i-help" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8.5"/>
+      <path d="M9.6 9.4a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1.1.9-1.1 1.7v.3"/>
+      <path d="M12 17.2h.01"/>
+    </symbol>
+    <symbol id="i-close" viewBox="0 0 24 24">
+      <path d="M6 6l12 12M18 6 6 18"/>
+    </symbol>
+    <symbol id="i-sidebar" viewBox="0 0 24 24">
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/>
+      <path d="M9.5 4.5v15"/>
+    </symbol>
+  </svg>
 
-    <!-- 颜色控制 -->
-    <div class="style-control">
-      <label>颜色：</label>
-      <input type="color" id="colorPicker" value="#000000">
-      <div class="recent-colors" id="recentColors"></div>
+  <div class="whiteboard-container">
+    <!-- ===== 画布视口（画布永远等于窗口，超出部分直接裁掉） ===== -->
+    <div class="canvas-viewport" id="canvasViewport">
+      <canvas id="drawCanvas" aria-hidden="true"></canvas>
+      <canvas id="liveCanvas" aria-hidden="true"></canvas>
+      <canvas id="overlayCanvas" aria-label="绘图区域"></canvas>
+      <div class="brush-cursor" id="brushCursor"><span class="brush-cursor-fill" id="brushCursorFill"></span></div>
+      <textarea class="text-editor" id="textEditor" spellcheck="false" autocomplete="off"></textarea>
     </div>
 
-    <!-- 粗细控制 - 笔画预览 -->
-    <div class="style-control">
-      <label>粗细：</label>
-      <input type="range" id="lineWidth" min="1" max="30" value="5">
-      <span class="value-display" id="lineWidthValue">5px</span>
-      <!-- 笔画大小预览 -->
-      <div class="brush-preview">
-        <div class="brush-preview-dot" id="brushPreviewDot"></div>
+    <!-- 调整笔画时的实时数值提示（跟随鼠标） -->
+    <div class="brush-tip" id="brushTip" hidden></div>
+
+    <!-- ===== 左侧竖排工具胶囊（由顶部胶囊最左侧按钮控制收起） ===== -->
+    <div class="tool-capsule" id="toolCapsule">
+      <button class="tool-btn tool-btn--icon active" data-tool="pencil" title="铅笔（P）" aria-label="铅笔">
+        <svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg>
+      </button>
+      <button class="tool-btn tool-btn--icon" data-tool="line" title="直线（L），按住 Shift 吸附 45°" aria-label="直线">
+        <svg class="icon" aria-hidden="true"><use href="#i-line"/></svg>
+      </button>
+      <button class="tool-btn tool-btn--icon" data-tool="rect" title="矩形（R），按住 Shift 画正方形" aria-label="矩形">
+        <svg class="icon" aria-hidden="true"><use href="#i-rect"/></svg>
+      </button>
+      <button class="tool-btn tool-btn--icon" data-tool="ellipse" title="椭圆（O），按住 Shift 画正圆" aria-label="椭圆">
+        <svg class="icon" aria-hidden="true"><use href="#i-ellipse"/></svg>
+      </button>
+      <button class="tool-btn tool-btn--icon" data-tool="text" title="文本（T），单击空白处输入" aria-label="文本">
+        <svg class="icon" aria-hidden="true"><use href="#i-text"/></svg>
+      </button>
+      <button class="tool-btn tool-btn--icon" data-tool="eraser" title="橡皮擦（E）" aria-label="橡皮擦">
+        <svg class="icon" aria-hidden="true"><use href="#i-eraser"/></svg>
+      </button>
+    </div>
+
+    <!-- ===== 顶部悬浮胶囊（样式、编辑、视图） ===== -->
+    <div class="top-capsule" id="topCapsule">
+      <button class="tool-btn tool-btn--icon capsule-toggle is-on" id="sideToggleBtn"
+        title="收起 / 展开左侧工具栏" aria-label="收起左侧工具栏"
+        aria-expanded="true" aria-controls="toolCapsule">
+        <svg class="icon" aria-hidden="true"><use href="#i-sidebar"/></svg>
+      </button>
+      <span class="capsule-divider" aria-hidden="true"></span>
+
+      <!-- 颜色 -->
+      <div class="style-control">
+        <label for="colorPicker">颜色</label>
+        <input type="color" id="colorPicker" value="#000000" aria-label="画笔颜色">
+        <div class="recent-colors" id="recentColors"></div>
+      </div>
+
+      <span class="capsule-divider" aria-hidden="true"></span>
+
+      <!-- 粗细 -->
+      <div class="style-control">
+        <label for="lineWidth">粗细</label>
+        <input type="range" id="lineWidth" min="1" max="100" value="5">
+        <span class="value-display" id="lineWidthValue">5px</span>
+        <div class="brush-preview">
+          <div class="brush-preview-dot" id="brushPreviewDot"></div>
+        </div>
+      </div>
+
+      <!-- 羽化（笔画边缘柔和程度，Alt + 右键上下拖动也可调） -->
+      <div class="style-control">
+        <label for="feather">羽化</label>
+        <input type="range" id="feather" min="0" max="1" step="0.05" value="0">
+        <span class="value-display" id="featherValue">0%</span>
+      </div>
+
+      <!-- 透明度 -->
+      <div class="style-control">
+        <label for="opacity">透明度</label>
+        <input type="range" id="opacity" min="0.1" max="1" step="0.1" value="1">
+        <span class="value-display" id="opacityValue">1.0</span>
+      </div>
+
+      <!-- 圆角（仅矩形） -->
+      <div class="style-control" id="rectRadiusControl" style="display: none;">
+        <label for="rectRadius">圆角</label>
+        <input type="range" id="rectRadius" min="0" max="50" value="0">
+        <span class="value-display" id="rectRadiusValue">0px</span>
+      </div>
+
+      <!-- 字号（仅文本） -->
+      <div class="style-control" id="textStyleControl" style="display: none;">
+        <label for="fontSize">字号</label>
+        <input type="range" id="fontSize" min="12" max="72" value="24">
+        <span class="value-display" id="fontSizeValue">24px</span>
+      </div>
+
+      <span class="capsule-divider" aria-hidden="true"></span>
+
+      <!-- 编辑 -->
+      <button class="tool-btn tool-btn--icon" id="undoBtn" title="撤销（Ctrl+Z）" aria-label="撤销">
+        <svg class="icon" aria-hidden="true"><use href="#i-undo"/></svg>
+      </button>
+      <button class="tool-btn tool-btn--icon" id="redoBtn" title="重做（Ctrl+Shift+Z）" aria-label="重做">
+        <svg class="icon" aria-hidden="true"><use href="#i-redo"/></svg>
+      </button>
+      <button class="tool-btn tool-btn--icon" id="clearBtn" title="清空画布（可撤销）" aria-label="清空画布">
+        <svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>
+      </button>
+      <button class="tool-btn tool-btn--icon" id="saveBtn" title="保存为 PNG" aria-label="保存图片">
+        <svg class="icon" aria-hidden="true"><use href="#i-save"/></svg>
+      </button>
+
+      <span class="capsule-divider" aria-hidden="true"></span>
+
+      <!-- 缩放 -->
+      <div class="style-control zoom-control">
+        <button class="tool-btn tool-btn--icon" id="zoomOutBtn" title="缩小" aria-label="缩小">
+          <svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg>
+        </button>
+        <span class="value-display" id="zoomValue" title="点击重置为 100%">100%</span>
+        <button class="tool-btn tool-btn--icon" id="zoomInBtn" title="放大" aria-label="放大">
+          <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>
+        </button>
+        <button class="tool-btn tool-btn--icon" id="zoomResetBtn" title="重置视图：100% 并回到原点" aria-label="重置视图">
+          <svg class="icon" aria-hidden="true"><use href="#i-fit"/></svg>
+        </button>
+      </div>
+
+      <button class="tool-btn tool-btn--icon" id="fitCanvasBtn" title="适应内容：把全部内容缩放到未被工具栏遮挡的区域内并居中" aria-label="适应内容">
+        <svg class="icon" aria-hidden="true"><use href="#i-fit-content"/></svg>
+      </button>
+
+      <button class="tool-btn tool-btn--icon" id="helpBtn" title="使用说明与快捷键（H）" aria-label="使用说明">
+        <svg class="icon" aria-hidden="true"><use href="#i-help"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ===== 使用说明 ===== -->
+  <div class="help-modal" id="helpModal" hidden>
+    <div class="help-card" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+      <div class="help-head">
+        <h2 id="helpTitle">白板使用说明</h2>
+        <button class="help-close" id="helpCloseBtn" title="关闭">
+          <svg class="icon" aria-hidden="true"><use href="#i-close"/></svg>
+        </button>
+      </div>
+
+      <div class="help-body">
+        <section>
+          <h3>绘图</h3>
+          <ul>
+            <li><b>铅笔 / 橡皮擦</b>：按住拖动绘制，粗细 1 ~ 100px。橡皮擦是真正擦成透明，不是盖白色；光标圈带黑色描边，白色笔在白底上也看得见落点。</li>
+            <li><b>直线 / 矩形 / 椭圆</b>：按住拖动生成形状；椭圆以起点为圆心。</li>
+            <li><b>Shift</b>：直线吸附 45° 角；矩形变正方形；椭圆变正圆。</li>
+            <li><b>羽化</b>：让笔画边缘变柔和（软笔刷），0% 为硬边；用顶部滑块或 <kbd>Alt</kbd> + 右键上下拖动调整。</li>
+            <li><b>文本</b>：单击空白处直接输入，<kbd>Enter</kbd> 换行，<kbd>Ctrl</kbd>+<kbd>Enter</kbd> 或 <kbd>Esc</kbd> 结束；单击已有文字进入编辑，拖动移动位置，拖四角控制点按比例缩放字号。</li>
+          </ul>
+        </section>
+
+        <section>
+          <h3>快捷键（PS 习惯）</h3>
+          <table class="help-keys">
+            <tr><td><kbd>P</kbd> <kbd>L</kbd> <kbd>R</kbd> <kbd>O</kbd> <kbd>T</kbd> <kbd>E</kbd></td><td>铅笔 / 直线 / 矩形 / 椭圆 / 文本 / 橡皮擦</td></tr>
+            <tr><td><kbd>Alt</kbd> + 左键</td><td>吸色：把点击处的颜色变成当前笔画颜色</td></tr>
+            <tr><td><kbd>Alt</kbd> + 右键左右拖动</td><td>调整笔画大小（往右变大，往左变小），鼠标旁实时显示数值</td></tr>
+            <tr><td><kbd>Alt</kbd> + 右键上下拖动</td><td>调整羽化（往上更柔和，往下更硬边），同样实时显示数值</td></tr>
+            <tr><td><kbd>Alt</kbd> + 滚轮</td><td>调整画笔透明度（上滚变实、下滚变透）</td></tr>
+            <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>笔画粗细 −1 / +1</td></tr>
+            <tr><td><kbd>Shift</kbd> + 拖动</td><td>约束形状（45° 直线 / 正方形 / 正圆）</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>撤销 / 重做（可撤销 50 步，文字与图形都在同一个撤销栈）</td></tr>
+            <tr><td><kbd>Delete</kbd></td><td>删除选中的文本</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>结束文本编辑 / 取消文本选中</td></tr>
+            <tr><td><kbd>H</kbd></td><td>打开或关闭本说明</td></tr>
+          </table>
+        </section>
+
+        <section>
+          <h3>界面</h3>
+          <ul>
+            <li>顶部是悬浮胶囊，放颜色、粗细、透明度、撤销、保存和视图控制；鼠标移上去看提示。</li>
+            <li>左侧竖排胶囊是绘图工具；顶部胶囊<b>最左侧按钮</b>可以收起 / 展开它（会记住上次状态）。</li>
+            <li><b>矩形</b>选中时顶部多出圆角，<b>文本</b>选中时多出字号。</li>
+          </ul>
+        </section>
+
+        <section>
+          <h3>画布</h3>
+          <ul>
+            <li>整块窗口都是画布，任何位置都能画，不需要滚动。</li>
+            <li><b>滚轮</b>：以光标为中心缩放（5% ~ 1600%）；放大后超出窗口的部分直接不显示（窗口裁剪），缩小后画布依旧铺满窗口。</li>
+            <li><b>空格 + 拖动</b> 或 <b>中键拖动</b>：平移视图（放大后用它查看被裁掉的部分）；拖动时优先保证跟手，松手后补齐边缘内容。</li>
+            <li><b>适应内容</b>：把全部有内容的区域缩放到<b>未被顶部 / 左侧胶囊遮挡</b>的窗口区域内并居中，四周保留边距；<b>重置视图</b>：回到 100% 和原点。</li>
+            <li><b>保存图片</b>：导出全部内容为 PNG，白色背景，包含文字。</li>
+            <li>画布有内容时，关闭或刷新页面会先弹确认，避免误关丢图；清空后不再提醒。</li>
+          </ul>
+        </section>
+      </div>
+
+      <div class="help-foot">
+        <span class="help-tip">提示：按 <kbd>H</kbd> 随时再次查看</span>
+        <button class="tool-btn primary" id="helpOkBtn">知道了</button>
       </div>
     </div>
-
-    <!-- 透明度控制 -->
-    <div class="style-control">
-      <label>透明度：</label>
-      <input type="range" id="opacity" min="0.1" max="1" step="0.1" value="1">
-      <span class="value-display" id="opacityValue">1.0</span>
-    </div>
-
-    <!-- 圆角矩形控制（仅矩形工具显示） -->
-    <div class="style-control" id="rectRadiusControl" style="display: none;">
-      <label>圆角：</label>
-      <input type="range" id="rectRadius" min="0" max="50" value="0">
-      <span class="value-display" id="rectRadiusValue">0px</span>
-    </div>
-
-    <!-- 文本样式控制（仅文本工具显示） -->
-    <div class="style-control" id="textStyleControl" style="display: none;">
-      <label>字体大小：</label>
-      <input type="range" id="fontSize" min="12" max="72" value="24">
-      <span class="value-display" id="fontSizeValue">24px</span>
-    </div>
-
-    <!-- 编辑功能按钮 - 图标 -->
-    <button class="tool-btn" id="undoBtn">
-      <span class="tool-icon">↩️</span>撤销
-    </button>
-    <button class="tool-btn" id="redoBtn">
-      <span class="tool-icon">↪️</span>重做
-    </button>
-    <button class="tool-btn" id="clearBtn">
-      <span class="tool-icon">🗑️</span>清空画布
-    </button>
-    <button class="tool-btn" id="saveBtn">
-      <span class="tool-icon">💾</span>保存图片
-    </button>
   </div>
 
-  <!-- 画布容器 -->
-  <div class="canvas-wrapper" id="canvasWrapper">
-    <!-- 新增：自定义画笔光标 -->
-    <div class="brush-cursor" id="brushCursor"></div>
-    <canvas id="mainCanvas"></canvas>
-    <canvas id="tempCanvas"></canvas>
-  </div>
-</div>
-
-<script>
-  // ========== 全局状态管理（统一维护白板状态） ==========
-  const state = {
-    currentTool: 'pencil',          // 当前选中工具
-    isDrawing: false,               // 是否正在绘制
-    isDragging: false,              // 是否正在拖动（文本或形状）
-    isResizing: false,              // 是否正在调整大小
-    resizeHandle: null,             // 正在调整的控制点位置（topLeft, topRight, bottomRight, bottomLeft）
-    startPos: {x: 0, y: 0},       // 绘制起始坐标
-    currentPos: {x: 0, y: 0},     // 绘制当前坐标
-    scale: 1,                       // 画布缩放比例
-    // 画笔样式配置
-    brush: {
-      color: '#000000',
-      lineWidth: 5,
-      opacity: 1,
-      rectRadius: 0
-    },
-    // 文本相关配置
-    text: {
-      fontSize: 24,                 // 默认字体大小
-      fontFamily: 'Arial, sans-serif', // 默认字体
-      fontWeight: 'normal',         // 默认字重
-      fontStyle: 'normal'           // 默认字体样式
-    },
-    // 文本对象列表
-    textObjects: [],                // 存储所有文本对象
-    selectedTextId: null,           // 当前选中的文本对象ID
-    // 最近使用的颜色（最多5个）
-    recentColors: [],
-    // 历史记录相关
-    history: [],                    // 画布状态历史（存储dataURL）
-    currentStep: -1                 // 当前历史步骤
-  };
-
-  // 文本对象ID生成器
-  let textObjectId = 0;
-  function generateTextId() {
-    return `text_${textObjectId++}`;
-  }
-
-  // ========== DOM元素获取 ==========
-  const elements = {
-    mainCanvas: document.getElementById('mainCanvas'),
-    tempCanvas: document.getElementById('tempCanvas'),
-    canvasWrapper: document.getElementById('canvasWrapper'),
-    brushCursor: document.getElementById('brushCursor'), // 新增：自定义光标
-    toolBtns: document.querySelectorAll('.tool-btn[data-tool]'),
-    colorPicker: document.getElementById('colorPicker'),
-    recentColors: document.getElementById('recentColors'),
-    lineWidth: document.getElementById('lineWidth'),
-    lineWidthValue: document.getElementById('lineWidthValue'),
-    brushPreviewDot: document.getElementById('brushPreviewDot'), // 笔画预览
-    opacity: document.getElementById('opacity'),
-    opacityValue: document.getElementById('opacityValue'),
-    rectRadiusControl: document.getElementById('rectRadiusControl'),
-    rectRadius: document.getElementById('rectRadius'),
-    rectRadiusValue: document.getElementById('rectRadiusValue'),
-    textStyleControl: document.getElementById('textStyleControl'),
-    fontSize: document.getElementById('fontSize'),
-    fontSizeValue: document.getElementById('fontSizeValue'),
-    undoBtn: document.getElementById('undoBtn'),
-    redoBtn: document.getElementById('redoBtn'),
-    clearBtn: document.getElementById('clearBtn'),
-    saveBtn: document.getElementById('saveBtn')
-  };
-
-  // 获取2D上下文
-  const mainCtx = elements.mainCanvas.getContext('2d');
-  const tempCtx = elements.tempCanvas.getContext('2d');
-
-  // ========== 模块1：工具初始化（initTools） ==========
-  /**
-   * 初始化所有工具和事件监听
-   * 功能：绑定工具切换、样式调整、编辑按钮等事件
-   */
-  function initTools() {
-    // 1. 工具按钮切换事件
-    elements.toolBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        // 移除所有按钮选中态
-        elements.toolBtns.forEach(b => b.classList.remove('active'));
-        // 添加当前按钮选中态
-        btn.classList.add('active');
-        // 更新当前工具
-        state.currentTool = btn.dataset.tool;
-        // 显示/隐藏矩形圆角控制
-        elements.rectRadiusControl.style.display = state.currentTool === 'rect' ? 'flex' : 'none';
-        // 显示/隐藏文本样式控制
-        elements.textStyleControl.style.display = state.currentTool === 'text' ? 'flex' : 'none';
-        
-        // 修复：切换工具时取消文本选中状态，隐藏聚焦框
-        state.selectedTextId = null;
-        redrawCanvas();
-        
-        // 更新笔画预览和光标样式
-        updateBrushPreview();
-        updateBrushCursorStyle();
-      });
-    });
-
-    // 2. 颜色拾取器事件
-    elements.colorPicker.addEventListener('input', (e) => {
-      const color = e.target.value;
-      updateBrushStyle('color', color);
-      updateBrushPreview(); // 更新预览
-      updateBrushCursorStyle(); // 新增：更新光标样式
-      
-      // 更新选中文本对象的颜色
-      updateSelectedTextColor(color);
-    });
-    // 颜色拾取器确认事件（仅在确认选择时添加到最近颜色）
-    elements.colorPicker.addEventListener('change', (e) => {
-      addRecentColor(e.target.value); // 添加到最近颜色
-    });
-
-    // 3. 画笔粗细调整事件
-    elements.lineWidth.addEventListener('input', (e) => {
-      const value = Number(e.target.value);
-      updateBrushStyle('lineWidth', value);
-      elements.lineWidthValue.textContent = `${value}px`;
-      updateBrushPreview(); // 更新预览大小
-      updateBrushCursorStyle(); // 新增：更新光标大小
-    });
-
-    // 4. 透明度调整事件
-    elements.opacity.addEventListener('input', (e) => {
-      const value = Number(e.target.value);
-      updateBrushStyle('opacity', value);
-      elements.opacityValue.textContent = value.toFixed(1);
-      updateBrushPreview(); // 更新预览透明度
-      updateBrushCursorStyle(); // 新增：更新光标透明度
-      
-      // 更新选中文本对象的透明度
-      updateSelectedTextOpacity(value);
-    });
-
-    // 5. 矩形圆角调整事件
-    elements.rectRadius.addEventListener('input', (e) => {
-      const value = Number(e.target.value);
-      updateBrushStyle('rectRadius', value);
-      elements.rectRadiusValue.textContent = `${value}px`;
-    });
-
-    // 6. 字体大小调整事件
-    elements.fontSize.addEventListener('input', (e) => {
-      const value = Number(e.target.value);
-      state.text.fontSize = value;
-      elements.fontSizeValue.textContent = `${value}px`;
-      
-      // 更新选中文本对象的字体大小
-      updateSelectedTextFontSize(value);
-    });
-
-    // 6. 编辑按钮事件绑定
-    elements.undoBtn.addEventListener('click', undo);
-    elements.redoBtn.addEventListener('click', redo);
-    elements.clearBtn.addEventListener('click', clearCanvas);
-    elements.saveBtn.addEventListener('click', saveImage);
-
-    // 7. 初始化最近颜色（默认添加黑色）
-    addRecentColor('#000000');
-
-    // 8. 绑定画布绘制事件
-    bindCanvasEvents();
-
-    // 9. 绑定滚轮缩放事件
-    bindScaleEvent();
-
-    // 10. 窗口大小调整事件
-    window.addEventListener('resize', resizeCanvas);
-
-    // 新增：绑定光标相关事件
-    bindCursorEvents();
-
-    // 初始化画布大小
-    resizeCanvas();
-
-    // 初始化历史记录（保存空白画布）
-    saveToHistory();
-
-    // 初始化笔画预览和光标
-    updateBrushPreview();
-    updateBrushCursorStyle();
-    
-    // 添加键盘删除事件监听
-    document.addEventListener('keydown', (e) => {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedTextId) {
-        deleteSelectedText();
-      }
-    });
-  }
-
-  /**
-   * 删除选中的文本对象
-   */
-  function deleteSelectedText() {
-    if (!state.selectedTextId) return;
-    
-    // 从文本对象列表中移除
-    state.textObjects = state.textObjects.filter(t => t.id !== state.selectedTextId);
-    state.selectedTextId = null;
-    
-    // 重绘画布
-    redrawCanvas();
-    // 保存到历史记录
-    saveToHistory();
-  }
-
-  // ========== 模块2：绘制逻辑（drawHandlers） ==========
-  /**
-   * 绑定画布鼠标/触摸事件，处理绘制逻辑
-   */
-  function bindCanvasEvents() {
-    // 鼠标按下：开始绘制或选择文本
-    elements.mainCanvas.addEventListener('mousedown', (e) => {
-      // 获取缩放后的实际坐标
-      state.startPos = getScaledCanvasPos(e);
-      state.currentPos = {...state.startPos};
-
-      // 检查是否点击到文本对象
-      const clickedText = getTextObjectAtPosition(state.startPos);
-      
-      if (clickedText) {
-        // 选择文本对象
-        state.selectedTextId = clickedText.id;
-        state.isDragging = true;
-        redrawCanvas();
-        return;
-      }
-
-      // 修复：只有在非拖动状态下，文本工具点击才创建新文本
-      // 防止双击时第二下mousedown错误创建新文本
-      if (state.currentTool === 'text' && !state.isDragging && !state.isResizing) {
-        addTextAtPosition(state.startPos);
-        return;
-      }
-
-      // 非文本工具开始绘画时，取消文本选中状态，隐藏功能边框
-      if (state.currentTool !== 'text' && state.selectedTextId) {
-        state.selectedTextId = null;
-      }
-
-      // 只有在非文本工具绘制时才清空临时画布，并且清空后要重新绘制文本
-      if (state.currentTool !== 'text') {
-        clearTempCanvas();
-        // 重新绘制文本对象，防止被清除
-        redrawCanvas();
-      }
-
-      state.isDrawing = true;
-      // 铅笔/橡皮擦初始化绘制路径
-      if (['pencil', 'eraser'].includes(state.currentTool)) {
-        mainCtx.beginPath();
-        mainCtx.moveTo(state.startPos.x, state.startPos.y);
-
-        // 橡皮擦额外初始化合成模式
-        if (state.currentTool === 'eraser') {
-          mainCtx.save(); // 保存当前上下文状态
-          mainCtx.globalCompositeOperation = 'destination-out'; // 透明擦除模式
-          mainCtx.lineCap = 'round'; // 线条端点圆润
-          mainCtx.lineJoin = 'round'; // 线条拐角圆润
-          mainCtx.lineWidth = state.brush.lineWidth; // 橡皮擦粗细
-        }
-      }
-    });
-
-    // 鼠标移动：绘制过程或拖拽文本
-    elements.mainCanvas.addEventListener('mousemove', (e) => {
-      state.currentPos = getScaledCanvasPos(e);
-      
-      
-      
-      // 如果正在拖拽文本对象
-      if (state.isDragging && state.selectedTextId) {
-        dragSelectedText();
-        return;
-      }
-
-      if (!state.isDrawing) return;
-
-      switch (state.currentTool) {
-        case 'pencil':
-          drawPencil();
-          break;
-        case 'eraser':
-          drawEraser(); // 修复：连续路径擦除
-          break;
-        case 'line':
-        case 'rect':
-        case 'circle':
-        case 'ellipse':
-          // 形状工具在临时画布预览
-          drawShapeOnTempCanvas();
-          break;
-      }
-    });
-
-    // 鼠标抬起：结束绘制或拖拽
-    elements.mainCanvas.addEventListener('mouseup', () => {
-      if (state.isDragging) {
-        state.isDragging = false;
-        saveToHistory();
-        return;
-      }
-      
-      if (!state.isDrawing) return;
-      state.isDrawing = false;
-
-      // 橡皮擦恢复上下文状态
-      if (state.currentTool === 'eraser') {
-        mainCtx.restore(); // 恢复默认合成模式
-      }
-
-      // 形状工具：将临时画布内容绘制到主画布
-      if (['line', 'rect', 'circle', 'ellipse'].includes(state.currentTool)) {
-        drawShapeOnMainCanvas();
-        clearTempCanvas();
-      }
-
-      // 保存当前状态到历史记录
-      saveToHistory();
-    });
-
-    // 鼠标移出画布：结束绘制或拖拽
-    elements.mainCanvas.addEventListener('mouseout', () => {
-      if (state.isDragging) {
-        state.isDragging = false;
-        saveToHistory();
-      }
-      
-      if (state.isDrawing && state.currentTool === 'eraser') {
-        mainCtx.restore(); // 恢复上下文
-      }
-      state.isDrawing = false;
-    });
-    
-    // 双击画布：编辑文本
-    elements.mainCanvas.addEventListener('dblclick', (e) => {
-      const pos = getScaledCanvasPos(e);
-      const clickedText = getTextObjectAtPosition(pos);
-      if (clickedText) {
-        editTextObject(clickedText);
-      }
-    });
-  }
-
-  /**
-   * 获取指定位置的文本对象
-   * @param {object} pos - 位置坐标{x, y}
-   * @returns {object|null} - 文本对象或null
-   */
-  function getTextObjectAtPosition(pos) {
-    return state.textObjects.find(textObj => {
-      const margin = 10;
-      return pos.x >= textObj.x - margin &&
-             pos.x <= textObj.x + textObj.width + margin &&
-             pos.y >= textObj.y - textObj.style.fontSize - margin &&
-             pos.y <= textObj.y + margin;
-    });
-  }
-
-  /**
-   * 拖拽选中的文本对象
-   */
-  function dragSelectedText() {
-    const textObj = state.textObjects.find(t => t.id === state.selectedTextId);
-    if (!textObj) return;
-    
-    // 计算位移
-    const dx = state.currentPos.x - state.startPos.x;
-    const dy = state.currentPos.y - state.startPos.y;
-    
-    // 更新文本位置
-    textObj.x += dx;
-    textObj.y += dy;
-    
-    // 更新起始位置
-    state.startPos = {...state.currentPos};
-    
-    // 重绘画布
-    redrawCanvas();
-  }
-
-  /**
-   * 编辑文本对象
-   * @param {object} textObj - 文本对象
-   */
-  function editTextObject(textObj) {
-    // 弹出输入框获取新文本
-    const newContent = prompt('编辑文本:', textObj.content);
-    if (newContent !== null) {
-      textObj.content = newContent;
-      redrawCanvas();
-      saveToHistory();
-    }
-  }
-
-  /**
-   * 检查指定位置是否在调整大小控制点上
-   * @param {object} pos - 位置坐标{x, y}
-   * @returns {object|null} - 包含textId和handle的对象，或null
-   */
-  function checkResizeHandleAtPosition(pos) {
-    const handleSize = 12; // 控制点大小
-    
-    for (const textObj of state.textObjects) {
-      // 计算四个控制点的位置
-      // 修复：底部控制点的Y坐标应该是文本框底部位置
-      const handles = {
-        topLeft: {x: textObj.x - 5, y: textObj.y - textObj.style.fontSize},
-        topRight: {x: textObj.x + textObj.width + 5, y: textObj.y - textObj.style.fontSize},
-        bottomRight: {x: textObj.x + textObj.width + 5, y: textObj.y + textObj.height},
-        bottomLeft: {x: textObj.x - 5, y: textObj.y + textObj.height}
-      };
-      
-      // 检查每个控制点
-      for (const [handleName, handlePos] of Object.entries(handles)) {
-        if (Math.abs(pos.x - handlePos.x) <= handleSize &&
-            Math.abs(pos.y - handlePos.y) <= handleSize) {
-          return {
-            textId: textObj.id,
-            handle: handleName
-          };
-        }
-      }
-    }
-    
-    return null;
-  }
-
-  /**
-   * 调整选中的文本对象大小
-   */
-  function resizeSelectedText() {
-    const textObj = state.textObjects.find(t => t.id === state.selectedTextId);
-    if (!textObj) return;
-    
-    // 计算位移
-    const dx = state.currentPos.x - state.startPos.x;
-    const dy = state.currentPos.y - state.startPos.y;
-    
-    // 根据不同的控制点调整大小和位置
-    switch (state.resizeHandle) {
-      case 'topLeft':
-        // 左上角控制点：调整宽度、高度和位置
-        textObj.width = Math.max(50, textObj.width - dx);
-        textObj.height = Math.max(20, textObj.height - dy);
-        textObj.x += dx;
-        textObj.y += dy;
-        break;
-      case 'topRight':
-        // 右上角控制点：调整宽度和高度
-        textObj.width = Math.max(50, textObj.width + dx);
-        textObj.height = Math.max(20, textObj.height - dy);
-        textObj.y += dy;
-        break;
-      case 'bottomRight':
-        // 右下角控制点：调整宽度和高度
-        textObj.width = Math.max(50, textObj.width + dx);
-        textObj.height = Math.max(20, textObj.height + dy);
-        break;
-      case 'bottomLeft':
-        // 左下角控制点：调整宽度和高度
-        textObj.width = Math.max(50, textObj.width - dx);
-        textObj.height = Math.max(20, textObj.height + dy);
-        textObj.x += dx;
-        break;
-    }
-    
-    // 更新起始位置
-    state.startPos = {...state.currentPos};
-    
-    // 重绘画布
-    redrawCanvas();
-  }
-
-  /**
-   * 更新选中文本对象的颜色
-   * @param {string} color - 颜色值
-   */
-  function updateSelectedTextColor(color) {
-    if (!state.selectedTextId) return;
-    
-    const textObj = state.textObjects.find(t => t.id === state.selectedTextId);
-    if (textObj) {
-      textObj.style.color = color;
-      redrawCanvas();
-    }
-  }
-
-  /**
-   * 更新选中文本对象的透明度
-   * @param {number} opacity - 透明度值（0-1）
-   */
-  function updateSelectedTextOpacity(opacity) {
-    if (!state.selectedTextId) return;
-    
-    const textObj = state.textObjects.find(t => t.id === state.selectedTextId);
-    if (textObj) {
-      textObj.style.opacity = opacity;
-      redrawCanvas();
-    }
-  }
-
-  /**
-   * 更新选中文本对象的字体大小
-   * @param {number} fontSize - 字体大小（像素）
-   */
-  function updateSelectedTextFontSize(fontSize) {
-    if (!state.selectedTextId) return;
-    
-    const textObj = state.textObjects.find(t => t.id === state.selectedTextId);
-    if (textObj) {
-      textObj.style.fontSize = fontSize;
-      redrawCanvas();
-    }
-  }
-
-  /**
-   * 绘制铅笔（流畅线条，端点/拐角圆润）
-   */
-  function drawPencil() {
-    setBrushStyle(mainCtx);
-    mainCtx.lineTo(state.currentPos.x, state.currentPos.y);
-    mainCtx.stroke();
-  }
-
-  /**
-   * 修复：橡皮擦改为连续路径擦除（彻底解决残留问题）
-   */
-  function drawEraser() {
-    // 连续绘制路径，和铅笔逻辑一致，确保无间隙
-    mainCtx.lineTo(state.currentPos.x, state.currentPos.y);
-    mainCtx.stroke(); // 绘制连续的擦除路径
-
-    // 可选优化：在路径端点绘制圆形，确保边缘无死角
-    mainCtx.beginPath();
-    mainCtx.arc(state.currentPos.x, state.currentPos.y, state.brush.lineWidth / 2, 0, Math.PI * 2);
-    mainCtx.fill();
-    mainCtx.beginPath();
-    mainCtx.moveTo(state.currentPos.x, state.currentPos.y);
-  }
-
-  /**
-   * 在临时画布绘制形状（预览效果，不修改主画布）
-   */
-  function drawShapeOnTempCanvas() {
-    clearTempCanvas();
-    setBrushStyle(tempCtx);
-    drawShape(tempCtx);
-  }
-
-  /**
-   * 在主画布绘制形状（完成绘制）
-   */
-  function drawShapeOnMainCanvas() {
-    setBrushStyle(mainCtx);
-    drawShape(mainCtx);
-  }
-
-  /**
-   * 绘制指定形状（直线/矩形/圆形/椭圆）- 修复roundRect兼容问题
-   * @param {CanvasRenderingContext2D} ctx - 绘制上下文
-   */
-  function drawShape(ctx) {
-    const {startPos, currentPos, brush} = state;
-    const x = startPos.x;
-    const y = startPos.y;
-    const width = currentPos.x - startPos.x;
-    const height = currentPos.y - startPos.y;
-
-    ctx.beginPath();
-    switch (state.currentTool) {
-      case 'line':
-        // 直线
-        ctx.moveTo(x, y);
-        ctx.lineTo(currentPos.x, currentPos.y);
-        break;
-      case 'rect':
-        // 修复：手动实现圆角矩形（兼容所有浏览器）
-        drawRoundedRect(ctx, x, y, width, height, brush.rectRadius);
-        break;
-      case 'circle':
-        // 圆形（半径为起点到当前点的距离）
-        const radius = Math.sqrt(width * width + height * height);
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
-        break;
-      case 'ellipse':
-        // 椭圆（长半轴/短半轴为宽高的绝对值）
-        const rx = Math.abs(width);
-        const ry = Math.abs(height);
-        ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
-        break;
-    }
-    ctx.stroke();
-  }
-
-  /**
-   * 手动绘制圆角矩形（替代ctx.roundRect，兼容所有浏览器）
-   * @param {CanvasRenderingContext2D} ctx - 绘制上下文
-   * @param {number} x - 矩形起始X坐标
-   * @param {number} y - 矩形起始Y坐标
-   * @param {number} width - 矩形宽度（可正可负）
-   * @param {number} height - 矩形高度（可正可负）
-   * @param {number} radius - 圆角半径
-   */
-  function drawRoundedRect(ctx, x, y, width, height, radius) {
-    // 处理宽高为负数的情况（从右下向左上绘制）
-    const xStart = width < 0 ? x + width : x;
-    const yStart = height < 0 ? y + height : y;
-    const w = Math.abs(width);
-    const h = Math.abs(height);
-    const r = Math.min(radius, Math.min(w / 2, h / 2)); // 限制圆角半径不超过宽高的一半
-
-    ctx.moveTo(xStart + r, yStart);
-    ctx.lineTo(xStart + w - r, yStart);
-    ctx.arcTo(xStart + w, yStart, xStart + w, yStart + r, r);
-    ctx.lineTo(xStart + w, yStart + h - r);
-    ctx.arcTo(xStart + w, yStart + h, xStart + w - r, yStart + h, r);
-    ctx.lineTo(xStart + r, yStart + h);
-    ctx.arcTo(xStart, yStart + h, xStart, yStart + h - r, r);
-    ctx.lineTo(xStart, yStart + r);
-    ctx.arcTo(xStart, yStart, xStart + r, yStart, r);
-    ctx.closePath();
-  }
-
-  /**
-   * 设置画笔样式
-   * @param {CanvasRenderingContext2D} ctx - 绘制上下文
-   */
-  function setBrushStyle(ctx) {
-    // 橡皮擦特殊处理：颜色为白色（预览用），绘制时用合成模式
-    const color = state.currentTool === 'eraser' ? '#ffffff' : state.brush.color;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = state.brush.lineWidth;
-    ctx.globalAlpha = state.brush.opacity;
-    ctx.lineCap = 'round'; // 线条端点圆润
-    ctx.lineJoin = 'round'; // 线条拐角圆润
-    ctx.fillStyle = color; // 备用（如需填充形状）
-  }
-
-  // ========== 模块3：历史记录管理（historyManager） ==========
-  /**
-   * 保存当前画布状态到历史记录
-   * 逻辑：撤销后绘制时，清空后续历史；仅保存最新状态
-   */
-  function saveToHistory() {
-    // 撤销后绘制，清空后续历史（避免重做冲突）
-    if (state.currentStep < state.history.length - 1) {
-      state.history = state.history.slice(0, state.currentStep + 1);
-    }
-    // 将画布内容转为base64保存（支持无限次撤销，直到初始状态）
-    state.history.push(elements.mainCanvas.toDataURL('image/png'));
-    state.currentStep = state.history.length - 1;
-    // 更新撤销/重做按钮状态
-    updateHistoryBtnStatus();
-  }
-
-  /**
-   * 撤销操作：恢复上一步画布状态
-   */
-  function undo() {
-    if (state.currentStep <= 0) return;
-    state.currentStep--;
-    restoreHistory();
-    updateHistoryBtnStatus();
-  }
-
-  /**
-   * 重做操作：恢复下一步画布状态
-   */
-  function redo() {
-    if (state.currentStep >= state.history.length - 1) return;
-    state.currentStep++;
-    restoreHistory();
-    updateHistoryBtnStatus();
-  }
-
-  /**
-   * 恢复指定步骤的画布状态
-   * 修复：恢复历史状态后重新绘制文本对象
-   */
-  function restoreHistory() {
-    const img = new Image();
-    img.src = state.history[state.currentStep];
-    img.onload = () => {
-      // 清空主画布并恢复历史状态
-      mainCtx.clearRect(0, 0, elements.mainCanvas.width, elements.mainCanvas.height);
-      mainCtx.drawImage(img, 0, 0);
-      // 重新绘制文本对象，确保文本显示在画布上
-      redrawCanvas();
-    };
-  }
-
-  /**
-   * 更新撤销/重做按钮禁用状态
-   */
-  function updateHistoryBtnStatus() {
-    elements.undoBtn.disabled = state.currentStep <= 0;
-    elements.redoBtn.disabled = state.currentStep >= state.history.length - 1;
-  }
-
-  // ========== 模块4：工具函数（utils） ==========
-  /**
-   * 更新画笔样式
-   * @param {string} key - 样式属性名（color/lineWidth/opacity/rectRadius）
-   * @param {any} value - 样式值
-   */
-  function updateBrushStyle(key, value) {
-    state.brush[key] = value;
-    // 同步颜色拾取器值（仅颜色属性）
-    if (key === 'color') {
-      elements.colorPicker.value = value;
-    }
-  }
-
-  /**
-   * 更新笔画大小预览
-   */
-  function updateBrushPreview() {
-    const previewDot = elements.brushPreviewDot;
-    // 设置预览点大小（等于画笔粗细）
-    previewDot.style.width = `${state.brush.lineWidth}px`;
-    previewDot.style.height = `${state.brush.lineWidth}px`;
-    // 设置预览点颜色（橡皮擦显示灰色边框，白色填充）
-    if (state.currentTool === 'eraser') {
-      previewDot.style.backgroundColor = '#ffffff';
-      previewDot.style.border = `1px solid #666666`;
-    } else {
-      previewDot.style.backgroundColor = state.brush.color;
-      previewDot.style.border = 'none';
-    }
-    // 设置透明度
-    previewDot.style.opacity = state.brush.opacity;
-  }
-
-  /**
-   * 新增：更新自定义画笔光标样式
-   */
-  function updateBrushCursorStyle() {
-    const cursor = elements.brushCursor;
-    const lineWidth = state.brush.lineWidth * state.scale; // 适配画布缩放
-
-    // 设置光标大小（匹配画笔粗细，适配缩放）
-    cursor.style.width = `${lineWidth}px`;
-    cursor.style.height = `${lineWidth}px`;
-
-    // 设置光标样式（区分工具）
-    if (state.currentTool === 'eraser') {
-      // 橡皮擦：白色填充+灰色边框
-      cursor.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
-      cursor.style.border = `1px solid #666666`;
-      cursor.style.boxShadow = '0 0 2px rgba(0,0,0,0.3)';
-    } else if (['line', 'rect', 'circle', 'ellipse'].includes(state.currentTool)) {
-      // 形状工具：仅边框，无填充（模拟画笔轮廓）
-      cursor.style.backgroundColor = 'transparent';
-      cursor.style.border = `1px solid ${state.brush.color}`;
-      cursor.style.opacity = state.brush.opacity;
-    } else {
-      // 铅笔：实心圆形，匹配画笔颜色和透明度
-      cursor.style.backgroundColor = state.brush.color;
-      cursor.style.border = 'none';
-      cursor.style.opacity = state.brush.opacity;
-    }
-  }
-
-  /**
-   * 新增：绑定光标相关事件（跟随/显示/隐藏）
-   */
-  function bindCursorEvents() {
-    const wrapper = elements.canvasWrapper;
-    const cursor = elements.brushCursor;
-
-    // 鼠标移动：光标跟随
-    wrapper.addEventListener('mousemove', (e) => {
-      // 设置光标位置（相对于画布容器）
-      cursor.style.left = `${e.clientX - wrapper.getBoundingClientRect().left}px`;
-      cursor.style.top = `${e.clientY - wrapper.getBoundingClientRect().top}px`;
-      // 显示光标
-      cursor.style.display = 'block';
-    });
-
-    // 鼠标移出画布容器：隐藏光标
-    wrapper.addEventListener('mouseleave', () => {
-      cursor.style.display = 'none';
-    });
-
-    // 画布缩放时更新光标样式
-    window.addEventListener('resize', updateBrushCursorStyle);
-  }
-
-  /**
-   * 添加最近使用的颜色（最多5个，去重）
-   * @param {string} color - 颜色值（hex格式）
-   */
-  function addRecentColor(color) {
-    // 去重：已存在则移除，重新添加到头部
-    state.recentColors = state.recentColors.filter(c => c !== color);
-    state.recentColors.unshift(color);
-    // 限制最多5个
-    if (state.recentColors.length > 5) {
-      state.recentColors.pop();
-    }
-    // 渲染最近颜色按钮
-    renderRecentColors();
-  }
-
-  /**
-   * 渲染最近使用的颜色按钮
-   */
-  function renderRecentColors() {
-    elements.recentColors.innerHTML = '';
-    state.recentColors.forEach(color => {
-      const btn = document.createElement('div');
-      btn.className = 'recent-color-btn';
-      btn.style.backgroundColor = color;
-      btn.title = color;
-      // 点击最近颜色切换画笔颜色
-      btn.addEventListener('click', () => {
-        updateBrushStyle('color', color);
-        updateBrushPreview(); // 更新预览
-        updateBrushCursorStyle(); // 新增：更新光标
-      });
-      elements.recentColors.appendChild(btn);
-    });
-  }
-
-  /**
-   * 获取缩放后的画布坐标（适配滚轮缩放）
-   * @param {MouseEvent} e - 鼠标事件
-   * @returns {object} - 缩放后的{x, y}坐标
-   */
-  function getScaledCanvasPos(e) {
-    const rect = elements.mainCanvas.getBoundingClientRect();
-    return {
-      x: (e.clientX - rect.left) / state.scale,
-      y: (e.clientY - rect.top) / state.scale
-    };
-  }
-
-  /**
-   * 创建文本对象并添加到画布
-   * @param {object} pos - 文本起始位置{x, y}
-   */
-  function addTextAtPosition(pos) {
-    // 创建文本对象
-    const textObject = {
-      id: generateTextId(),
-      content: '双击编辑文本',
-      x: pos.x,
-      y: pos.y,
-      width: 24, // 初始宽度：24px
-      height: 24, // 初始高度：24px
-      style: {
-        fontSize: state.text.fontSize,
-        fontFamily: state.text.fontFamily,
-        fontWeight: state.text.fontWeight,
-        fontStyle: state.text.fontStyle,
-        color: state.brush.color,
-        opacity: state.brush.opacity
-      },
-      isEditing: false
-    };
-    
-    // 添加到文本对象列表
-    state.textObjects.push(textObject);
-    state.selectedTextId = textObject.id;
-    
-    // 重绘画布
-    redrawCanvas();
-    // 保存到历史记录
-    saveToHistory();
-  }
-
-  /**
-   * 重绘画布（包含所有文本对象）
-   * 修复：彻底解决拖动时产生拖尾的问题
-   * 使用分层绘制：将文本对象绘制在临时画布上，避免与非文本内容混合
-   */
-  function redrawCanvas() {
-    // 文本对象现在绘制在tempCanvas上，主画布只用于非文本内容
-    // 这样拖动文本时不会影响主画布的内容，从而避免拖尾
-    
-    // 1. 清空临时画布
-    tempCtx.clearRect(0, 0, elements.tempCanvas.width, elements.tempCanvas.height);
-    
-    // 2. 在临时画布上绘制所有文本对象
-    drawAllTextObjectsOnTempCanvas();
-  }
-
-  /**
-   * 在临时画布上绘制所有文本对象
-   */
-  function drawAllTextObjectsOnTempCanvas() {
-    state.textObjects.forEach(textObj => {
-      drawTextObjectOnTempCanvas(textObj);
-    });
-  }
-
-  /**
-   * 在临时画布上绘制单个文本对象
-   * @param {object} textObj - 文本对象
-   */
-  function drawTextObjectOnTempCanvas(textObj) {
-    tempCtx.save();
-    
-    // 设置文本样式
-    tempCtx.font = `${textObj.style.fontWeight} ${textObj.style.fontStyle} ${textObj.style.fontSize}px ${textObj.style.fontFamily}`;
-    tempCtx.fillStyle = textObj.style.color;
-    tempCtx.globalAlpha = textObj.style.opacity;
-    
-    // 绘制文本
-    tempCtx.fillText(textObj.content, textObj.x, textObj.y);
-    
-    // 如果是选中状态，绘制边框
-    if (state.selectedTextId === textObj.id) {
-      drawSelectionBoxOnTempCanvas(textObj);
-    }
-    
-    tempCtx.restore();
-  }
-
-  /**
-   * 在临时画布上绘制选中框
-   * @param {object} textObj - 文本对象
-   */
-  function drawSelectionBoxOnTempCanvas(textObj) {
-    tempCtx.save();
-    tempCtx.strokeStyle = '#28a745';
-    tempCtx.lineWidth = 2;
-    tempCtx.setLineDash([5, 5]);
-    // 绘制边框
-    tempCtx.strokeRect(textObj.x - 5, textObj.y - textObj.style.fontSize, textObj.width + 10, textObj.height + textObj.style.fontSize);
-    // 绘制调整大小的控制点
-    drawResizeHandlesOnTempCanvas(textObj);
-    tempCtx.restore();
-  }
-
-  /**
-   * 在临时画布上绘制调整大小的控制点
-   * @param {object} textObj - 文本对象
-   */
-  function drawResizeHandlesOnTempCanvas(textObj) {
-    const handleSize = 8;
-    const handles = [
-      {x: textObj.x - 5, y: textObj.y - textObj.style.fontSize}, // 左上
-      {x: textObj.x + textObj.width + 5, y: textObj.y - textObj.style.fontSize}, // 右上
-      {x: textObj.x + textObj.width + 5, y: textObj.y + textObj.height}, // 右下
-      {x: textObj.x - 5, y: textObj.y + textObj.height} // 左下
-    ];
-    
-    tempCtx.fillStyle = '#28a745';
-    handles.forEach(handle => {
-      tempCtx.fillRect(handle.x - handleSize/2, handle.y - handleSize/2, handleSize, handleSize);
-    });
-  }
-
-  /**
-   * 绘制所有文本对象
-   */
-  function drawAllTextObjects() {
-    state.textObjects.forEach(textObj => {
-      drawTextObject(textObj);
-    });
-  }
-
-  /**
-   * 绘制单个文本对象
-   * @param {object} textObj - 文本对象
-   */
-  function drawTextObject(textObj) {
-    mainCtx.save();
-    
-    // 设置文本样式
-    mainCtx.font = `${textObj.style.fontWeight} ${textObj.style.fontStyle} ${textObj.style.fontSize}px ${textObj.style.fontFamily}`;
-    mainCtx.fillStyle = textObj.style.color;
-    mainCtx.globalAlpha = textObj.style.opacity;
-    
-    // 绘制文本
-    mainCtx.fillText(textObj.content, textObj.x, textObj.y);
-    
-    // 如果是选中状态，绘制边框
-    if (state.selectedTextId === textObj.id) {
-      drawSelectionBox(textObj);
-    }
-    
-    mainCtx.restore();
-  }
-
-  /**
-   * 绘制选中框
-   * @param {object} textObj - 文本对象
-   */
-  function drawSelectionBox(textObj) {
-    mainCtx.save();
-    mainCtx.strokeStyle = '#28a745';
-    mainCtx.lineWidth = 2;
-    mainCtx.setLineDash([5, 5]);
-    // 绘制边框
-    mainCtx.strokeRect(textObj.x - 5, textObj.y - textObj.style.fontSize, textObj.width + 10, textObj.height + textObj.style.fontSize);
-    // 绘制调整大小的控制点
-    drawResizeHandles(textObj);
-    mainCtx.restore();
-  }
-
-  /**
-   * 绘制调整大小的控制点
-   * @param {object} textObj - 文本对象
-   */
-  function drawResizeHandles(textObj) {
-    const handleSize = 8;
-    const handles = [
-      {x: textObj.x - 5, y: textObj.y - textObj.style.fontSize}, // 左上
-      {x: textObj.x + textObj.width + 5, y: textObj.y - textObj.style.fontSize}, // 右上
-      {x: textObj.x + textObj.width + 5, y: textObj.y + textObj.height}, // 右下
-      {x: textObj.x - 5, y: textObj.y + textObj.height} // 左下
-    ];
-    
-    mainCtx.fillStyle = '#28a745';
-    handles.forEach(handle => {
-      mainCtx.fillRect(handle.x - handleSize/2, handle.y - handleSize/2, handleSize, handleSize);
-    });
-  }
-
-  /**
-   * 调整画布大小（自适应窗口）
-   * 逻辑：画布大小等于容器大小，缩放后保持绘制内容比例
-   */
-  function resizeCanvas() {
-    const wrapperRect = elements.canvasWrapper.getBoundingClientRect();
-    // 设置主画布/临时画布大小
-    elements.mainCanvas.width = wrapperRect.width;
-    elements.mainCanvas.height = wrapperRect.height;
-    elements.tempCanvas.width = wrapperRect.width;
-    elements.tempCanvas.height = wrapperRect.height;
-    // 恢复历史状态（避免resize后内容丢失）
-    restoreHistory();
-    // 应用缩放比例
-    applyScale();
-    // 新增：更新光标样式
-    updateBrushCursorStyle();
-  }
-
-  /**
-   * 清空临时画布
-   */
-  function clearTempCanvas() {
-    tempCtx.clearRect(0, 0, elements.tempCanvas.width, elements.tempCanvas.height);
-  }
-
-  /**
-   * 清空主画布（带确认弹窗）
-   */
-  function clearCanvas() {
-    if (confirm('确定要清空画布吗？此操作不可撤销！')) {
-      mainCtx.clearRect(0, 0, elements.mainCanvas.width, elements.mainCanvas.height);
-      saveToHistory(); // 保存清空后的状态
-    }
-  }
-
-  /**
-   * 保存画布为PNG图片（文件名带时间戳）
-   */
-  function saveImage() {
-    // 创建下载链接
-    const link = document.createElement('a');
-    // 生成带时间戳的文件名
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    link.download = `白板_${timestamp}.png`;
-    // 导出画布为PNG
-    link.href = elements.mainCanvas.toDataURL('image/png');
-    // 触发下载
-    link.click();
-    // 释放链接
-    link.remove();
-  }
-
-  /**
-   * 绑定滚轮缩放事件
-   */
-  function bindScaleEvent() {
-    elements.canvasWrapper.addEventListener('wheel', (e) => {
-      e.preventDefault(); // 阻止默认滚动
-      // 缩放增量：滚轮向上+0.1，向下-0.1
-      const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      const newScale = Math.max(0.5, Math.min(3, state.scale + delta)); // 限制缩放范围0.5-3倍
-      if (newScale !== state.scale) {
-        state.scale = newScale;
-        applyScale();
-        updateBrushCursorStyle(); // 新增：缩放后更新光标
-      }
-    });
-  }
-
-  /**
-   * 应用画布缩放比例
-   */
-  function applyScale() {
-    elements.mainCanvas.style.transform = `scale(${state.scale})`;
-    elements.tempCanvas.style.transform = `scale(${state.scale})`;
-  }
-
-  // ========== 初始化 ==========
-  window.addEventListener('DOMContentLoaded', initTools);
-</script>
+  <script src="./app.js"></script>
 </body>
 </html>
