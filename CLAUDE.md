@@ -67,7 +67,7 @@ html-tools/
 ## 技术栈
 
 - **前端**: HTML5, CSS3, 原生 JavaScript
-- **框架**: 部分项目使用 Bootstrap、Vue.js (css网格布局)、React (react-amap)
+- **框架**: 部分项目使用 Bootstrap、React (react-amap)
 - **物理引擎**: Verlet.js 用于 3D 蜘蛛网物理效果
 - **构建工具**: Browserify 和 UglifyJS (仅用于 3D 蜘蛛网)
 
