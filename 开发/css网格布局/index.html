@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CSS Grid 网格生成器</title>
-  <meta name="description" content="拖动网格中的方块即可生成 CSS Grid 布局代码，支持自定义行列数量、轨道单位与间距。">
+  <meta name="description" content="拖动网格中的方块即可生成 CSS Grid 布局代码，支持自定义行列数量、轨道单位、间距与区域命名。">
   <link rel="icon" href="./favicon.ico">
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -25,24 +25,29 @@
 </header>
 
 <main class="layout">
-  <section class="stage" aria-label="网格预览">
+  <section class="stage" id="stage" aria-label="网格预览">
     <div class="col-units" id="colUnits" aria-label="各列轨道宽度"></div>
     <div class="row-units" id="rowUnits" aria-label="各行轨道高度"></div>
     <div class="grid-frame">
       <div class="grid-layer box-layer" id="boxLayer"></div>
       <div class="grid-layer child-layer" id="childLayer"></div>
+      <div class="grid-layer ghost-layer" id="ghostLayer" hidden aria-hidden="true">
+        <div class="ghost-block" id="ghostBlock"></div>
+      </div>
     </div>
   </section>
 
   <aside class="panel">
     <div class="controls">
-      <label class="field" for="columns">
+      <label class="field field-slider" for="columns">
         <span class="field-label">列</span>
-        <input id="columns" type="number" min="0" max="12" step="1" value="5" inputmode="numeric">
+        <input id="columns" type="range" min="1" max="12" step="1" value="5">
+        <output class="field-value" id="columnsValue" for="columns">5</output>
       </label>
-      <label class="field" for="rows">
+      <label class="field field-slider" for="rows">
         <span class="field-label">行</span>
-        <input id="rows" type="number" min="0" max="12" step="1" value="5" inputmode="numeric">
+        <input id="rows" type="range" min="1" max="12" step="1" value="5">
+        <output class="field-value" id="rowsValue" for="rows">5</output>
       </label>
       <label class="field" for="columnGap">
         <span class="field-label">列间距 <span class="hint">(单位 px)</span></span>
@@ -55,13 +60,21 @@
     </div>
 
     <div class="actions">
-      <button type="button" class="btn" id="showCode">请给我示例中的代码</button>
-      <button type="button" class="btn btn-ghost" id="resetGrid">重置布局</button>
+      <button type="button" class="btn" id="showCode">查看代码</button>
+      <button type="button" class="btn btn-ghost" id="resetGrid">清空区域</button>
+      <button type="button" class="btn btn-ghost" id="restoreDefault">恢复默认</button>
     </div>
+
+    <p class="tips">
+      拖动空格划出新区域；点击区域后可拖动移动、拖四角缩放，双击名称可重命名。<br>
+      方向键移动一格，Shift + 方向键缩放，Delete 删除，Ctrl + Z 撤销。
+    </p>
 
     <button type="button" class="text-link" id="showExplain">这个项目可以做什么？</button>
   </aside>
 </main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <div class="modal-mask" id="modalMask" hidden>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
@@ -75,6 +88,7 @@
   </div>
 </div>
 
+<script src="./grid-model.js"></script>
 <script src="./app.js"></script>
 </body>
 </html>

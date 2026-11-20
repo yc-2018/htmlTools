@@ -1,17 +1,16 @@
 (function () {
   'use strict';
 
-  /* ---------- 常量 ---------- */
+  const Model = window.GridModel;
 
-  const MAX_TRACKS = 12;
-  const MAX_GAP = 50;
-  const DEFAULT_UNIT = '1fr';
   const HUE_START = 45;
   const HUE_STEP = 24;
-  // 允许的轨道单位：数值 + 单位，或 auto / min-content / max-content 等关键字
-  const UNIT_PATTERN = /^\d*\.?\d+(fr|px|%|em|rem|vh|vw|vmin|vmax|q|mm|cm|in|pt|pc|ex|ch)$/i;
-  const KEYWORD_UNITS = ['auto', 'min-content', 'max-content'];
-  const FUNCTION_UNITS = /^(minmax|repeat|fit-content)\(.+\)$/i;
+  const HISTORY_LIMIT = 60;
+  const STORAGE_KEY = 'html-tools:css-grid-generator:v1';
+  // 轨道至少要有这么高（宽），否则输入框里的字会挤得看不见
+  const MIN_TRACK_PX = 22;
+  // 顶部单位条的高度，对应 .stage 的 grid-template-rows
+  const UNIT_BAR_PX = 46;
 
   /* ---------- 状态 ---------- */
 
@@ -20,108 +19,311 @@
     rows: 5,
     columnGap: 0,
     rowGap: 0,
-    colTracks: [],
-    rowTracks: [],
-    areas: []
+    colTracks: Model.createTracks(5),
+    rowTracks: Model.createTracks(5),
+    // 每块区域：{ id, name, row, col, rowSpan, colSpan }
+    areas: [],
+    nameSeq: 0,
+    codeMode: 'named'
   };
 
+  let selectedId = null;
+  let action = null;
+  let idSeq = 0;
+  let codeTab = 'css';
+  let copyTimer = null;
+  let toastTimer = null;
+  let lastFocus = null;
+
+  const history = { past: [], future: [] };
+
   const dom = {
+    stage: document.getElementById('stage'),
     colUnits: document.getElementById('colUnits'),
     rowUnits: document.getElementById('rowUnits'),
     boxLayer: document.getElementById('boxLayer'),
     childLayer: document.getElementById('childLayer'),
+    ghostLayer: document.getElementById('ghostLayer'),
+    ghostBlock: document.getElementById('ghostBlock'),
     columnsInput: document.getElementById('columns'),
     rowsInput: document.getElementById('rows'),
+    columnsValue: document.getElementById('columnsValue'),
+    rowsValue: document.getElementById('rowsValue'),
     columnGapInput: document.getElementById('columnGap'),
     rowGapInput: document.getElementById('rowGap'),
     showCode: document.getElementById('showCode'),
     resetGrid: document.getElementById('resetGrid'),
+    restoreDefault: document.getElementById('restoreDefault'),
     showExplain: document.getElementById('showExplain'),
+    toast: document.getElementById('toast'),
     modalMask: document.getElementById('modalMask'),
     modalTitle: document.getElementById('modalTitle'),
     modalBody: document.getElementById('modalBody'),
     modalClose: document.getElementById('modalClose')
   };
 
-  /* ---------- 轨道模板 ---------- */
+  /* ---------- 小工具 ---------- */
 
-  function createTracks(count) {
-    return Array.from({ length: count }, function () {
-      return { unit: DEFAULT_UNIT };
-    });
+  function toInt(value, fallback) {
+    const num = Math.floor(Number(value));
+    return Number.isFinite(num) ? num : fallback;
   }
 
-  function resizeTracks(tracks, count) {
-    while (tracks.length > count) tracks.pop();
-    while (tracks.length < count) tracks.push({ unit: DEFAULT_UNIT });
+  function clampInt(value, min, max, fallback) {
+    return Math.max(min, Math.min(toInt(value, fallback), max));
   }
 
-  // 相邻且单位相同的轨道合并，方便生成 repeat() 简写
-  function groupRepeatedUnits(tracks) {
-    const units = tracks.map(function (track) {
-      return track.unit;
-    });
-    if (!units.length) return [];
-    const groups = [[units[0]]];
-    for (let i = 1; i < units.length; i += 1) {
-      const last = groups[groups.length - 1];
-      if (last[0] === units[i]) {
-        last.push(units[i]);
-      } else {
-        groups.push([units[i]]);
-      }
+  function getArea(id) {
+    for (let i = 0; i < state.areas.length; i += 1) {
+      if (state.areas[i].id === id) return state.areas[i];
     }
-    return groups;
+    return null;
   }
 
-  function createRepetition(groups) {
-    return groups
-      .map(function (group) {
-        return group.length === 1 ? group[0] : 'repeat(' + group.length + ', ' + group[0] + ')';
-      })
-      .join(' ')
-      .trim();
+  function childElement(id) {
+    return dom.childLayer.querySelector('.child[data-id="' + id + '"]');
   }
 
-  function colTemplate() {
-    return createRepetition(groupRepeatedUnits(state.colTracks));
+  function nextId() {
+    idSeq += 1;
+    return idSeq;
   }
 
-  function rowTemplate() {
-    return createRepetition(groupRepeatedUnits(state.rowTracks));
+  function nextName() {
+    state.nameSeq += 1;
+    return 'div' + state.nameSeq;
   }
 
-  function cellCount() {
-    return Math.max(state.columns, 0) * Math.max(state.rows, 0);
+  function maxDivIndex(areas) {
+    return areas.reduce(function (max, area) {
+      const match = /^div(\d+)$/.exec(area.name);
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 0);
   }
 
-  /* ---------- 单位校验 ---------- */
+  /* ---------- 提示 ---------- */
 
-  function isValidTrackUnit(value) {
-    const unit = String(value).trim();
-    if (!unit) return false;
-    if (KEYWORD_UNITS.indexOf(unit) !== -1) return true;
-    if (Number(unit) === 0) return true;
-    if (UNIT_PATTERN.test(unit)) return true;
-    return FUNCTION_UNITS.test(unit);
+  function toast(message) {
+    dom.toast.textContent = message;
+    dom.toast.classList.add('is-visible');
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(function () {
+      dom.toast.classList.remove('is-visible');
+    }, 2400);
+  }
+
+  function flashArea(id) {
+    const el = childElement(id);
+    if (!el) return;
+    el.classList.add('is-conflict');
+    window.setTimeout(function () {
+      el.classList.remove('is-conflict');
+    }, 520);
+  }
+
+  /* ---------- 撤销栈 ---------- */
+
+  function snapshot() {
+    return {
+      columns: state.columns,
+      rows: state.rows,
+      columnGap: state.columnGap,
+      rowGap: state.rowGap,
+      colTracks: state.colTracks.map(function (t) { return { unit: t.unit }; }),
+      rowTracks: state.rowTracks.map(function (t) { return { unit: t.unit }; }),
+      areas: state.areas.map(function (a) { return Object.assign({}, a); }),
+      nameSeq: state.nameSeq
+    };
+  }
+
+  function restoreSnapshot(snap) {
+    state.columns = snap.columns;
+    state.rows = snap.rows;
+    state.columnGap = snap.columnGap;
+    state.rowGap = snap.rowGap;
+    state.colTracks = snap.colTracks.map(function (t) { return { unit: t.unit }; });
+    state.rowTracks = snap.rowTracks.map(function (t) { return { unit: t.unit }; });
+    state.areas = snap.areas.map(function (a) { return Object.assign({}, a); });
+    state.nameSeq = snap.nameSeq;
+    selectedId = null;
+    syncInputs();
+    render();
+  }
+
+  function pushHistory() {
+    history.past.push(snapshot());
+    if (history.past.length > HISTORY_LIMIT) history.past.shift();
+    history.future.length = 0;
+  }
+
+  function undo() {
+    if (!history.past.length) {
+      toast('没有可以撤销的操作了');
+      return;
+    }
+    history.future.push(snapshot());
+    restoreSnapshot(history.past.pop());
+    saveState();
+    toast('已撤销');
+  }
+
+  function redo() {
+    if (!history.future.length) {
+      toast('没有可以重做的操作了');
+      return;
+    }
+    history.past.push(snapshot());
+    restoreSnapshot(history.future.pop());
+    saveState();
+    toast('已重做');
+  }
+
+  /* ---------- 持久化 ---------- */
+
+  function saveState() {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        v: 1,
+        columns: state.columns,
+        rows: state.rows,
+        columnGap: state.columnGap,
+        rowGap: state.rowGap,
+        colTracks: state.colTracks,
+        rowTracks: state.rowTracks,
+        areas: state.areas,
+        nameSeq: state.nameSeq,
+        codeMode: state.codeMode
+      }));
+    } catch (error) {
+      // 隐私模式下写入会抛异常，忽略即可
+    }
+  }
+
+  function normalizeTracks(list, count) {
+    const tracks = [];
+    for (let i = 0; i < count; i += 1) {
+      const item = list && list[i];
+      const unit = item && typeof item.unit === 'string' ? item.unit.trim() : '';
+      tracks.push({ unit: unit || Model.DEFAULT_UNIT });
+    }
+    return tracks;
+  }
+
+  function normalizeAreas(list, columns, rows) {
+    const source = Array.isArray(list) ? list : [];
+    const result = [];
+
+    source.forEach(function (item) {
+      if (!item || typeof item !== 'object') return;
+      const row = toInt(item.row, 0);
+      const col = toInt(item.col, 0);
+      const rowSpan = toInt(item.rowSpan, 0);
+      const colSpan = toInt(item.colSpan, 0);
+      if (row < 1 || col < 1 || rowSpan < 1 || colSpan < 1) return;
+      if (row + rowSpan - 1 > rows || col + colSpan - 1 > columns) return;
+      const rect = { row: row, col: col, rowSpan: rowSpan, colSpan: colSpan };
+      if (Model.findOverlap(rect, result, null)) return;
+      result.push({
+        id: toInt(item.id, 0),
+        name: Model.sanitizeName(item.name, 'div' + (result.length + 1)),
+        row: row,
+        col: col,
+        rowSpan: rowSpan,
+        colSpan: colSpan
+      });
+    });
+
+    // 修正重复或缺失的 id
+    const usedIds = {};
+    result.forEach(function (area) {
+      if (area.id > 0 && !usedIds[area.id]) {
+        usedIds[area.id] = true;
+      } else {
+        area.id = 0;
+      }
+    });
+    let seq = result.reduce(function (max, area) { return Math.max(max, area.id); }, 0);
+    result.forEach(function (area) {
+      if (!area.id) {
+        seq += 1;
+        area.id = seq;
+      }
+    });
+
+    // 修正重名，否则 grid-template-areas 会拼出非矩形
+    const usedNames = {};
+    result.forEach(function (area) {
+      let name = area.name;
+      if (usedNames[name]) {
+        let n = 2;
+        while (usedNames[name + '-' + n]) n += 1;
+        name = name + '-' + n;
+      }
+      usedNames[name] = true;
+      area.name = name;
+    });
+
+    return result;
+  }
+
+  function loadState() {
+    let raw = null;
+    try {
+      raw = window.localStorage.getItem(STORAGE_KEY);
+    } catch (error) {
+      return false;
+    }
+    if (!raw) return false;
+
+    let data = null;
+    try {
+      data = JSON.parse(raw);
+    } catch (error) {
+      return false;
+    }
+    if (!data || data.v !== 1) return false;
+
+    const columns = clampInt(data.columns, 1, Model.MAX_TRACKS, 5);
+    const rows = clampInt(data.rows, 1, Model.MAX_TRACKS, 5);
+
+    state.columns = columns;
+    state.rows = rows;
+    state.columnGap = clampInt(data.columnGap, 0, Model.MAX_GAP, 0);
+    state.rowGap = clampInt(data.rowGap, 0, Model.MAX_GAP, 0);
+    state.colTracks = normalizeTracks(data.colTracks, columns);
+    state.rowTracks = normalizeTracks(data.rowTracks, rows);
+    state.codeMode = data.codeMode === 'numbers' ? 'numbers' : 'named';
+    state.areas = normalizeAreas(data.areas, columns, rows);
+    state.nameSeq = Math.max(clampInt(data.nameSeq, 0, 9999, 0), maxDivIndex(state.areas));
+    idSeq = state.areas.reduce(function (max, area) { return Math.max(max, area.id); }, 0);
+    return true;
   }
 
   /* ---------- 渲染 ---------- */
 
   function render() {
-    const cols = colTemplate() || 'none';
-    const rows = rowTemplate() || 'none';
+    const colTemplate = Model.templateFromTracks(state.colTracks) || 'none';
+    const rowTemplate = Model.templateFromTracks(state.rowTracks) || 'none';
+    // 输入条里的格子自带最小尺寸，必须把 fr 夹住，否则行高一多就会被撑开，和右侧格子错位
+    const colUnitTemplate = Model.templateFromTracks(state.colTracks, true) || 'none';
+    const rowUnitTemplate = Model.templateFromTracks(state.rowTracks, true) || 'none';
     const columnGap = state.columnGap + 'px';
     const rowGap = state.rowGap + 'px';
 
-    dom.colUnits.style.gridTemplateColumns = cols;
+    // 行数多又间距大时固定高度装不下，把预览区撑高，别把行挤成一条线
+    const needed = UNIT_BAR_PX + state.rows * MIN_TRACK_PX +
+      Math.max(0, state.rows - 1) * state.rowGap;
+    dom.stage.style.minHeight = (state.rows > 1 ? needed : 0) + 'px';
+
+    // 顶部只排一列一个输入框，左侧只排一行一个输入框，其余层两者都要
+    dom.colUnits.style.gridTemplateColumns = colUnitTemplate;
     dom.colUnits.style.columnGap = columnGap;
-    dom.rowUnits.style.gridTemplateRows = rows;
+    dom.rowUnits.style.gridTemplateRows = rowUnitTemplate;
     dom.rowUnits.style.rowGap = rowGap;
 
-    [dom.boxLayer, dom.childLayer].forEach(function (layer) {
-      layer.style.gridTemplateColumns = cols;
-      layer.style.gridTemplateRows = rows;
+    [dom.boxLayer, dom.childLayer, dom.ghostLayer].forEach(function (layer) {
+      layer.style.gridTemplateColumns = colTemplate;
+      layer.style.gridTemplateRows = rowTemplate;
       layer.style.columnGap = columnGap;
       layer.style.rowGap = rowGap;
     });
@@ -130,6 +332,16 @@
     syncUnitCells(dom.rowUnits, state.rowTracks, 'row');
     renderBoxes();
     renderAreas();
+    clearGhost();
+  }
+
+  function syncInputs() {
+    dom.columnsInput.value = String(state.columns);
+    dom.rowsInput.value = String(state.rows);
+    dom.columnsValue.textContent = String(state.columns);
+    dom.rowsValue.textContent = String(state.rows);
+    dom.columnGapInput.value = String(state.columnGap);
+    dom.rowGapInput.value = String(state.rowGap);
   }
 
   function createUnitCell(kind) {
@@ -142,7 +354,6 @@
     input.autocomplete = 'off';
     input.spellcheck = false;
     input.dataset.kind = kind;
-    input.setAttribute('aria-label', kind === 'col' ? '列轨道宽度' : '行轨道高度');
 
     const tip = document.createElement('div');
     tip.className = 'unit-error';
@@ -167,152 +378,343 @@
       const track = tracks[index];
       input.dataset.index = String(index);
       input.name = kind + 'Unit' + index;
+      input.setAttribute('aria-label', '第 ' + (index + 1) +
+        (kind === 'col' ? ' 列轨道宽度' : ' 行轨道高度'));
       if (document.activeElement !== input && input.value !== track.unit) {
         input.value = track.unit;
       }
-      const valid = isValidTrackUnit(track.unit);
+      const valid = Model.isValidTrackUnit(track.unit);
       input.classList.toggle('has-error', !valid);
       cell.querySelector('.unit-error').hidden = valid;
     });
   }
 
   function renderBoxes() {
-    const total = cellCount();
-    dom.boxLayer.replaceChildren();
+    const total = state.columns * state.rows;
+    if (dom.boxLayer.children.length === total) return;
+    const frag = document.createDocumentFragment();
     for (let i = 1; i <= total; i += 1) {
       const box = document.createElement('div');
       box.className = 'box';
       box.dataset.cell = String(i);
-      dom.boxLayer.appendChild(box);
+      frag.appendChild(box);
     }
+    dom.boxLayer.replaceChildren(frag);
+  }
+
+  function createChild(area, index) {
+    const child = document.createElement('div');
+    child.className = 'child';
+    child.dataset.id = String(area.id);
+    child.tabIndex = 0;
+    child.style.gridArea = Model.gridAreaOf(area);
+    child.style.setProperty('--hue', (HUE_START + index * HUE_STEP) % 360 + 'deg');
+    child.setAttribute('role', 'group');
+    child.setAttribute('aria-label', '区域 ' + area.name + '，第 ' + area.row + ' 行第 ' + area.col +
+      ' 列开始，横跨 ' + area.colSpan + ' 列 ' + area.rowSpan + ' 行');
+    if (area.id === selectedId) child.classList.add('is-selected');
+
+    const label = document.createElement('span');
+    label.className = 'child-label';
+    label.textContent = area.name;
+    label.title = '双击可重命名';
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'child-remove';
+    remove.textContent = '×';
+    remove.title = '删除这块区域';
+    remove.setAttribute('aria-label', '删除区域 ' + area.name);
+    remove.addEventListener('click', function (event) {
+      event.stopPropagation();
+      deleteArea(area.id);
+    });
+
+    child.appendChild(label);
+    ['nw', 'ne', 'sw', 'se'].forEach(function (corner) {
+      const handle = document.createElement('span');
+      handle.className = 'child-handle child-handle-' + corner;
+      handle.dataset.corner = corner;
+      child.appendChild(handle);
+    });
+    child.appendChild(remove);
+
+    child.addEventListener('focus', function () {
+      selectArea(area.id);
+    });
+
+    return child;
   }
 
   function renderAreas() {
-    dom.childLayer.replaceChildren();
+    if (selectedId !== null && !getArea(selectedId)) selectedId = null;
+    const frag = document.createDocumentFragment();
     state.areas.forEach(function (area, index) {
-      const child = document.createElement('div');
-      child.className = 'child';
-      child.style.gridArea = area;
-      child.style.setProperty('--hue', (HUE_START + index * HUE_STEP) % 360 + 'deg');
+      frag.appendChild(createChild(area, index));
+    });
+    dom.childLayer.replaceChildren(frag);
+  }
 
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'child-remove';
-      remove.textContent = '×';
-      remove.title = '删除这块区域';
-      remove.setAttribute('aria-label', '删除第 ' + (index + 1) + ' 块区域');
-      remove.addEventListener('click', function () {
-        state.areas.splice(index, 1);
-        renderAreas();
-      });
-
-      child.appendChild(remove);
-      dom.childLayer.appendChild(child);
+  function selectArea(id) {
+    if (selectedId === id) return;
+    selectedId = id;
+    Array.prototype.forEach.call(dom.childLayer.children, function (child) {
+      child.classList.toggle('is-selected', Number(child.dataset.id) === id);
     });
   }
 
-  /* ---------- 拖拽划区 ---------- */
+  /* ---------- 拖拽划区与移动缩放 ---------- */
 
-  let dragStart = null;
-
-  function cellPosition(cell) {
-    const index = Number(cell);
+  function cellRowCol(box) {
+    const index = Number(box.dataset.cell);
     const row = Math.ceil(index / state.columns);
-    const col = index - (row - 1) * state.columns;
-    return { row: row, col: col };
+    return { row: row, col: index - (row - 1) * state.columns };
   }
 
-  function clearDragStart() {
-    dragStart = null;
-    const active = dom.boxLayer.querySelector('.box.is-start');
-    if (active) active.classList.remove('is-start');
+  // 区域和缩放手柄会盖在格子上，所以要遍历整条命中链找底下的 .box
+  function cellAtPoint(x, y) {
+    if (state.columns < 1 || state.rows < 1) return null;
+    const stack = document.elementsFromPoint(x, y);
+    for (let i = 0; i < stack.length; i += 1) {
+      const box = stack[i].closest ? stack[i].closest('.box') : null;
+      if (box && box.parentElement === dom.boxLayer) return cellRowCol(box);
+    }
+    return null;
   }
 
-  function finishDrag(clientX, clientY) {
-    if (!dragStart || !state.columns) {
-      clearDragStart();
-      return;
+  function showGhost(rect) {
+    dom.ghostBlock.style.gridArea = Model.gridAreaOf(rect);
+    dom.ghostLayer.hidden = false;
+  }
+
+  function clearGhost() {
+    dom.ghostLayer.hidden = true;
+  }
+
+  function moveRect(act, cell) {
+    return Model.clampRect({
+      row: act.origin.row + (cell.row - act.anchor.row),
+      col: act.origin.col + (cell.col - act.anchor.col),
+      rowSpan: act.origin.rowSpan,
+      colSpan: act.origin.colSpan
+    }, state.columns, state.rows);
+  }
+
+  function resizeRect(act, cell) {
+    const origin = act.origin;
+    const bottom = origin.row + origin.rowSpan - 1;
+    const right = origin.col + origin.colSpan - 1;
+    const row = Math.max(1, Math.min(cell.row, state.rows));
+    const col = Math.max(1, Math.min(cell.col, state.columns));
+
+    let top = origin.row;
+    let left = origin.col;
+    let bottomEdge = bottom;
+    let rightEdge = right;
+
+    if (act.corner === 'nw' || act.corner === 'sw') {
+      left = Math.min(col, right);
+    } else {
+      rightEdge = Math.max(col, left);
+    }
+    if (act.corner === 'nw' || act.corner === 'ne') {
+      top = Math.min(row, bottom);
+    } else {
+      bottomEdge = Math.max(row, top);
     }
 
-    const start = dragStart;
-    clearDragStart();
+    return {
+      row: top,
+      col: left,
+      rowSpan: bottomEdge - top + 1,
+      colSpan: rightEdge - left + 1
+    };
+  }
 
-    const target = document.elementFromPoint(clientX, clientY);
-    const box = target && target.closest ? target.closest('.box') : null;
-    if (!box) return;
+  function beginMove(area, event, child) {
+    const anchor = cellAtPoint(event.clientX, event.clientY);
+    if (!anchor) return;
+    action = {
+      type: 'move',
+      id: area.id,
+      el: child,
+      anchor: anchor,
+      origin: { row: area.row, col: area.col, rowSpan: area.rowSpan, colSpan: area.colSpan },
+      current: { row: area.row, col: area.col, rowSpan: area.rowSpan, colSpan: area.colSpan }
+    };
+    child.classList.add('is-dragging');
+  }
 
-    const end = cellPosition(box.dataset.cell);
-    const rowFrom = Math.min(start.row, end.row);
-    const rowTo = Math.max(start.row, end.row) + 1;
-    const colFrom = Math.min(start.col, end.col);
-    const colTo = Math.max(start.col, end.col) + 1;
+  function beginResize(area, corner, child) {
+    action = {
+      type: 'resize',
+      id: area.id,
+      el: child,
+      corner: corner,
+      origin: { row: area.row, col: area.col, rowSpan: area.rowSpan, colSpan: area.colSpan },
+      current: { row: area.row, col: area.col, rowSpan: area.rowSpan, colSpan: area.colSpan }
+    };
+    child.classList.add('is-dragging');
+  }
 
-    state.areas.push(rowFrom + ' / ' + colFrom + ' / ' + rowTo + ' / ' + colTo);
+  function cancelAction() {
+    if (!action) return;
+    const act = action;
+    action = null;
+    clearGhost();
+    if (act.el) act.el.classList.remove('is-dragging');
     renderAreas();
   }
 
-  /* ---------- 代码生成 ---------- */
+  function commitDraw(act) {
+    const rect = Model.rectFromCells(act.start, act.current);
+    const conflict = Model.findOverlap(rect, state.areas, null);
+    if (conflict) {
+      flashArea(conflict.id);
+      toast('这块位置已经被占用了，换个地方划吧');
+      return;
+    }
+    pushHistory();
+    const area = Object.assign({ id: nextId(), name: nextName() }, rect);
+    state.areas.push(area);
+    selectedId = area.id;
+    renderAreas();
+    saveState();
+  }
 
-  function escapeHtml(text) {
-    return String(text).replace(/[&<>"']/g, function (ch) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+  function commitLive(act) {
+    const area = getArea(act.id);
+    if (!area) return;
+    const rect = act.current;
+    const origin = act.origin;
+    const unchanged = rect.row === origin.row && rect.col === origin.col &&
+      rect.rowSpan === origin.rowSpan && rect.colSpan === origin.colSpan;
+    if (unchanged) {
+      renderAreas();
+      return;
+    }
+    pushHistory();
+    area.row = rect.row;
+    area.col = rect.col;
+    area.rowSpan = rect.rowSpan;
+    area.colSpan = rect.colSpan;
+    renderAreas();
+    saveState();
+  }
+
+  /* ---------- 删除 / 重命名 ---------- */
+
+  function deleteArea(id) {
+    const index = state.areas.findIndex(function (area) { return area.id === id; });
+    if (index === -1) return;
+    pushHistory();
+    state.areas.splice(index, 1);
+    if (selectedId === id) selectedId = null;
+    renderAreas();
+    saveState();
+  }
+
+  function startRename(area, labelEl) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'child-name-input';
+    input.name = 'areaNameEdit';
+    input.value = area.name;
+    input.maxLength = 24;
+    input.setAttribute('aria-label', '区域名称');
+    labelEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let done = false;
+    function finish(save) {
+      if (done) return;
+      done = true;
+      let message = '';
+      if (save) {
+        const raw = input.value.trim();
+        if (!raw) {
+          message = '区域名称不能为空';
+        } else {
+          const next = Model.sanitizeName(raw, area.name);
+          const duplicated = state.areas.some(function (item) {
+            return item.id !== area.id && item.name === next;
+          });
+          if (duplicated) {
+            message = '名称「' + next + '」已经被其它区域占用了';
+          } else if (next !== area.name) {
+            pushHistory();
+            area.name = next;
+            saveState();
+            if (next !== raw) message = '名称已改成「' + next + '」';
+          }
+        }
+      }
+      renderAreas();
+      if (message) toast(message);
+    }
+
+    input.addEventListener('keydown', function (event) {
+      // 输入法拼字过程中回车是选候选词，不能当成提交
+      if (event.isComposing || event.keyCode === 229) return;
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        finish(true);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        finish(false);
+      }
+    });
+    input.addEventListener('blur', function () {
+      finish(true);
     });
   }
 
-  function buildCssText() {
-    const lines = [
-      '.parent {',
-      '  display: grid;',
-      '  grid-template-columns: ' + (colTemplate() || 'none') + ';',
-      '  grid-template-rows: ' + (rowTemplate() || 'none') + ';',
-      '  grid-column-gap: ' + state.columnGap + 'px;',
-      '  grid-row-gap: ' + state.rowGap + 'px;',
-      '}'
-    ];
-    state.areas.forEach(function (area, index) {
-      lines.push('');
-      lines.push('.div' + (index + 1) + ' {');
-      lines.push('  grid-area: ' + area + ';');
-      lines.push('}');
+  /* ---------- 行列与间距 ---------- */
+
+  // 行列数量变化：只改状态与视图，撤销历史由调用方记录
+  function changeCount(kind, raw) {
+    const count = clampInt(raw, 1, Model.MAX_TRACKS, 1);
+    const current = kind === 'col' ? state.columns : state.rows;
+    if (count === current) return;
+
+    if (kind === 'col') {
+      state.columns = count;
+      Model.resizeTracks(state.colTracks, count);
+    } else {
+      state.rows = count;
+      Model.resizeTracks(state.rowTracks, count);
+    }
+
+    const trimmed = Model.clampAreas(state.areas, state.columns, state.rows);
+    const shrunk = trimmed.removed === 0 && trimmed.areas.some(function (area, index) {
+      const old = state.areas[index];
+      return !old || old.rowSpan !== area.rowSpan || old.colSpan !== area.colSpan;
     });
-    return lines.join('\n');
+    state.areas = trimmed.areas;
+
+    render();
+    saveState();
+
+    if (trimmed.removed > 0) {
+      toast('有 ' + trimmed.removed + ' 块区域超出新范围，已移除');
+    } else if (shrunk) {
+      toast('部分区域已被裁到新的边界内');
+    }
   }
 
-  function buildCssHtml() {
-    const rows = [
-      '<span class="cname">.parent</span> {',
-      '  <span class="ckey">display</span>: <span class="cprop">grid</span>;',
-      '  <span class="ckey">grid-template-columns</span>: <span class="cprop">' + escapeHtml(colTemplate() || 'none') + '</span>;',
-      '  <span class="ckey">grid-template-rows</span>: <span class="cprop">' + escapeHtml(rowTemplate() || 'none') + '</span>;',
-      '  <span class="ckey">grid-column-gap</span>: <span class="cprop">' + state.columnGap + 'px</span>;',
-      '  <span class="ckey">grid-row-gap</span>: <span class="cprop">' + state.rowGap + 'px</span>;',
-      '}'
-    ];
-    state.areas.forEach(function (area, index) {
-      rows.push('');
-      rows.push('<span class="cname">.div' + (index + 1) + '</span> {');
-      rows.push('  <span class="ckey">grid-area</span>: <span class="cprop">' + escapeHtml(area) + '</span>;');
-      rows.push('}');
-    });
-    return rows.join('\n');
-  }
-
-  function buildHtmlText() {
-    const lines = ['<div class="parent">'];
-    state.areas.forEach(function (area, index) {
-      lines.push('  <div class="div' + (index + 1) + '"></div>');
-    });
-    lines.push('</div>');
-    return lines.join('\n');
-  }
-
-  function buildHtmlHtml() {
-    const rows = ['<span class="cname">&lt;div</span> <span class="cprop">class="parent"</span><span class="cname">&gt;</span>'];
-    state.areas.forEach(function (area, index) {
-      rows.push('  <span class="cname">&lt;div</span> <span class="cprop">class="div' + (index + 1) + '"</span><span class="cname">&gt;&lt;/div&gt;</span>');
-    });
-    rows.push('<span class="cname">&lt;/div&gt;</span>');
-    return rows.join('\n');
+  function changeGap(kind, raw) {
+    const value = clampInt(raw, 0, Model.MAX_GAP, 0);
+    if (kind === 'col') {
+      if (value === state.columnGap) return;
+      state.columnGap = value;
+    } else {
+      if (value === state.rowGap) return;
+      state.rowGap = value;
+    }
+    render();
+    saveState();
   }
 
   /* ---------- 复制 ---------- */
@@ -349,9 +751,16 @@
 
   /* ---------- 弹窗 ---------- */
 
-  let showHtml = false;
-  let copyTimer = null;
-  let lastFocus = null;
+  const CODE_TABS = [
+    { key: 'css', label: 'CSS' },
+    { key: 'html', label: 'HTML' },
+    { key: 'page', label: '完整页面' }
+  ];
+
+  const CODE_MODES = [
+    { value: 'named', label: '命名区域' },
+    { value: 'numbers', label: '行列编号' }
+  ];
 
   function openModal(renderBody) {
     lastFocus = document.activeElement;
@@ -363,26 +772,125 @@
   function closeModal() {
     if (dom.modalMask.hidden) return;
     dom.modalMask.hidden = true;
+    dom.modalBody.replaceChildren();
     if (lastFocus && typeof lastFocus.focus === 'function') lastFocus.focus();
+    lastFocus = null;
+  }
+
+  function codePayload() {
+    const config = {
+      columns: state.columns,
+      rows: state.rows,
+      colTracks: state.colTracks,
+      rowTracks: state.rowTracks,
+      columnGap: state.columnGap,
+      rowGap: state.rowGap,
+      areas: state.areas,
+      codeMode: state.codeMode
+    };
+    if (codeTab === 'html') {
+      const text = Model.buildHtmlText(config);
+      return { text: text, html: Model.highlightHtml(text) };
+    }
+    if (codeTab === 'page') {
+      const text = Model.buildFullPageText(config);
+      return { text: text, html: Model.highlightFullPage(text) };
+    }
+    const text = Model.buildCssText(config);
+    return { text: text, html: Model.highlightCss(text) };
+  }
+
+  // 代码右侧的类名清单：改名后代码块和画布标签同步刷新
+  function buildNamePanel(block) {
+    const panel = document.createElement('div');
+    panel.className = 'name-panel';
+
+    const title = document.createElement('p');
+    title.className = 'name-panel-title';
+    title.textContent = '类名';
+
+    const list = document.createElement('ul');
+    list.className = 'name-list';
+
+    state.areas.forEach(function (area, index) {
+      const item = document.createElement('li');
+      item.className = 'name-item';
+
+      // 色块和画布上的区域同色，方便对上是哪一块
+      const swatch = document.createElement('span');
+      swatch.className = 'name-swatch';
+      swatch.style.setProperty('--hue', (HUE_START + index * HUE_STEP) % 360 + 'deg');
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'name-input';
+      input.value = area.name;
+      input.maxLength = 24;
+      input.autocomplete = 'off';
+      input.spellcheck = false;
+      input.name = 'areaName' + index;
+      input.setAttribute('aria-label', '第 ' + (index + 1) + ' 块区域的类名');
+
+      // 同一个输入框里连续敲字只记一条撤销
+      let recorded = false;
+
+      input.addEventListener('input', function () {
+        const next = Model.sanitizeName(input.value, '');
+        const usable = Boolean(next) && !state.areas.some(function (other) {
+          return other.id !== area.id && other.name === next;
+        });
+        input.classList.toggle('has-error', !usable);
+        if (!usable || next === area.name) return;
+        if (!recorded) {
+          pushHistory();
+          recorded = true;
+        }
+        area.name = next;
+        saveState();
+        renderAreas();
+        block.innerHTML = codePayload().html;
+      });
+
+      // 失焦时把自动修正过的名字回填，保证输入框和实际类名一致
+      input.addEventListener('blur', function () {
+        input.value = area.name;
+        input.classList.remove('has-error');
+        recorded = false;
+      });
+
+      item.replaceChildren(swatch, input);
+      list.appendChild(item);
+    });
+
+    panel.replaceChildren(title, list);
+    return panel;
   }
 
   function renderCodeModal() {
-    dom.modalTitle.textContent = '您的 Grid 代码';
+    dom.modalTitle.textContent = '生成的代码';
 
-    const title = document.createElement('h3');
-    title.className = 'code-title';
-    title.textContent = '复制以下代码：';
+    const block = document.createElement('pre');
+    block.className = 'code-block';
+    block.innerHTML = codePayload().html;
 
     const toolbar = document.createElement('div');
     toolbar.className = 'code-toolbar';
 
-    const toggle = document.createElement('button');
-    toggle.type = 'button';
-    toggle.className = 'btn btn-small';
-    toggle.textContent = showHtml ? '展示 CSS' : '展示 HTML';
-    toggle.addEventListener('click', function () {
-      showHtml = !showHtml;
-      renderCodeModal();
+    const tabs = document.createElement('div');
+    tabs.className = 'code-tabs';
+    tabs.setAttribute('role', 'tablist');
+    CODE_TABS.forEach(function (tab) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'tab';
+      button.setAttribute('role', 'tab');
+      button.setAttribute('aria-selected', String(tab.key === codeTab));
+      button.textContent = tab.label;
+      button.addEventListener('click', function () {
+        codeTab = tab.key;
+        renderCodeModal();
+      });
+      tabs.appendChild(button);
     });
 
     const copy = document.createElement('button');
@@ -390,8 +898,9 @@
     copy.className = 'btn btn-small';
     copy.textContent = '复制';
     copy.addEventListener('click', function () {
-      copyText(showHtml ? buildHtmlText() : buildCssText()).then(function (ok) {
-        copy.textContent = ok ? '复制成功！' : '复制失败';
+      copyText(codePayload().text).then(function (ok) {
+        copy.textContent = ok ? '已复制' : '复制失败';
+        toast(ok ? '代码已复制到剪贴板' : '复制失败，请手动选中复制');
         window.clearTimeout(copyTimer);
         copyTimer = window.setTimeout(function () {
           copy.textContent = '复制';
@@ -399,13 +908,40 @@
       });
     });
 
-    const block = document.createElement('pre');
-    block.className = 'code-block';
-    block.innerHTML = showHtml ? buildHtmlHtml() : buildCssHtml();
+    const tools = document.createElement('div');
+    tools.className = 'code-tools';
+    tools.appendChild(copy);
 
-    toolbar.appendChild(toggle);
-    toolbar.appendChild(copy);
-    dom.modalBody.replaceChildren(title, toolbar, block);
+    // HTML 结构不受写法影响，只在有 CSS 的标签页里给选择器
+    if (codeTab !== 'html') {
+      const mode = document.createElement('select');
+      mode.className = 'code-mode';
+      mode.name = 'codeMode';
+      mode.setAttribute('aria-label', '代码写法');
+      CODE_MODES.forEach(function (item) {
+        const option = document.createElement('option');
+        option.value = item.value;
+        option.textContent = item.label;
+        mode.appendChild(option);
+      });
+      mode.value = state.codeMode;
+      mode.addEventListener('change', function () {
+        state.codeMode = mode.value === 'numbers' ? 'numbers' : 'named';
+        saveState();
+        block.innerHTML = codePayload().html;
+      });
+      tools.insertBefore(mode, copy);
+    }
+
+    toolbar.replaceChildren(tabs, tools);
+    if (!state.areas.length) {
+      dom.modalBody.replaceChildren(toolbar, block);
+      return;
+    }
+    const layout = document.createElement('div');
+    layout.className = 'code-layout';
+    layout.replaceChildren(block, buildNamePanel(block));
+    dom.modalBody.replaceChildren(toolbar, layout);
   }
 
   function renderExplainModal() {
@@ -415,9 +951,12 @@
     wrap.innerHTML = [
       '<p>您可以设置行与列的数量和每一格的轨道单位，我会据此生成一份 CSS Grid 布局。' +
       '在网格里<strong>按住并拖动</strong>，就能划出一块区域，它会被写成一个 div。</p>',
+      '<p>划出的区域可以<strong>拖动移动</strong>、拖四角<strong>缩放</strong>，双击名称还能改名。' +
+      '区域之间不允许重叠，改一个不会串到另一个上面。</p>',
+      '<p>代码有两种写法：命名区域会生成 <code>grid-template-areas</code> 与 <code>grid-area: 名称</code>，' +
+      '可读性好；行列编号写法则直接输出 <code>grid-area: 行 / 列 / 结束行 / 结束列</code>。' +
+      '在代码弹窗里可以随时切换。</p>',
       '<p>这个小工具只能帮您搭出一个基础布局，并不是 CSS Grid 的完整教程，它只是一个快速上手 Grid 的捷径。</p>',
-      '<p>很多人不用 Grid，是因为觉得它太复杂、难以理解。Grid 能做的事情很多，这个生成器只涉及其中很小一部分，' +
-      '目的就是让您快速做出更有意思的布局。</p>',
       '<p>上手之后，推荐继续阅读 <a href="https://css-tricks.com/snippets/css/complete-guide-grid/" target="_blank" rel="noopener">' +
       'CSS-Tricks 的 CSS Grid 完整指南</a>，也可以去玩一玩小游戏 ' +
       '<a href="https://cssgridgarden.com/" target="_blank" rel="noopener">Grid Garden</a> 来加深理解。</p>',
@@ -427,78 +966,178 @@
     dom.modalBody.replaceChildren(wrap);
   }
 
-  /* ---------- 数值输入 ---------- */
-
-  function normalizeInt(raw, max) {
-    const value = Math.floor(Number(raw));
-    if (!Number.isFinite(value) || value < 0) return 0;
-    return Math.min(value, max);
-  }
-
-  function syncNumberInput(input, value) {
-    input.value = String(value);
+  function trapFocus(event) {
+    if (dom.modalMask.hidden) return;
+    const focusables = dom.modalMask.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   /* ---------- 事件绑定 ---------- */
 
+  function bindUnitEvents(container, tracks) {
+    // 输入过程中只做校验标记，不重建视图，避免输入框跳动
+    container.addEventListener('input', function (event) {
+      const input = event.target.closest('.unit-input');
+      if (!input) return;
+      const valid = Model.isValidTrackUnit(input.value);
+      input.classList.toggle('has-error', !valid);
+      const cell = input.closest('.unit-cell');
+      cell.querySelector('.unit-error').hidden = valid;
+    });
+
+    container.addEventListener('change', function (event) {
+      const input = event.target.closest('.unit-input');
+      if (!input) return;
+      const track = tracks[Number(input.dataset.index)];
+      if (!track) return;
+      const unit = input.value.trim();
+      if (unit === track.unit) return;
+      track.unit = unit;
+      saveState();
+      render();
+    });
+  }
+
+  /* 行列滑杆：拖动中实时重建网格，松手后只记一条撤销历史 */
+  function bindCountSlider(input, output, kind) {
+    let before = null;
+
+    input.addEventListener('input', function () {
+      const count = clampInt(input.value, 1, Model.MAX_TRACKS, 1);
+      const current = kind === 'col' ? state.columns : state.rows;
+      output.textContent = String(count);
+      if (count === current) return;
+      if (!before) before = snapshot();
+      changeCount(kind, count);
+    });
+
+    input.addEventListener('change', function () {
+      if (!before) return;
+      const origin = kind === 'col' ? before.columns : before.rows;
+      const count = kind === 'col' ? state.columns : state.rows;
+      // 拖回原值且没裁掉区域时，不必留下一条空的历史
+      if (count === origin && before.areas.length === state.areas.length) {
+        before = null;
+        return;
+      }
+      history.past.push(before);
+      if (history.past.length > HISTORY_LIMIT) history.past.shift();
+      history.future.length = 0;
+      before = null;
+    });
+  }
+
   function bindEvents() {
-    dom.colUnits.addEventListener('change', function (event) {
-      updateTrackUnit(event, state.colTracks);
-    });
-    dom.rowUnits.addEventListener('change', function (event) {
-      updateTrackUnit(event, state.rowTracks);
-    });
+    bindUnitEvents(dom.colUnits, state.colTracks);
+    bindUnitEvents(dom.rowUnits, state.rowTracks);
 
-    dom.columnsInput.addEventListener('input', function () {
-      state.columns = normalizeInt(dom.columnsInput.value, MAX_TRACKS);
-      resizeTracks(state.colTracks, state.columns);
-      render();
-    });
-    dom.columnsInput.addEventListener('change', function () {
-      syncNumberInput(dom.columnsInput, state.columns);
-    });
-
-    dom.rowsInput.addEventListener('input', function () {
-      state.rows = normalizeInt(dom.rowsInput.value, MAX_TRACKS);
-      resizeTracks(state.rowTracks, state.rows);
-      render();
-    });
-    dom.rowsInput.addEventListener('change', function () {
-      syncNumberInput(dom.rowsInput, state.rows);
-    });
+    bindCountSlider(dom.columnsInput, dom.columnsValue, 'col');
+    bindCountSlider(dom.rowsInput, dom.rowsValue, 'row');
 
     dom.columnGapInput.addEventListener('input', function () {
-      state.columnGap = normalizeInt(dom.columnGapInput.value, MAX_GAP);
-      render();
+      changeGap('col', dom.columnGapInput.value);
     });
     dom.columnGapInput.addEventListener('change', function () {
-      syncNumberInput(dom.columnGapInput, state.columnGap);
+      dom.columnGapInput.value = String(state.columnGap);
     });
 
     dom.rowGapInput.addEventListener('input', function () {
-      state.rowGap = normalizeInt(dom.rowGapInput.value, MAX_GAP);
-      render();
+      changeGap('row', dom.rowGapInput.value);
     });
     dom.rowGapInput.addEventListener('change', function () {
-      syncNumberInput(dom.rowGapInput, state.rowGap);
+      dom.rowGapInput.value = String(state.rowGap);
     });
 
+    // 空格子：开始划新区域
     dom.boxLayer.addEventListener('pointerdown', function (event) {
+      if (event.button !== 0) return;
       const box = event.target.closest('.box');
       if (!box) return;
       event.preventDefault();
-      clearDragStart();
-      dragStart = cellPosition(box.dataset.cell);
-      box.classList.add('is-start');
+      selectArea(null);
+      const cell = cellRowCol(box);
+      action = { type: 'draw', start: cell, current: cell };
+      showGhost(Model.rectFromCells(cell, cell));
     });
 
-    window.addEventListener('pointerup', function (event) {
-      finishDrag(event.clientX, event.clientY);
+    // 已有区域：选中、移动、拖角缩放
+    dom.childLayer.addEventListener('pointerdown', function (event) {
+      if (event.button !== 0) return;
+      const child = event.target.closest('.child');
+      if (!child) return;
+      const area = getArea(Number(child.dataset.id));
+      if (!area) return;
+
+      selectArea(area.id);
+
+      if (event.target.closest('.child-label')) return;
+      if (event.target.closest('.child-remove')) return;
+      if (event.target.closest('.child-name-input')) return;
+
+      event.preventDefault();
+      const handle = event.target.closest('.child-handle');
+      if (handle) {
+        beginResize(area, handle.dataset.corner, child);
+      } else {
+        beginMove(area, event, child);
+      }
     });
-    window.addEventListener('pointercancel', clearDragStart);
+
+    window.addEventListener('pointermove', function (event) {
+      if (!action) return;
+
+      if (action.type === 'draw') {
+        const cell = cellAtPoint(event.clientX, event.clientY);
+        if (!cell) return;
+        action.current = cell;
+        showGhost(Model.rectFromCells(action.start, cell));
+        return;
+      }
+
+      const cell = cellAtPoint(event.clientX, event.clientY);
+      if (!cell) return;
+      const next = action.type === 'move' ? moveRect(action, cell) : resizeRect(action, cell);
+      if (Model.findOverlap(next, state.areas, action.id)) return;
+      action.current = next;
+      action.el.style.gridArea = Model.gridAreaOf(next);
+    });
+
+    window.addEventListener('pointerup', function () {
+      if (!action) return;
+      const act = action;
+      action = null;
+      clearGhost();
+      if (act.el) act.el.classList.remove('is-dragging');
+      if (act.type === 'draw') {
+        commitDraw(act);
+      } else {
+        commitLive(act);
+      }
+    });
+
+    window.addEventListener('pointercancel', cancelAction);
+
+    dom.childLayer.addEventListener('dblclick', function (event) {
+      const label = event.target.closest('.child-label');
+      if (!label) return;
+      const child = label.closest('.child');
+      const area = getArea(Number(child.dataset.id));
+      if (area) startRename(area, label);
+    });
 
     dom.showCode.addEventListener('click', function () {
-      showHtml = false;
+      codeTab = 'css';
       openModal(renderCodeModal);
     });
 
@@ -507,8 +1146,34 @@
     });
 
     dom.resetGrid.addEventListener('click', function () {
+      if (!state.areas.length) {
+        toast('当前还没有任何区域');
+        return;
+      }
+      pushHistory();
       state.areas = [];
+      selectedId = null;
       renderAreas();
+      saveState();
+      toast('已清空所有区域，可用 Ctrl + Z 撤销');
+    });
+
+    dom.restoreDefault.addEventListener('click', function () {
+      pushHistory();
+      state.columns = 5;
+      state.rows = 5;
+      state.columnGap = 0;
+      state.rowGap = 0;
+      state.colTracks = Model.createTracks(5);
+      state.rowTracks = Model.createTracks(5);
+      state.areas = [];
+      state.nameSeq = 0;
+      selectedId = null;
+      idSeq = 0;
+      syncInputs();
+      render();
+      saveState();
+      toast('已恢复默认设置');
     });
 
     dom.modalClose.addEventListener('click', closeModal);
@@ -517,24 +1182,111 @@
       if (event.target === dom.modalMask) closeModal();
     });
 
-    document.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape') closeModal();
-    });
+    document.addEventListener('keydown', handleKeydown);
   }
 
-  function updateTrackUnit(event, tracks) {
-    const input = event.target.closest('.unit-input');
-    if (!input) return;
-    const track = tracks[Number(input.dataset.index)];
-    if (!track) return;
-    track.unit = input.value.trim();
-    render();
+  /* ---------- 键盘 ---------- */
+
+  const ARROW_DELTA = {
+    ArrowUp: [-1, 0],
+    ArrowDown: [1, 0],
+    ArrowLeft: [0, -1],
+    ArrowRight: [0, 1]
+  };
+
+  function handleKeydown(event) {
+    const key = String(event.key || '');
+
+    if (key === 'Tab') {
+      trapFocus(event);
+      return;
+    }
+
+    if (key === 'Escape') {
+      if (!dom.modalMask.hidden) {
+        closeModal();
+      } else if (action) {
+        cancelAction();
+      } else if (selectedId !== null) {
+        selectArea(null);
+      }
+      return;
+    }
+
+    if (!dom.modalMask.hidden) return;
+
+    const target = event.target;
+    const tag = target && target.tagName;
+    const isField = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
+
+    const lower = key.toLowerCase();
+    if ((event.ctrlKey || event.metaKey) && (lower === 'z' || lower === 'y')) {
+      event.preventDefault();
+      if (lower === 'y' || event.shiftKey) {
+        redo();
+      } else {
+        undo();
+      }
+      return;
+    }
+
+    if (isField || selectedId === null) return;
+
+    const area = getArea(selectedId);
+    if (!area) return;
+
+    if (key === 'Delete' || key === 'Backspace') {
+      event.preventDefault();
+      deleteArea(area.id);
+      return;
+    }
+
+    const delta = ARROW_DELTA[key];
+    if (!delta) return;
+    event.preventDefault();
+
+    const rect = event.shiftKey
+      ? Model.clampRect({
+        row: area.row,
+        col: area.col,
+        rowSpan: area.rowSpan + delta[0],
+        colSpan: area.colSpan + delta[1]
+      }, state.columns, state.rows)
+      : Model.clampRect({
+        row: area.row + delta[0],
+        col: area.col + delta[1],
+        rowSpan: area.rowSpan,
+        colSpan: area.colSpan
+      }, state.columns, state.rows);
+
+    const unchanged = rect.row === area.row && rect.col === area.col &&
+      rect.rowSpan === area.rowSpan && rect.colSpan === area.colSpan;
+    if (unchanged || Model.findOverlap(rect, state.areas, area.id)) return;
+
+    pushHistory();
+    area.row = rect.row;
+    area.col = rect.col;
+    area.rowSpan = rect.rowSpan;
+    area.colSpan = rect.colSpan;
+    renderAreas();
+    saveState();
   }
 
   /* ---------- 启动 ---------- */
 
-  state.colTracks = createTracks(state.columns);
-  state.rowTracks = createTracks(state.rows);
-  bindEvents();
-  render();
+  function init() {
+    const restored = loadState();
+    if (!restored) {
+      state.colTracks = Model.createTracks(state.columns);
+      state.rowTracks = Model.createTracks(state.rows);
+    }
+    syncInputs();
+    bindEvents();
+    render();
+    if (restored && state.areas.length) {
+      toast('已恢复上次的布局');
+    }
+  }
+
+  init();
 })();
