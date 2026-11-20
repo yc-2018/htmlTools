@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>在线录屏 - 屏幕 / 摄像头录制</title>
+<link rel="icon" href="/favicon.ico" type="image/x-icon">
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<div class="page">
+  <header class="page-head">
+    <h1>在线录屏</h1>
+    <p>直接录制屏幕 / 窗口 / 浏览器标签页，可叠加摄像头画中画、系统声音与麦克风。全部在本地处理，视频不会上传到任何服务器。</p>
+  </header>
+
+  <main class="layout">
+    <div class="col-main">
+      <!-- 左：预览与控制 -->
+      <section class="card stage-card">
+        <div class="stage" id="stage">
+          <video id="previewVideo" muted playsinline></video>
+          <div class="stage-empty" id="stageEmpty">
+            <div class="stage-empty-inner">
+              <strong>还没有开始录制</strong>
+              <span>点「开始录制」后，浏览器会让你选择要共享的屏幕、窗口或标签页。</span>
+            </div>
+          </div>
+          <img id="freezeFrame" alt="录制画面截图" hidden>
+          <div class="pip" id="pipPreview" hidden title="按住拖动可改变画中画位置">
+            <video id="camPreview" muted playsinline autoplay></video>
+          </div>
+          <div class="stage-hud" id="stageHud" hidden>
+            <span class="rec-dot"></span>
+            <span id="hudTimer">00:00:00</span>
+            <span class="sep">·</span>
+            <span id="hudSize">0 B</span>
+          </div>
+          <div class="clock-overlay" id="clockOverlay" hidden>00:00:00</div>
+          <div class="countdown" id="countdown" hidden title="点击取消"></div>
+        </div>
+
+        <div class="actions">
+          <button id="btnStart" class="btn primary" type="button">开始录制</button>
+          <button id="btnPause" class="btn" type="button" disabled>暂停</button>
+          <button id="btnStop" class="btn danger" type="button" disabled>停止</button>
+          <button id="btnClear" class="btn ghost" type="button" disabled>清空预览</button>
+        </div>
+
+        <div class="meter" aria-hidden="true">
+          <span id="meterLabel">音频电平</span>
+          <div class="meter-track"><div class="meter-fill" id="meterFill"></div></div>
+        </div>
+
+        <p class="status" id="status">等待开始</p>
+        <p class="warn" id="warn" hidden></p>
+      </section>
+
+      <!-- 左：录制结果（紧贴在预览卡下面） -->
+      <section class="card results">
+        <div class="results-head">
+          <h2>录制结果 <span class="badge" id="resultCount">0</span></h2>
+          <button class="btn tiny" id="btnDownloadAll" type="button" disabled>全部下载</button>
+        </div>
+        <p class="empty" id="resultEmpty">录完的视频会出现在这里。文件只存在本机内存中，刷新页面就没了，记得先下载。</p>
+        <div class="result-list" id="resultList"></div>
+      </section>
+    </div>
+
+    <!-- 右：设置 -->
+    <aside class="card settings">
+      <h2 class="settings-title">录制设置</h2>
+
+      <section class="group">
+        <h3>声音与画面</h3>
+        <label class="row switch-row">
+          <input type="checkbox" id="optSystemAudio" checked>
+          <span>
+            <b>录制系统声音</b>
+            <small>共享时需在弹出的窗口里勾选「分享系统音频 / 标签页音频」，否则录不到声音</small>
+          </span>
+        </label>
+        <label class="row switch-row">
+          <input type="checkbox" id="optMic" checked>
+          <span>
+            <b>录制麦克风</b>
+            <small>与系统声音混合成一条音轨，可单独关闭</small>
+          </span>
+        </label>
+        <div class="row field" id="micSelectRow">
+          <label for="micSelect">麦克风设备</label>
+          <div class="inline">
+            <select id="micSelect"><option value="">默认设备</option></select>
+            <button class="btn tiny" id="btnRefreshDevices" type="button" title="会请求一次麦克风/摄像头权限以读取设备名称">刷新</button>
+          </div>
+        </div>
+        <label class="row switch-row cam-row">
+          <input type="checkbox" id="optCam">
+          <span>
+            <b>叠加摄像头（画中画）</b>
+            <small>勾选后预览里立刻出现小窗，开始录制前就能调好位置</small>
+          </span>
+        </label>
+        <div class="row field cam-row" id="camSelectRow" hidden>
+          <label for="camSelect">摄像头</label>
+          <select id="camSelect"><option value="">默认设备</option></select>
+        </div>
+      </section>
+
+      <section class="group" id="pipGroup">
+        <h3>画中画样式</h3>
+        <div class="row field">
+          <label for="pipPos">位置</label>
+          <select id="pipPos">
+            <option value="br">右下角</option>
+            <option value="bl">左下角</option>
+            <option value="tr">右上角</option>
+            <option value="tl">左上角</option>
+            <option value="center">居中</option>
+            <option value="custom">自定义（拖动）</option>
+          </select>
+        </div>
+        <div class="row field">
+          <label for="pipSize">大小 <output id="pipSizeOut">22%</output></label>
+          <input type="range" id="pipSize" min="8" max="45" step="1" value="22">
+        </div>
+        <label class="row switch-row">
+          <input type="checkbox" id="optPipCircle" checked>
+          <span><b>圆形裁切</b><small>关闭后为圆角矩形</small></span>
+        </label>
+        <label class="row switch-row">
+          <input type="checkbox" id="optPipMirror" checked>
+          <span><b>镜像画面</b><small>左右翻转，自拍视角更自然</small></span>
+        </label>
+        <p class="hint">勾选叠加摄像头后，预览里会出现小窗：拖动它换位置，滑杆调大小，未开始录制时也能先摆好。录制中同样可以调，也可随时取消勾选把画中画关掉。</p>
+      </section>
+
+      <section class="group">
+        <h3>画质与格式</h3>
+        <div class="row field">
+          <label for="optFps">帧率</label>
+          <select id="optFps">
+            <option value="24">24 fps</option>
+            <option value="30" selected>30 fps</option>
+            <option value="60">60 fps</option>
+          </select>
+        </div>
+        <div class="row field">
+          <label for="optBitrate">视频码率</label>
+          <select id="optBitrate">
+            <option value="2000000">2 Mbps（省空间）</option>
+            <option value="5000000" selected>5 Mbps（推荐）</option>
+            <option value="8000000">8 Mbps（高清）</option>
+            <option value="16000000">16 Mbps（4K / 高动态）</option>
+          </select>
+        </div>
+        <div class="row field">
+          <label for="optFormat">文件格式</label>
+          <select id="optFormat"><option value="auto">自动</option></select>
+        </div>
+        <p class="hint">浏览器不能直接录制成 WebP：动图请在录完后点结果卡片上的「剪辑 / 导出」，选「动画 WebP」。</p>
+        <div class="row field">
+          <label for="optMaxHeight">合成上限</label>
+          <select id="optMaxHeight">
+            <option value="0">原始分辨率</option>
+            <option value="1080" selected>1080p</option>
+            <option value="720">720p</option>
+          </select>
+        </div>
+        <p class="hint" id="maxHeightHint">只在画布合成时生效（开启摄像头或时间水印）。</p>
+        <div class="row field">
+          <label for="optCursor">鼠标指针</label>
+          <select id="optCursor">
+            <option value="always" selected>始终显示</option>
+            <option value="motion">移动时显示</option>
+          </select>
+        </div>
+        <label class="row switch-row">
+          <input type="checkbox" id="optClock">
+          <span><b>画面时间水印</b><small>左下角叠加录制时长，会启用画布合成</small></span>
+        </label>
+      </section>
+
+      <section class="group">
+        <h3>其他</h3>
+        <div class="row field">
+          <label for="optCountdown">开始前倒计时</label>
+          <select id="optCountdown">
+            <option value="0">不等待</option>
+            <option value="3" selected>3 秒</option>
+            <option value="5">5 秒</option>
+            <option value="10">10 秒</option>
+          </select>
+        </div>
+        <p class="hint">选好要共享的画面后才开始倒计时，给你留出切到待录窗口的时间。</p>
+        <label class="row switch-row">
+          <input type="checkbox" id="optAutoDownload">
+          <span><b>停止后自动下载</b><small>不用再点一次下载按钮</small></span>
+        </label>
+        <p class="hint">
+          <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> 开始 / 停止，
+          <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> 暂停 / 继续。
+        </p>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="page-foot">
+    <p>
+      说明：录屏使用浏览器原生的 <code>getDisplayMedia</code> + <code>MediaRecorder</code>，视频不上传任何服务器。
+      MP4 需要较新的 Chrome / Edge / Safari，不支持的浏览器会自动回退到 WebM（体积更小，但部分剪辑软件与微信需要转码）。
+      录制时浏览器顶部会一直显示「正在共享」的提示条，这是浏览器的安全机制，无法隐藏。
+      录完可以在结果卡片上剪辑（掐头去尾）后重新导出，也可以导出为动画 WebP 动图（无音频，Chrome / Edge / Firefox 可看，Safari 与微信可能不支持）。
+      如果直接用 <code>file://</code> 打开时摄像头或麦克风无法授权，请改用 <code>http://localhost</code> 或部署到 HTTPS 后访问。
+    </p>
+  </footer>
+</div>
+
+<!-- 剪辑 / 导出面板 -->
+<div class="mask" id="editorMask" hidden>
+  <div class="editor" role="dialog" aria-modal="true" aria-labelledby="editorTitle">
+    <div class="editor-head">
+      <h2 id="editorTitle">剪辑 / 导出</h2>
+      <button class="icon-btn" id="editorClose" type="button" aria-label="关闭">✕</button>
+    </div>
+    <div class="editor-body">
+      <div class="editor-stage">
+        <video id="editorVideo" playsinline controls></video>
+      </div>
+      <div class="editor-side">
+        <div class="editor-range">
+          <span id="editorRangeText">0.0s ~ 0.0s</span>
+          <span class="editor-range-len" id="editorRangeLen">片段 0.0 秒</span>
+        </div>
+        <div class="timeline" id="timeline">
+          <div class="timeline-track">
+            <div class="timeline-selected" id="timelineSelected"></div>
+            <div class="timeline-handle" id="handleStart" data-handle="start" title="拖动调整开始时间"></div>
+            <div class="timeline-handle" id="handleEnd" data-handle="end" title="拖动调整结束时间"></div>
+          </div>
+          <div class="timeline-marks"><span>0:00</span><span id="timelineEndLabel">0:00</span></div>
+        </div>
+        <div class="editor-fields">
+          <div class="row field">
+            <label for="trimStart">开始（秒）</label>
+            <input type="number" id="trimStart" min="0" step="0.1" value="0">
+          </div>
+          <div class="row field">
+            <label for="trimEnd">结束（秒）</label>
+            <input type="number" id="trimEnd" min="0" step="0.1" value="0">
+          </div>
+          <div class="row field">
+            <label for="editFormat">导出为</label>
+            <select id="editFormat">
+              <option value="video">视频（同录制格式）</option>
+              <option value="webp">动画 WebP（无音频）</option>
+            </select>
+          </div>
+          <div class="row field">
+            <label for="editFps">帧率</label>
+            <select id="editFps">
+              <option value="10">10 fps</option>
+              <option value="12">12 fps</option>
+              <option value="15">15 fps</option>
+              <option value="20">20 fps</option>
+              <option value="25">25 fps</option>
+              <option value="30">30 fps</option>
+            </select>
+          </div>
+          <div class="row field">
+            <label for="editMaxHeight">分辨率</label>
+            <select id="editMaxHeight">
+              <option value="0">原始</option>
+              <option value="2160">2160p</option>
+              <option value="1080">1080p</option>
+              <option value="720">720p</option>
+              <option value="480">480p</option>
+              <option value="320">320p</option>
+            </select>
+          </div>
+          <div class="row field" id="editQualityRow">
+            <label for="editQuality">WebP 质量 <output id="editQualityOut">80</output></label>
+            <input type="range" id="editQuality" min="30" max="100" step="5" value="80">
+          </div>
+          <div class="row field" id="editBitrateRow" hidden>
+            <label for="editBitrate">码率</label>
+            <select id="editBitrate">
+              <option value="2000000">2 Mbps</option>
+              <option value="5000000" selected>5 Mbps</option>
+              <option value="8000000">8 Mbps</option>
+              <option value="16000000">16 Mbps</option>
+            </select>
+          </div>
+        </div>
+        <p class="hint" id="editorHint">拖动时间轴上的两个手柄，选出要保留的片段。</p>
+        <div class="editor-progress" id="editorProgress" hidden>
+          <div class="meter-track"><div class="meter-fill" id="editorProgressFill"></div></div>
+          <span id="editorProgressText">0%</span>
+        </div>
+        <p class="warn" id="editorWarn" hidden></p>
+        <div class="editor-actions">
+          <button class="btn" id="btnEditorCancel" type="button">关闭</button>
+          <button class="btn danger" id="btnEditorAbort" type="button" hidden>中止导出</button>
+          <button class="btn primary" id="btnEditorExport" type="button">开始导出</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="./app.js"></script>
+</body>
+</html>
