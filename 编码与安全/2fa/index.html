@@ -7,6 +7,23 @@
   <script src="./bootstrap.bundle.min.js"></script> <!--https://cdn.staticfile.net/twitter-bootstrap/5.1.1/js/bootstrap.bundle.min.js-->
   <script src="./buffer.js"></script>     <!--https://unpkg.com/@otplib/preset-browser@^12.0.0/buffer.js-->
   <script src="./index.js"></script>      <!--https://unpkg.com/@otplib/preset-browser@^12.0.0/index.js-->
+  <script src="./qrcode-generator-1.4.4.js"></script> <!--https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js-->
+  <style>
+    #qrCodeBox {
+      width: 240px;
+      max-width: 100%;
+    }
+
+    #qrCodeBox svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    #qrModal .modal-dialog {
+      max-width: 600px;
+    }
+  </style>
 </head>
 <body>
 <div class="text-center">
@@ -24,15 +41,48 @@
   </div>
 
 
+  <!--生成二维码按钮（出现验证码后显示）-->
+  <button id="qrBtn" onclick="showQRCode()" type="button" class="btn btn-primary btn-sm m-2" style="min-width: 15%; display: none;">生成二维码</button>
   <!--清空按钮-->
   <button onclick="clearInput()" class="btn btn-danger btn-sm m-2" style="width: 15%">清空</button>
   <!--提醒可以保存该连接，下次访问就会自动填充密钥-->
   <p id="remind"></p>
 </div>
 
+<!--二维码弹窗-->
+<div class="modal fade" id="qrModal" tabindex="-1" aria-labelledby="qrModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="qrModalLabel">2FA 二维码</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+      </div>
+      <div class="modal-body text-center">
+        <div id="qrCodeBox" class="d-inline-block bg-white border rounded p-2"></div>
+        <div id="qrError" class="text-danger small mt-2" style="display: none;"></div>
+        <div class="row g-2 text-start mt-3">
+          <div class="col-12 col-sm-6">
+            <label for="qrIssuer" class="form-label">名称（平台/服务）</label>
+            <input type="text" id="qrIssuer" class="form-control" placeholder="例如：GitHub" maxlength="64">
+          </div>
+          <div class="col-12 col-sm-6">
+            <label for="qrAccount" class="form-label">账号（可留空）</label>
+            <input type="text" id="qrAccount" class="form-control" placeholder="例如：name@example.com" maxlength="64">
+          </div>
+        </div>
+        <div class="form-text text-start">名称和账号会实时写入二维码，用 Google Authenticator 等应用扫码即可添加。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <script>
   let timer;    // 定时器变量
+  let qrModalInstance = null;  // 二维码弹窗实例
+
+  // 二维码库默认按 Latin-1 编码，改为 UTF-8 以支持中文名称
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
 
   /**
    * 加载完成网页后 获取url的towFA参数 获取成功并符合规则就自动填入输入框并执行生成TOTP
@@ -53,6 +103,9 @@
     }
     // 接口输入框的值改变时，清空验证码
     document.getElementById('secretKey').addEventListener('input', clear2faShow);
+    // 名称或账号改变时实时刷新二维码
+    document.getElementById('qrIssuer').addEventListener('input', renderQRCode);
+    document.getElementById('qrAccount').addEventListener('input', renderQRCode);
   };
 
   /**
@@ -76,6 +129,9 @@
       otplib.authenticator.options = {epoch: new Date().getTime() + 30000};
       const nextToken = otplib.authenticator.generate(secret)
       copyCode("next_2fa", nextToken, "下个")
+
+      // 出现验证码后才显示二维码按钮
+      $id('qrBtn').style.display = 'inline-block';
 
       // 把参数添加（或替换）到url
       const urlParams = new URLSearchParams(window.location.search);
@@ -139,6 +195,50 @@
     $id('old_2fa').style.display = 'none';
     $id('next_2fa').style.display = 'none';
     $id('remind').style.display = 'none';
+    $id('qrBtn').style.display = 'none';
+    if (qrModalInstance) qrModalInstance.hide();
+  }
+
+  /**
+   * 打开二维码弹窗
+   *
+   * @author qoder+dsv4.1f1017
+   * @since 2026/11/20
+   */
+  function showQRCode() {
+    const secret = $id('secretKey').value.trim();
+    if (!secret) return window.alert('请输入密钥');
+    renderQRCode();
+    if (!qrModalInstance) qrModalInstance = new bootstrap.Modal($id('qrModal'));
+    qrModalInstance.show();
+  }
+
+  /**
+   * 按当前密钥、名称和账号生成 otpauth 二维码，名称和账号实时写入二维码
+   *
+   * @author qoder+dsv4.1f1017
+   * @since 2026/11/20
+   */
+  function renderQRCode() {
+    const secret = $id('secretKey').value.trim().toUpperCase();
+    if (!secret) return;
+    const issuer = $id('qrIssuer').value.trim();
+    const account = $id('qrAccount').value.trim();
+    const label = issuer && account ? `${issuer}:${account}` : (issuer || account || '2FA');
+    let uri = `otpauth://totp/${encodeURIComponent(label)}?secret=${secret}`;
+    if (issuer) uri += `&issuer=${encodeURIComponent(issuer)}`;
+    const errorEl = $id('qrError');
+    try {
+      const qr = qrcode(0, 'M');
+      qr.addData(uri, 'Byte');
+      qr.make();
+      $id('qrCodeBox').innerHTML = qr.createSvgTag({cellSize: 4, margin: 16, scalable: true, alt: '2FA 二维码'});
+      errorEl.style.display = 'none';
+    } catch (_e) {
+      $id('qrCodeBox').innerHTML = '';
+      errorEl.innerText = '名称或账号过长，无法生成二维码';
+      errorEl.style.display = 'block';
+    }
   }
 
   /**
