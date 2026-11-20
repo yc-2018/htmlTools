@@ -118,24 +118,39 @@ input {
 .stage {
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr);
-  grid-template-rows: 46px minmax(0, 1fr);
   height: clamp(300px, 62vh, 640px);
   min-width: 0;
 }
 
-.col-units {
-  grid-column: 2;
-  grid-row: 1;
-  display: grid;
-  min-width: 0;
-}
-
+/* 行输入条：顶部让出列输入条那 46px，才能和右侧格子逐行对齐 */
 .row-units {
   grid-column: 1;
-  grid-row: 2;
   display: grid;
   min-width: 0;
   min-height: 0;
+  padding-top: 46px;
+}
+
+/* 列数多、间距大时网格会比容器宽，交给这层横向滚动，别把列压成一条线 */
+.stage-scroll {
+  grid-column: 2;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.stage-grid {
+  display: grid;
+  grid-template-rows: 46px minmax(0, 1fr);
+  height: 100%;
+  /* --stage-min-w 由脚本按列数与间距算出，装得下时不起作用 */
+  width: max(100%, var(--stage-min-w, 0px));
+}
+
+.col-units {
+  grid-row: 1;
+  display: grid;
+  min-width: 0;
 }
 
 .unit-cell {
@@ -196,7 +211,6 @@ input {
 }
 
 .grid-frame {
-  grid-column: 2;
   grid-row: 2;
   position: relative;
   border: 1px solid var(--accent);
@@ -263,6 +277,9 @@ input {
   display: flex;
   align-items: flex-start;
   gap: 2px;
+  /* 作为 grid item 不能因长标签、删除按钮而撑开所属轨道 */
+  min-width: 0;
+  min-height: 0;
   padding: 2px;
   border: 1px solid #ddd;
   background: hsl(var(--hue) 62% 42% / .8);
@@ -314,9 +331,13 @@ input {
   cursor: text;
 }
 
+/* 区域可能窄到只剩几个像素，输入框浮在区域上方定宽，否则一个字都看不见 */
 .child-name-input {
-  flex: 1 1 auto;
-  min-width: 0;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  z-index: 5;
+  width: max(140px, 100%);
   padding: 0 4px;
   border: 1px solid var(--accent);
   border-radius: 3px;

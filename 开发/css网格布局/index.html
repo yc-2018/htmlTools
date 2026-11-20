@@ -26,13 +26,17 @@
 
 <main class="layout">
   <section class="stage" id="stage" aria-label="网格预览">
-    <div class="col-units" id="colUnits" aria-label="各列轨道宽度"></div>
     <div class="row-units" id="rowUnits" aria-label="各行轨道高度"></div>
-    <div class="grid-frame">
-      <div class="grid-layer box-layer" id="boxLayer"></div>
-      <div class="grid-layer child-layer" id="childLayer"></div>
-      <div class="grid-layer ghost-layer" id="ghostLayer" hidden aria-hidden="true">
-        <div class="ghost-block" id="ghostBlock"></div>
+    <div class="stage-scroll">
+      <div class="stage-grid" id="stageGrid">
+        <div class="col-units" id="colUnits" aria-label="各列轨道宽度"></div>
+        <div class="grid-frame">
+          <div class="grid-layer box-layer" id="boxLayer"></div>
+          <div class="grid-layer child-layer" id="childLayer"></div>
+          <div class="grid-layer ghost-layer" id="ghostLayer" hidden aria-hidden="true">
+            <div class="ghost-block" id="ghostBlock"></div>
+          </div>
+        </div>
       </div>
     </div>
   </section>

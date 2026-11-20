@@ -7,9 +7,11 @@
   const HUE_STEP = 24;
   const HISTORY_LIMIT = 60;
   const STORAGE_KEY = 'html-tools:css-grid-generator:v1';
-  // 轨道至少要有这么高（宽），否则输入框里的字会挤得看不见
-  const MIN_TRACK_PX = 22;
-  // 顶部单位条的高度，对应 .stage 的 grid-template-rows
+  // 轨道至少要有这么高，否则行输入框里的字会挤得看不见
+  const MIN_ROW_PX = 22;
+  // 列还要更宽一点，不然区域名和列输入框都露不出来
+  const MIN_COL_PX = 32;
+  // 顶部单位条的高度，对应 .stage-grid 的 grid-template-rows
   const UNIT_BAR_PX = 46;
 
   /* ---------- 状态 ---------- */
@@ -34,11 +36,14 @@
   let copyTimer = null;
   let toastTimer = null;
   let lastFocus = null;
+  let stageObserver = null;
 
   const history = { past: [], future: [] };
 
   const dom = {
     stage: document.getElementById('stage'),
+    stageGrid: document.getElementById('stageGrid'),
+    stageScroll: document.querySelector('.stage-scroll'),
     colUnits: document.getElementById('colUnits'),
     rowUnits: document.getElementById('rowUnits'),
     boxLayer: document.getElementById('boxLayer'),
@@ -301,24 +306,34 @@
 
   /* ---------- 渲染 ---------- */
 
+  // 横向滚动条出现时会占掉网格区高度，左侧行输入条要让出同样多，否则越往下错得越多
+  function syncRowUnitsPadding() {
+    const barH = dom.stageScroll.offsetHeight - dom.stageScroll.clientHeight;
+    dom.rowUnits.style.paddingBottom = barH + 'px';
+  }
+
   function render() {
-    const colTemplate = Model.templateFromTracks(state.colTracks) || 'none';
-    const rowTemplate = Model.templateFromTracks(state.rowTracks) || 'none';
-    // 输入条里的格子自带最小尺寸，必须把 fr 夹住，否则行高一多就会被撑开，和右侧格子错位
-    const colUnitTemplate = Model.templateFromTracks(state.colTracks, true) || 'none';
-    const rowUnitTemplate = Model.templateFromTracks(state.rowTracks, true) || 'none';
+    // 预览层和输入条都用 minmax(0, 1fr)：1fr 的隐含最小值是内容尺寸，
+    // 区域标签、输入框这类自带最小宽高的内容会把轨道撑开，三层各自撑开多少还不一样，于是错位
+    const colTemplate = Model.templateFromTracks(state.colTracks, true) || 'none';
+    const rowTemplate = Model.templateFromTracks(state.rowTracks, true) || 'none';
     const columnGap = state.columnGap + 'px';
     const rowGap = state.rowGap + 'px';
 
     // 行数多又间距大时固定高度装不下，把预览区撑高，别把行挤成一条线
-    const needed = UNIT_BAR_PX + state.rows * MIN_TRACK_PX +
+    const needed = UNIT_BAR_PX + state.rows * MIN_ROW_PX +
       Math.max(0, state.rows - 1) * state.rowGap;
     dom.stage.style.minHeight = (state.rows > 1 ? needed : 0) + 'px';
 
+    // 列同理：宽度不够时把网格区撑宽，让它横向滚动，而不是把列压成一条线
+    const neededWidth = state.columns * MIN_COL_PX +
+      Math.max(0, state.columns - 1) * state.columnGap;
+    dom.stageGrid.style.setProperty('--stage-min-w', neededWidth + 'px');
+
     // 顶部只排一列一个输入框，左侧只排一行一个输入框，其余层两者都要
-    dom.colUnits.style.gridTemplateColumns = colUnitTemplate;
+    dom.colUnits.style.gridTemplateColumns = colTemplate;
     dom.colUnits.style.columnGap = columnGap;
-    dom.rowUnits.style.gridTemplateRows = rowUnitTemplate;
+    dom.rowUnits.style.gridTemplateRows = rowTemplate;
     dom.rowUnits.style.rowGap = rowGap;
 
     [dom.boxLayer, dom.childLayer, dom.ghostLayer].forEach(function (layer) {
@@ -330,6 +345,7 @@
 
     syncUnitCells(dom.colUnits, state.colTracks, 'col');
     syncUnitCells(dom.rowUnits, state.rowTracks, 'row');
+    syncRowUnitsPadding();
     renderBoxes();
     renderAreas();
     clearGhost();
@@ -1182,6 +1198,15 @@
       if (event.target === dom.modalMask) closeModal();
     });
 
+    // 点到区域以外的地方就取消选中，否则删除按钮一直挂在那挡视线
+    document.addEventListener('pointerdown', function (event) {
+      if (selectedId === null) return;
+      if (event.target.closest && event.target.closest('.child')) return;
+      const active = document.activeElement;
+      if (active && active.closest && active.closest('.child')) active.blur();
+      selectArea(null);
+    });
+
     document.addEventListener('keydown', handleKeydown);
   }
 
@@ -1283,6 +1308,11 @@
     syncInputs();
     bindEvents();
     render();
+    // 窗口缩放、字体变化都会让滚动条出现或消失，滚动条高度得跟着重算
+    if (window.ResizeObserver) {
+      stageObserver = new ResizeObserver(syncRowUnitsPadding);
+      stageObserver.observe(dom.stageScroll);
+    }
     if (restored && state.areas.length) {
       toast('已恢复上次的布局');
     }
