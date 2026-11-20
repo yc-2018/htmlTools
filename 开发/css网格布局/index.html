@@ -1,27 +1,80 @@
 <!DOCTYPE html>
-<html lang=en>
+<html lang="zh-CN">
 <head>
-  <meta charset=utf-8>
-  <meta http-equiv=X-UA-Compatible content="IE=edge">
-  <meta name=viewport content="width=device-width,initial-scale=1">
-  <link rel=icon href=./favicon.ico>
-  <link href="https://fonts.googleapis.com/css?family=Mukta+Mahee:300,700|Roboto+Mono|Caveat&display=swap" rel=stylesheet>
-  <meta property=og:image content=https://s3-us-west-2.amazonaws.com/s.cdpn.io/28963/og-cssgrid.jpg>
-  <meta property=og:image:secure_url content=https://s3-us-west-2.amazonaws.com/s.cdpn.io/28963/og-cssgrid.jpg>
-  <meta property=og:image:type content=image/jpg>
-  <meta property=og:image:width content=800>
-  <meta property=og:image:height content=511>
-  <meta property=og:image:alt content="CSS Grid Generator">
-  <title>CSS Grid Generator</title>
-  <link href=css/app.d0f30c0a.css rel=preload as=style>
-  <link href=js/app.9e69c8f9.js rel=preload as=script>
-  <link href=js/chunk-vendors.ce01c17c.js rel=preload as=script>
-  <link href=css/app.d0f30c0a.css rel=stylesheet>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CSS Grid 网格生成器</title>
+  <meta name="description" content="拖动网格中的方块即可生成 CSS Grid 布局代码，支持自定义行列数量、轨道单位与间距。">
+  <link rel="icon" href="./favicon.ico">
+  <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-<noscript><strong>很抱歉，如果不启用JavaScript，CSS网格生成器将无法正常工作。请启用它继续。</strong></noscript>
-<div id=app></div>
-<script src=js/chunk-vendors.ce01c17c.js></script>
-<script src=js/app.9e69c8f9.js></script>
+<header class="page-header">
+  <h1 class="page-title">
+    <svg class="logo" viewBox="0 0 100 100" width="40" height="40" aria-hidden="true" focusable="false">
+      <g fill-rule="nonzero">
+        <path d="M23 23v65h65V23H23zm-1-1h67v67H22V22zM10 10v8h8v-8h-8zM9 9h10v10H9V9z"/>
+        <path d="M9.146 9.854a.5.5 0 1 1 .708-.708l9 9a.5.5 0 0 1-.708.708l-9-9zM33 22h1v66.168h-1zM66 22h1v66.168h-1zM44 22h1v66.168h-1zM77 22h1v66.168h-1zM55 22h1v66.168h-1z"/>
+        <path d="M88.584 34.084v-1H22.416v1zM88.584 78.084v-1H22.416v1zM88.584 56.084v-1H22.416v1zM88.584 45.084v-1H22.416v1zM89.084 67.084v-1H22.916v1zM13 18.5h1V89h-1zM18 14v-1h71v1z"/>
+        <path d="M88 9h1v9h-1zM9 89v-1h9v1z"/>
+      </g>
+    </svg>
+    CSS Grid 网格生成器
+  </h1>
+  <p class="page-subtitle">拖动网格中的方块划出区域，自动生成对应的 CSS 与 HTML 代码</p>
+</header>
+
+<main class="layout">
+  <section class="stage" aria-label="网格预览">
+    <div class="col-units" id="colUnits" aria-label="各列轨道宽度"></div>
+    <div class="row-units" id="rowUnits" aria-label="各行轨道高度"></div>
+    <div class="grid-frame">
+      <div class="grid-layer box-layer" id="boxLayer"></div>
+      <div class="grid-layer child-layer" id="childLayer"></div>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <div class="controls">
+      <label class="field" for="columns">
+        <span class="field-label">列</span>
+        <input id="columns" type="number" min="0" max="12" step="1" value="5" inputmode="numeric">
+      </label>
+      <label class="field" for="rows">
+        <span class="field-label">行</span>
+        <input id="rows" type="number" min="0" max="12" step="1" value="5" inputmode="numeric">
+      </label>
+      <label class="field" for="columnGap">
+        <span class="field-label">列间距 <span class="hint">(单位 px)</span></span>
+        <input id="columnGap" type="number" min="0" max="50" step="1" value="0" inputmode="numeric">
+      </label>
+      <label class="field" for="rowGap">
+        <span class="field-label">行间距 <span class="hint">(单位 px)</span></span>
+        <input id="rowGap" type="number" min="0" max="50" step="1" value="0" inputmode="numeric">
+      </label>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="btn" id="showCode">请给我示例中的代码</button>
+      <button type="button" class="btn btn-ghost" id="resetGrid">重置布局</button>
+    </div>
+
+    <button type="button" class="text-link" id="showExplain">这个项目可以做什么？</button>
+  </aside>
+</main>
+
+<div class="modal-mask" id="modalMask" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <header class="modal-header">
+      <h2 id="modalTitle"></h2>
+    </header>
+    <div class="modal-body" id="modalBody"></div>
+    <footer class="modal-footer">
+      <button type="button" class="btn" id="modalClose">完成</button>
+    </footer>
+  </div>
+</div>
+
+<script src="./app.js"></script>
 </body>
 </html>
