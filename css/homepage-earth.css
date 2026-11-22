@@ -301,3 +301,23 @@ img {
   font-size: 10px;
   color: #999;
 }
+
+/* 列表自带图标 */
+.toolico {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin-right: 6px;
+  border-radius: 4px;
+  vertical-align: -4px;
+}
+
+@media (max-width: 600px) {
+  .toolico {
+    width: 16px;
+    height: 16px;
+    margin-right: 4px;
+    vertical-align: -3px;
+  }
+}
