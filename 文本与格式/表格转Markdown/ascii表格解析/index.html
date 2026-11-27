@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>ASCII 表格解析 · 日志表格提取</title>
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="./style.css">
+<!--"dsv4.1f1017+qoder"-->
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="stamp">ASCII<br>TABLE</div>
+    <div>
+      <h1>ASCII 表格解析<small>/ 日志里的 +---+ 表格</small></h1>
+      <p>整段粘贴含 <code>+---+</code> 边框的文本表格（MySQL、freva ascii-table、psql 等），自动拆成结构化数据并转 Markdown / CSV / JSON。</p>
+    </div>
+  </div>
+  <div class="top-actions">
+    <span class="sync-chip" id="statChip"><i></i><span id="statText">等待粘贴</span></span>
+    <a class="btn ghost mini entry-link" href="../index.html" title="回到方格编辑器">← 表格转 Markdown</a>
+  </div>
+</header>
+
+<main class="workspace">
+
+  <!-- ========== 01 原始文本 ========== -->
+  <section class="panel" id="panel-src">
+    <div class="panel-head">
+      <span class="panel-no">01</span>
+      <span class="panel-title">原始文本<em>整段粘贴即可</em></span>
+      <span class="spacer"></span>
+      <button class="btn ghost mini" id="btnSample" title="填入一份 MySQL 风格的两张表格示例">示例</button>
+      <button class="btn ghost mini" id="btnPaste" title="从剪贴板读取">粘贴</button>
+      <button class="btn ghost mini" id="btnClear">清空</button>
+    </div>
+    <div class="panel-body">
+      <div class="src-body">
+        <div class="ln" id="srcLn">1</div>
+        <textarea id="srcText" spellcheck="false" wrap="off"
+          placeholder="把日志里的 +---+ 表格整段粘进来&#10;前后的说明文字可以保留，会自动跳过&#10;&#10;+--------+--------+&#10;| binId  | qty    |&#10;+--------+--------+&#10;| 1389…  | 180.0  |&#10;+--------+--------+"></textarea>
+      </div>
+    </div>
+    <div class="panel-foot">
+      <span>识别 <code>+---+</code> 边框行与 <code>|</code> 数据行，可同时提取多张表</span>
+      <span class="spacer"></span>
+      <span id="srcStat">0 字符</span>
+    </div>
+  </section>
+
+  <!-- ========== 02 解析结果 ========== -->
+  <section class="panel" id="panel-out">
+    <div class="panel-head">
+      <span class="panel-no">02</span>
+      <span class="panel-title">解析结果<em>预览 / 代码</em></span>
+      <div class="seg out-tabs" id="outTabs">
+        <button type="button" data-pane="preview" class="on">预览</button>
+        <button type="button" data-pane="code">代码</button>
+      </div>
+      <span class="spacer"></span>
+      <select class="field" id="outFormat" aria-label="输出格式">
+        <option value="md">Markdown</option>
+        <option value="csv">CSV</option>
+        <option value="tsv">TSV</option>
+        <option value="json">JSON</option>
+        <option value="html">HTML 表格</option>
+        <option value="ascii">原样 ASCII</option>
+      </select>
+      <button class="btn mini" id="btnCopy" title="复制当前格式的输出">复制</button>
+      <button class="btn primary mini" id="btnDownload" title="下载当前格式的输出">下载</button>
+    </div>
+    <div class="panel-body">
+      <div class="out-main">
+        <div class="tables-bar hidden" id="tablesBar"></div>
+        <div class="preview-pane" id="previewPane">
+          <details class="notes hidden" id="notesBox">
+            <summary id="notesSum">非表格文本</summary>
+            <pre id="notesText"></pre>
+          </details>
+          <div class="pv-wrap" id="previewWrap"></div>
+        </div>
+        <div class="code-pane hidden" id="codePane">
+          <pre id="codePre"></pre>
+        </div>
+      </div>
+      <aside class="settings" id="settings">
+        <h4>预览方式</h4>
+        <label class="check"><input type="radio" name="pvMode" value="single">单表视图<em>切表 / 导出</em></label>
+        <label class="check"><input type="radio" name="pvMode" value="flow" checked>平铺全文<em>文字 + 全部表格</em></label>
+        <label class="check"><input type="radio" name="pvMode" value="join">多表拼接<em>按字段合并</em></label>
+        <div class="opt-sec hidden" id="joinOpts">
+          <label class="opt">
+            <span>基准表（字段以它为准）</span>
+            <select class="field" id="baseSel" aria-label="选择基准表"></select>
+          </label>
+          <div class="opt">
+            <span>拼接方式</span>
+            <div class="seg" id="joinModeSeg">
+              <button type="button" data-join="stack" class="on" title="按同名字段把行往下摞">纵向追加</button>
+              <button type="button" data-join="key" title="按选定键列把其他表并到右边">按键关联</button>
+            </div>
+          </div>
+          <div class="hidden" id="keyWrap">
+            <div class="mini-label">关联键（可多选，不选默认第 1 列）</div>
+            <div class="key-box" id="keyBox"></div>
+            <label class="check"><input type="checkbox" id="optExpand" checked>一对多时展开成多行</label>
+          </div>
+          <label class="check" id="optSourceWrap"><input type="checkbox" id="optSource">附加「来源表」列</label>
+          <label class="check"><input type="checkbox" id="optDedup">合并后去重</label>
+          <label class="opt">
+            <span>字段别名：其他表=基准</span>
+            <textarea class="field alias" id="optAlias" rows="2" spellcheck="false"
+              placeholder="qty=totalQty&#10;bin_id=binId"></textarea>
+          </label>
+        </div>
+        <hr>
+        <h4>选项</h4>
+        <label class="check"><input type="checkbox" id="optHeader" checked>首行作为表头</label>
+        <label class="check"><input type="checkbox" id="optEscape" checked>Markdown 转义竖线</label>
+        <label class="check"><input type="checkbox" id="optNull">null 视为空值</label>
+        <label class="opt">
+          <span>空单元格占位</span>
+          <input class="field" id="optBlank" placeholder="留空表示不填充" spellcheck="false">
+        </label>
+        <hr>
+        <div class="tip">
+          单元格内的换行无法还原，会被压成一行；同一段文字里的多张表格可用上方按钮切换。
+        </div>
+      </aside>
+    </div>
+    <div class="panel-foot">
+      <span id="outStat">未解析</span>
+      <span class="spacer"></span>
+      <span id="sizeStat"></span>
+    </div>
+  </section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="./app.js"></script>
+</body>
+</html>

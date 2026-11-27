@@ -51,6 +51,15 @@ button{cursor:pointer}
   padding:5px 10px;border-radius:99px;
 }
 .sync-chip i{width:7px;height:7px;border-radius:50%;background:var(--blue);display:block}
+.top-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.entry-link{
+  display:inline-flex;align-items:center;gap:5px;text-decoration:none;
+  font:600 12px var(--mono);color:var(--verm);background:var(--verm-soft);
+  border:1px solid #d9a392;padding:5px 10px;border-radius:99px;
+  transition:background .12s,border-color .12s;
+}
+.entry-link::after{content:"→"}
+.entry-link:hover{background:#f3d6cc;border-color:var(--verm)}
 
 /* ============ 工作区与面板 ============ */
 .workspace{
